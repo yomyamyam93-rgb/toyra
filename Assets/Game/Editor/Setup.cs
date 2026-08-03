@@ -34,6 +34,7 @@ public static class Setup
         }
         if (hero.GetComponent<HeroAttack>() == null) Undo.AddComponent<HeroAttack>(hero.gameObject);
         if (hero.GetComponent<HeroCarry>() == null) Undo.AddComponent<HeroCarry>(hero.gameObject);
+        WireHeroBody(hero);
         hero.transform.position = WorldGrid.Center;
 
         // ── 세계
@@ -108,7 +109,56 @@ public static class Setup
         so.ApplyModifiedProperties();
     }
 
-    /// 캐릭터 상자 — 나중에 이 자식들을 지우고 진짜 모델을 넣으면 된다
+    /// 진짜 모델(여자·남자)을 몸 자리에 물린다 — 상자는 지우지 않고 끈다.
+    /// 모델 파일이 없으면 아무것도 안 하고 상자가 그대로 나온다.
+    static void WireHeroBody(Hero hero)
+    {
+        var hb = hero.GetComponent<HeroBody>();
+        if (hb == null) hb = Undo.AddComponent<HeroBody>(hero.gameObject);
+
+        if (hb.여자모델 == null)
+            hb.여자모델 = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Game/Models/hero_woman.fbx");
+        if (hb.남자모델 == null)
+            hb.남자모델 = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Game/Models/hero_man.fbx");
+        if (hb.재질 == null) hb.재질 = 살재질();
+        if (hb.여자컨트롤러 == null)
+            hb.여자컨트롤러 = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>("Assets/Game/Animations/영웅_woman.controller");
+        if (hb.남자컨트롤러 == null)
+            hb.남자컨트롤러 = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>("Assets/Game/Animations/영웅_man.controller");
+
+        if (hero.GetComponent<HeroAnim>() == null) Undo.AddComponent<HeroAnim>(hero.gameObject);
+
+        foreach (var t in hero.GetComponentsInChildren<Transform>(true))
+        {
+            if (t == hero.transform) continue;
+            if (t.name == "몸" && hb.상자 == null) hb.상자 = t;
+            // 방향 표시용 코 — 진짜 모델이 있으면 필요 없다
+            if (t.name == "코") t.gameObject.SetActive(hb.여자모델 == null && hb.남자모델 == null);
+        }
+        hb.다시짓기();
+        EditorUtility.SetDirty(hb);
+    }
+
+    /// 캐릭터 살 재질 — 흰색. 없으면 만든다.
+    /// (톤은 색과 빛으로 잡는다 — 모델은 안 건드린다)
+    static Material 살재질()
+    {
+        const string path = "Assets/Game/Models/살_흰색.mat";
+        var m = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (m != null) return m;
+
+        var sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+        m = new Material(sh) { name = "살_흰색" };
+        m.color = Color.white;
+        if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", Color.white);
+        if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.12f);
+        if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", 0.12f);
+        if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0f);
+        AssetDatabase.CreateAsset(m, path);
+        return m;
+    }
+
+    /// 캐릭터 상자 — 진짜 모델이 없을 때만 보인다 (`HeroBody` 가 끄고 켠다)
     static void MakeBody(Transform parent)
     {
         var body = Grey.Box(parent, Vector3.up * 0.9f, new Vector3(0.55f, 1.8f, 0.38f),
