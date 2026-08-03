@@ -74,9 +74,38 @@ public static class Setup
         RenderSettings.ambientLight = new Color(0.16f, 0.18f, 0.22f);
         RenderSettings.fog = false;
 
-        UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(
-            UnityEngine.SceneManagement.SceneManager.GetActiveScene());
-        Debug.Log("[씬] 완성 — 플레이를 누르세요. 씬은 Ctrl+S 로 저장.");
+        모델끼우기(world.GetComponent<Wildlife>());
+
+        // ★씬을 여기서 바로 저장한다. 사람이 Ctrl+S 를 잊으면 오늘 작업이 통째로 날아간다
+        //   (2026-08-03 실제로 그랬다). 「세상은 코드가 만든다」는 원칙 덕에 잃은 건
+        //   모델 연결뿐이었고, 그것도 이제 이 함수가 도로 끼운다.
+        var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+        UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(scene);
+        UnityEditor.SceneManagement.EditorSceneManager.SaveScene(scene);
+        Debug.Log("[씬] 완성 · 저장까지 끝 — 플레이를 누르세요.");
+    }
+
+    /// 종마다 모델을 파일 이름으로 찾아 끼운다 — 씬이 날아가도 버튼 하나로 되돌아온다
+    static readonly (string 종, string 파일)[] 모델표 =
+    {
+        ("늑구", "chibi_wolf"), ("호동", "chibi_tiger"), ("티라", "chibi_tyranno"),
+        ("꼭꼬", "꼭꼬"),        ("내펫", "랍또"),
+    };
+
+    static void 모델끼우기(Wildlife wl)
+    {
+        if (wl == null) return;
+        var so = new SerializedObject(wl);
+        foreach (var (종, 파일) in 모델표)
+        {
+            var p = so.FindProperty(종);
+            if (p == null) continue;
+            var slot = p.FindPropertyRelative("모델");
+            if (slot == null || slot.objectReferenceValue != null) continue;   // 이미 있으면 둔다
+            var m = AssetDatabase.LoadAssetAtPath<GameObject>($"Assets/Game/Models/{파일}.glb");
+            if (m != null) slot.objectReferenceValue = m;
+        }
+        so.ApplyModifiedProperties();
     }
 
     /// 캐릭터 상자 — 나중에 이 자식들을 지우고 진짜 모델을 넣으면 된다
