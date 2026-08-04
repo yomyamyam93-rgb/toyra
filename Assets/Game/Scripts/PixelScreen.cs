@@ -28,10 +28,36 @@ public class PixelScreen : MonoBehaviour
     //     넓히려면 Game 창을 키우거나 `축소`를 낮춘다.
     [Tooltip("1미터가 몇 픽셀인가. 그림의 결과 계단 크기를 정한다 (18 = 사람 키가 32픽셀)")]
     [Range(4f, 64f)] public float 픽셀당미터 = 18f;
-    [Tooltip("휠로 축소 배율을 바꾼다 (픽셀 밀도는 그대로, 보이는 범위가 달라진다)")]
+    [Tooltip("휠로 줌한다")]
     public bool 휠로줌 = true;
+
+    // ★★★줌 = **정수 칸 + 칸 사이 애니메이션** (2026-08-04 사용자 확정).
+    //
+    //   셋은 동시에 못 가진다: `화면픽셀/미터 = 축소 × 픽셀당미터`.
+    //   줌한다는 건 왼쪽을 바꾸는 것이라, 오른쪽 둘 중 하나는 반드시 따라 움직인다.
+    //     · 밀도를 놓으면 → 부드럽지만 픽셀 굵기가 변한다 (사용자가 취소)
+    //     · 축소로 줌하면 → 픽셀은 완벽한데 18m ↔ 27m 로 뚝뚝 끊긴다 (사용자가 싫다 함)
+    //
+    //   → 빠져나가는 길: **화면보다 넓게 그려 두고(오버스캔)** 칸이 바뀔 때 그 여유분으로
+    //     판을 스르륵 키우거나 줄인다. **멈춰 있을 때는 언제나 정확히 정수 배**라
+    //     픽셀이 하나도 안 뭉개지고, 넘어가는 0.15초만 살짝 흐려진다.
+    //     밀도(`픽셀당미터`)는 처음부터 끝까지 **한 번도 안 변한다.**
     [Range(1, 12)] public int 최소축소 = 2;
-    [Range(1, 12)] public int 최대축소 = 8;
+    [Range(1, 12)] public int 최대축소 = 6;
+    [Tooltip("화면보다 몇 배 넓게 그리나 — 칸 사이를 건너는 여유. 1.7 이면 픽셀을 2.9배 그린다")]
+    [Range(1f, 2.5f)] public float 오버스캔 = 1.7f;
+    [Tooltip("클수록 칸을 빨리 건넌다 (0.15초쯤이 14~18)")]
+    public float 칸넘김빠르기 = 16f;
+    [Tooltip("지금 화면에 깔린 배율 — 멈추면 「축소」와 같아진다 (읽기용)")]
+    public float 보이는축소 = 0f;
+
+    // ★맞닿은 물체를 갈라 주는 문턱 — 한 물체 안에서는 값 차이가 정확히 0 이라 작아도 된다
+    [Tooltip("겹친 물체 사이에 선을 넣을 최소 값 차이 (작을수록 잘 갈린다)")]
+    [Range(0.002f, 0.2f)] public float 물체구분문턱 = 0.01f;
+
+    /// 격자에 맞추는 쪽(스냅·테두리 두께)이 쓰는 밀도.
+    /// ★이제 줌해도 **안 변한다** — 그게 이 방식의 요점이다.
+    public float 유효픽셀당미터 => 픽셀당미터;
 
     [Header("② 픽셀 스냅")]
     [Tooltip("카메라를 픽셀 격자에 맞춘다 (끄면 지글거림이 보인다)")]
@@ -97,6 +123,27 @@ public class PixelScreen : MonoBehaviour
     int rtW, rtH, 지난축소, 지난W, 지난H;
     bool 지난켬;
 
+    /// ★★화면의 한 점을 **저해상도 화면 기준**으로 옮긴다 (2026-08-04 사용자 "카메라가
+    ///   가까이 있을때는 마우스가 있는 방향을 안보네").
+    ///
+    ///   본 카메라는 화면이 아니라 **저해상도 텍스처**에 그린다. 그래서
+    ///   `cam.ScreenPointToRay(마우스자리)` 는 마우스 좌표를 **텍스처 크기 기준**으로 읽는다 —
+    ///   화면은 1920 인데 텍스처는 `1920÷축소` 라, 줌인해서 축소가 커질수록 어긋남이 커진다.
+    ///   축소 3 이면 640 짜리 화면인 줄 알고 읽으니, 오른쪽 끝을 가리켜도 세 배 밖을 가리킨 셈이 된다.
+    ///   **줌아웃(축소 1)일 때는 멀쩡하고 줌인할수록 빗나가던** 것이 이 때문이다.
+    ///
+    ///   판은 가운데 정렬로 `축소` 배 늘려 깔고 되밀기만큼 밀려 있으므로, 그 역을 취하면 된다.
+    public Vector2 화면점(Vector2 화면자리)
+    {
+        if (!켬 || 판rt == null) return 화면자리;
+        var 밀림 = 판rt.anchoredPosition;
+        // ★지금 판이 실제로 깔린 배율을 쓴다 — 칸을 건너는 중에도 커서가 안 어긋나게
+        float s = Mathf.Max(0.01f, 보이는축소 > 0f ? 보이는축소 : 축소);
+        return new Vector2(
+            (화면자리.x - (Screen.width * 0.5f + 밀림.x)) / s + rtW * 0.5f,
+            (화면자리.y - (Screen.height * 0.5f + 밀림.y)) / s + rtH * 0.5f);
+    }
+
     void OnEnable()
     {
         cam = GetComponent<Camera>();
@@ -110,8 +157,11 @@ public class PixelScreen : MonoBehaviour
         치우기();
         if (!켬) return;
 
-        rtW = Mathf.Max(16, Screen.width / Mathf.Max(1, 축소)) + 2;   // 여유 2픽셀
-        rtH = Mathf.Max(16, Screen.height / Mathf.Max(1, 축소)) + 2;
+        // ★★화면보다 넓게 그린다 (오버스캔) — 칸을 건널 때 판을 줄여도 가장자리가 안 비게.
+        //   보이는 범위는 그대로다: 넓게 그린 만큼 판도 넓어져서 화면엔 가운데만 걸린다.
+        float 넓게 = Mathf.Max(1f, 오버스캔);
+        rtW = Mathf.Max(16, Mathf.CeilToInt(Screen.width / (float)Mathf.Max(1, 축소) * 넓게)) + 2;
+        rtH = Mathf.Max(16, Mathf.CeilToInt(Screen.height / (float)Mathf.Max(1, 축소) * 넓게)) + 2;
 
         // ★HDR 이 아니라 보통 형식으로. HDR 값(1 초과)에 색 양자화를 걸면
         //   밝은 자리에서 색이 튄다 (사용자 "색상이 좀 이상해")
@@ -185,6 +235,7 @@ public class PixelScreen : MonoBehaviour
         판rt = img.GetComponent<RectTransform>();
         판rt.anchorMin = 판rt.anchorMax = new Vector2(0.5f, 0.5f);
         판rt.pivot = new Vector2(0.5f, 0.5f);
+        // 크기는 매 프레임 「보이는축소」로 다시 잡는다 (칸 사이 애니메이션)
         판rt.sizeDelta = new Vector2(rtW * 축소, rtH * 축소);
         판rt.anchoredPosition = Vector2.zero;
 
@@ -238,26 +289,26 @@ public class PixelScreen : MonoBehaviour
         if (k != null && k.f2Key.wasPressedThisFrame) 켬 = !켬;
         if (k != null && k.f3Key.wasPressedThisFrame) 마스크보기 = !마스크보기;
 
-        // ★줌 = 축소 배율. 픽셀 밀도는 그대로 두고 보이는 범위만 바꾼다
+        // ★줌 = 축소 배율을 한 칸씩. 휠을 올리면 줌인(축소가 커진다 = 픽셀이 굵고 좁게 본다)
         if (켬 && 휠로줌)
         {
             var m = UnityEngine.InputSystem.Mouse.current;
             float sc = m != null ? m.scroll.ReadValue().y : 0f;
-            // ★부호 주의: 픽셀 밀도를 고정했으므로 **축소 배율 = 확대 배율**이다.
-            //   축소가 크면 픽셀이 굵어지고 보이는 범위가 좁아진다 = 줌인.
-            //   (여기를 반대로 뒀다가 휠 방향이 뒤집혔다)
             if (Mathf.Abs(sc) > 0.01f)
                 축소 = Mathf.Clamp(축소 + (sc > 0f ? 1 : -1), 최소축소, 최대축소);
         }
 #endif
         // 설정이 바뀌면 다시 만든다
+        // ★칸이 바뀌어도 「보이는축소」는 안 건드린다 — 그게 옛 배율에 머물러 있다가
+        //   새 판 위에서 서서히 따라붙는 것이 곧 「칸 사이 애니메이션」이다.
         if (켬 != 지난켬 || 축소 != 지난축소 || Screen.width != 지난W || Screen.height != 지난H)
         { 만들기(); if (!켬) return; }
         if (!켬 || mat == null || cam == null) return;
 
         // ★★픽셀 밀도 고정 — 1미터가 언제나 같은 픽셀 수가 되도록 시야를 정한다.
         //   (이걸 안 하면 줌할 때마다 물체의 픽셀이 잘아졌다 굵어졌다 한다)
-        float ppu = Mathf.Max(1f, 픽셀당미터);
+        // ★줌을 곱한 값으로 시야를 정한다. 격자에 맞추는 계산도 전부 이 값을 쓴다
+        float ppu = Mathf.Max(0.5f, 유효픽셀당미터);
         if (cam.orthographic) cam.orthographicSize = (rtH - 2) / (2f * ppu);
 
         // ── ② 픽셀 스냅 + 되밀기
@@ -281,10 +332,25 @@ public class PixelScreen : MonoBehaviour
             if (밀기반대) 밀기 = -밀기;
         }
 
-        // ★되밀기는 **화면 쪽**에서 한다. UV 로 밀면 점 필터라 한 텍셀씩 튀어서
-        //   오히려 반짝거린다 (실제로 그랬다). 판 자체를 화면 픽셀 단위로 민다
+        // ── ★★칸 사이 애니메이션 — 판을 「보이는축소」 배로 깐다.
+        //   멈춰 있으면 이 값이 `축소` 와 정확히 같아져 **완전한 정수 배**가 된다.
+        //   그때 픽셀은 한 톨도 안 뭉개진다. 흐려지는 건 건너는 그 짧은 순간뿐이다.
+        if (보이는축소 <= 0f) 보이는축소 = 축소;                     // 처음 한 번
+        보이는축소 = Mathf.Lerp(보이는축소, 축소, 1f - Mathf.Exp(-칸넘김빠르기 * Time.deltaTime));
+        if (Mathf.Abs(보이는축소 - 축소) < 0.004f) 보이는축소 = 축소;  // 다 왔으면 정확히 붙인다
+
+        // ★가장자리가 비지 않을 만큼만 줄인다. 오버스캔이 여유를 대는데, 휠을 여러 칸
+        //   빠르게 굴리면 그 여유를 넘어설 수 있어서 여기서 막는다 (살짝 튀는 게
+        //   화면 가에 검은 띠가 생기는 것보다 낫다).
+        float 최소배 = 축소 / Mathf.Max(1f, 오버스캔);
+        float 깔배율 = Mathf.Max(보이는축소, 최소배);
         if (판rt != null)
-            판rt.anchoredPosition = new Vector2(밀기.x * 축소, 밀기.y * 축소);
+        {
+            판rt.sizeDelta = new Vector2(rtW * 깔배율, rtH * 깔배율);
+            // ★되밀기는 **화면 쪽**에서 한다. UV 로 밀면 점 필터라 한 텍셀씩 튀어서
+            //   오히려 반짝거린다 (실제로 그랬다). 판 자체를 화면 픽셀 단위로 민다
+            판rt.anchoredPosition = new Vector2(밀기.x * 깔배율, 밀기.y * 깔배율);
+        }
         mat.SetVector("_Offset", Vector4.zero);
         mat.SetFloat("_Levels", 색단계);
         mat.SetFloat("_Dither", 디더링);
@@ -293,6 +359,7 @@ public class PixelScreen : MonoBehaviour
         mat.SetFloat("_OutlineW", 외곽선두께);
         mat.SetFloat("_OutlineT", 외곽선문턱);
         mat.SetFloat("_OutlineS", 외곽선세기);
+        mat.SetFloat("_IdGap", 물체구분문턱);
         mat.SetFloat("_UseDepth", 실루엣만 ? 1f : 0f);
         mat.SetFloat("_OutlineIn", 안쪽에그리기 ? 1f : 0f);
         mat.SetFloat("_ShowMask", 마스크보기 ? 1f : 0f);

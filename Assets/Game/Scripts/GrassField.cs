@@ -16,10 +16,34 @@ public class GrassField : MonoBehaviour
     [Header("얼마나")]
     // ★화면 밖까지 깔아야 한다 — 범위가 짧으면 **잔디가 끝나는 선**이 화면에 보인다
     //   (2026-08-04 사용자 "외곽에 생성 안 된 잔디들이 보여")
-    [Tooltip("이 반경 안에 깐다 (m) — 화면 대각선보다 넉넉해야 경계가 안 보인다")]
+    [Tooltip("이 반경 안에 깐다 (m) — 「화면 따라가기」가 켜져 있으면 자동으로 정해진다")]
     public float 반경 = 36f;
-    [Tooltip("포기 사이 간격 (m) — 작을수록 빽빽하다")] public float 간격 = 0.18f;
-    [Tooltip("한 자리에 풀이 있을 확률")] [Range(0f, 1f)] public float 밀도 = 0.95f;
+
+    // ★★반경을 **화면에서 뽑는다** (2026-08-05 사용자 "잔디생성 범위도 넓혀야할듯?").
+    //   줌아웃 칸을 하나 열자마자 화면이 27m → 54m 이 되면서 고정 반경 36m 로는
+    //   **잔디가 끝나는 선**이 화면에 들어왔다. 숫자를 손으로 다시 맞추면 줌 범위를
+    //   건드릴 때마다 또 어긋난다 — 화면 대각선에서 계산하면 저절로 따라온다.
+    //   ★대가: 줌아웃하면 훑는 칸이 늘어난다. 그래서 상한을 둔다 (렉의 손잡이는 여전히 간격).
+    [Tooltip("화면 크기에 맞춰 반경을 자동으로 정한다")] public bool 화면따라가기 = true;
+    [Tooltip("자동으로 정할 때의 상한 (m) — 넘으면 렉이 온다")] public float 반경상한 = 70f;
+    // ★★★렉의 정체는 포기 수가 아니라 **다시 까는 횟수**였다 (2026-08-04 사용자 "렉 심하네").
+    //   다시 까는 주기가 `간격` 에 묶여 있어서, 간격을 촘촘하게 할수록
+    //   ①한 번에 훑는 칸이 제곱으로 늘고 ②**그걸 더 자주** 한다. 간격 0.127m 이면
+    //   0.127m 갈 때마다 324,000칸 — 걸어 다니면 초당 스무 번이다.
+    //   → 간격을 넉넉히 두고, 빽빽함은 아래 「뭉치기」로 낸다.
+    [Tooltip("포기 사이 간격 (m) — 작을수록 빽빽하고 **훨씬** 무겁다")] public float 간격 = 0.5f;
+    [Tooltip("한 자리에 풀이 있을 확률")] [Range(0f, 1f)] public float 밀도 = 0.9f;
+
+    // ★★균등하게 깔면 「카펫」이 되고, 뭉쳐서 깔면 「덤불」이 된다 (2026-08-04 사용자
+    //   "그냥 띄엄띄엄 뭉쳐서 나게끔만"). 낮은 주파수 노이즈로 덤불 자리를 정하고,
+    //   그 안에서만 풀이 난다. 덤불 가장자리는 성글어져서 경계가 안 보인다.
+    [Header("뭉치기")]
+    [Tooltip("덤불 하나의 크기 (m)")] public float 뭉치크기 = 4f;
+    [Tooltip("땅의 몇 쯤에 덤불이 나나 — 낮출수록 띄엄띄엄")] [Range(0.02f, 1f)] public float 뭉치비율 = 0.25f;
+    // ★★빽빽함은 **간격이 아니라 여기서** 낸다 (2026-08-04 사용자 "진짜 군데군데 밀집해서").
+    //   간격을 줄이면 훑는 칸이 제곱으로 늘어 렉이 온다. 대신 덤불에 든 칸 하나에
+    //   여러 포기를 몰아 심는다 — 훑는 비용은 그대로인데 덤불 안은 빽빽해진다.
+    [Tooltip("덤불에 든 한 칸에 몇 포기를 몰아 심나")] [Range(1, 12)] public int 칸당 = 6;
 
     [Header("생김새")]
     public float 최소키 = 0.45f, 최대키 = 0.95f;
@@ -156,6 +180,21 @@ public class GrassField : MonoBehaviour
         var p = hero.transform.position;
         var 칸 = new Vector2Int(Mathf.FloorToInt(p.x / 간격), Mathf.FloorToInt(p.z / 간격));
 
+        // ★화면 대각선의 절반을 덮어야 「잔디가 끝나는 선」이 안 보인다
+        if (화면따라가기)
+        {
+            var cam = Camera.main;
+            if (cam != null && cam.orthographic)
+            {
+                float 반높이 = cam.orthographicSize;
+                float 반너비 = 반높이 * cam.aspect;
+                // 카메라가 기울어 있어 세로는 화면에서 더 멀리 뻗는다 — 넉넉히 잡는다
+                float 필요 = Mathf.Sqrt(반너비 * 반너비 + 반높이 * 반높이) / Mathf.Sin(Mathf.Deg2Rad * 40f) * 0.75f + 6f;
+                float 새반경 = Mathf.Min(필요, 반경상한);
+                if (Mathf.Abs(새반경 - 반경) > 1f) { 반경 = 새반경; 지난칸 = new Vector2Int(int.MinValue, int.MinValue); }
+            }
+        }
+
         // 한 칸이라도 움직였을 때만 목록을 다시 뽑는다 (그 외엔 그리기만)
         if (칸 != 지난칸) { 지난칸 = 칸; 목록뽑기(p); }
 
@@ -186,15 +225,32 @@ public class GrassField : MonoBehaviour
 
                 var at = new Vector3((gx + Random.value) * 간격, 띄우기, (gz + Random.value) * 간격);
 
+                // ★덤불 자리인가 — 낮은 주파수 노이즈가 높은 곳에만 난다.
+                //   가장자리로 갈수록 성글어져서 덤불의 경계가 선으로 안 보인다.
+                if (뭉치크기 > 0.01f && 뭉치비율 < 0.999f)
+                {
+                    float n = Mathf.PerlinNoise(at.x / 뭉치크기 + 137.1f, at.z / 뭉치크기 + 71.3f);
+                    float 문턱 = 1f - 뭉치비율;
+                    if (n < 문턱) continue;
+                    if (Random.value > Mathf.InverseLerp(문턱, 1f, n)) continue;
+                }
+
                 // ★발밑 땅의 톤을 그대로 따른다 — 잔디가 아니면 아예 안 난다
                 int 톤 = GroundPaint.톤(at);
                 if (톤 <= 0) continue;
                 if ((new Vector2(at.x - 집.x, at.z - 집.z)).sqrMagnitude < 9f * 9f) continue;
 
-                int i = Random.Range(0, 그림수);
-                float h = Random.Range(최소키, 최대키);
-                그릴것[i, Mathf.Clamp(톤 - 1, 0, 톤수 - 1)]
-                    .Add(Matrix4x4.TRS(at, rot, new Vector3(h * 비율[i], h, 1f)));
+                // 한 칸에 여러 포기를 몰아 심는다 — 덤불 안이 빽빽해진다
+                int 톤칸 = Mathf.Clamp(톤 - 1, 0, 톤수 - 1);
+                int 몇 = Mathf.Max(1, 칸당);
+                for (int k = 0; k < 몇; k++)
+                {
+                    var 자리 = k == 0 ? at
+                             : new Vector3((gx + Random.value) * 간격, 띄우기, (gz + Random.value) * 간격);
+                    int i = Random.Range(0, 그림수);
+                    float h = Random.Range(최소키, 최대키);
+                    그릴것[i, 톤칸].Add(Matrix4x4.TRS(자리, rot, new Vector3(h * 비율[i], h, 1f)));
+                }
             }
         Random.state = st;
     }

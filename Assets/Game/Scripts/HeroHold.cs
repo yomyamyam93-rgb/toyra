@@ -22,9 +22,16 @@ using UnityEngine;
 [DefaultExecutionOrder(200)]     // Animator 다음
 public class HeroHold : MonoBehaviour
 {
-    [Header("드는 자세 (세상 기준 각도)")]
+    // ★★각도는 **눈으로 짐작하지 않고 실측해서 풀었다** (2026-08-04 사용자 "오른손이면
+    //   오른쪽 위쪽으로 들어야 하는데 왼쪽 위로 들고").
+    //   뼈마다 축이 제각각이라 「-115도면 뒤로 올라가겠지」가 안 통한다. 대신 어깨→손이
+    //   **몸 기준으로 어디를 가리키나**를 재서, 목표 방향으로 가는 회전을 계산해 맞췄다.
+    //     들 때  = (0.45, 0.72, -0.53)  오른쪽·위·뒤   ← 뒤로 젖혀 때릴 준비
+    //     칠 때  = (0.30, -0.28, 0.91)  앞·아래       ← 내려친 끝
+    //   ★수치를 바꿀 일이 생기면 각도를 더듬지 말고 **그 방향 벡터**를 정하고 다시 풀어라.
+    [Header("드는 자세 (몸 기준 각도 — 실측으로 푼 값)")]
     [Tooltip("어깨")] public Vector3 어깨 = new Vector3(-20f, 0f, 0f);
-    [Tooltip("윗팔 — 음수로 주면 뒤로 올라간다")] public Vector3 팔 = new Vector3(-115f, 0f, -20f);
+    [Tooltip("윗팔 — 오른쪽 머리 위로 젖힌다")] public Vector3 팔 = new Vector3(-16.4f, -7.1f, 162.4f);
     [Tooltip("팔뚝 — 접는 정도")] public Vector3 팔뚝 = new Vector3(-55f, 0f, 0f);
 
     // ★★내려치는 자세가 있어야 「휘두른다」가 보인다 (2026-08-04 사용자 "휘두르질 않네").
@@ -34,8 +41,37 @@ public class HeroHold : MonoBehaviour
     //   → 휘두름은 **팔이 위에서 앞아래로 내려오는 것**이어야 한다.
     [Header("내려친 자세 (휘두름의 끝)")]
     public Vector3 칠때어깨 = new Vector3(12f, 0f, 0f);
-    public Vector3 칠때팔 = new Vector3(30f, 0f, -12f);
+    // ★★오른쪽 위에서 들었으면 **왼쪽 아래로 가로질러** 후린다 (2026-08-05 사용자).
+    //   손이 향할 방향 (-0.50, -0.58, 0.64) = 왼쪽·아래·앞 — 여기서 풀어낸 각도다.
+    //
+    // ★★각도를 되찾는 법 (직접 손대지 말 것):
+    //   ①`FromToRotation` 으로 한 번에 고치려 들면 **발산한다.** 팔뚝이 몸 기준으로 따로
+    //     고정돼 있어 회전 합성이 선형이 아니다 (59° → 78° → 127° 로 벌어졌다).
+    //   ②그래서 **탐색**으로 푼다. 각도를 넣고 자세를 만들어 방향을 재는 걸 수천 번 하면 된다.
+    //   ③★그때 **매번 애니메이터로 뼈를 되돌려야** 한다. 몸통은 `얹기`(더하기)라서
+    //     안 되돌리면 비틀림이 누적돼 엉뚱한 값이 최적으로 잡힌다 — 실제로 한 번 속았다.
+    public Vector3 칠때팔 = new Vector3(-131.4f, -122.7f, 72.1f);
     public Vector3 칠때팔뚝 = new Vector3(-12f, 0f, 0f);
+
+    // ★★★팔만 움직이면 어색하다 (2026-08-04 사용자 "다른 곳들도 움직임이 있을텐데말야").
+    //
+    //   사람이 무언가를 내려칠 때 움직이는 건 팔이 아니라 **몸 전체**다. 골반이 먼저 돌고,
+    //   그 힘이 허리를 타고 올라가 마지막에 손끝이 나간다 (운동 사슬). 팔만 돌리면
+    //   「인형 팔을 집어 올린 것」처럼 보인다.
+    //
+    //   ★여기서는 팔처럼 **덮어쓰지 않고 얹는다** (`얹기`). 몸통은 걷는 동안 계속
+    //     움직여야 하므로, 걷기 위에 비틀기만 더한다. 팔은 반대로 덮어써야 한다 —
+    //     안 그러면 걸을 때 팔이 계속 앞뒤로 흔들려 무기가 떨린다 (위 주석 참고).
+    [Header("몸통도 같이 (팔만 움직이면 어색하다)")]
+    public bool 몸통참여 = true;
+    [Tooltip("들 때 — 뒤로 젖히고(x−) 오른쪽으로 비튼다(y+)")]
+    public Vector3 들때몸통 = new Vector3(-7f, 20f, 0f);
+    [Tooltip("칠 때 — 앞으로 숙이고(x+) 왼쪽으로 돌아 나간다(y−)")]
+    public Vector3 칠때몸통 = new Vector3(12f, -24f, 0f);
+    [Tooltip("골반이 몸통의 몇 %를 따라가나 — 0.3 쯤이면 하체가 버티는 느낌이 산다")]
+    [Range(0f, 1f)] public float 골반몫 = 0.3f;
+    [Tooltip("머리 되돌리기 — 음수면 몸이 돌아도 시선이 앞에 남는다")]
+    [Range(-1f, 1f)] public float 머리몫 = -0.35f;
 
     [Header("왼팔도 같이 (두 손으로 들 때)")]
     public bool 두손 = true;
@@ -54,14 +90,26 @@ public class HeroHold : MonoBehaviour
 
     /// 지금 얼마나 들었나 (0~1) — 밖에서 "다 감았나" 를 물어본다
     public float 지금 { get; private set; }
-    Transform 어깨뼈, 팔뼈, 팔뚝뼈, 왼팔뼈, 왼팔뚝뼈;
+    Transform 어깨뼈, 팔뼈, 팔뚝뼈, 왼팔뼈, 왼팔뚝뼈, 몸뿌리;
+    Transform 골반뼈, 허리뼈, 등뼈, 가슴뼈, 머리뼈;
     Quaternion 어깨기본, 팔기본, 팔뚝기본, 왼팔기본, 왼팔뚝기본;
 
     /// ★`Awake` 에서 잡는다 — 애니메이터가 아직 한 번도 안 돌아서 **뼈대 기본 자세**가 남아 있다.
     ///   `Start` 나 첫 `LateUpdate` 에서 잡으면 이미 걷는 도중 자세가 기준이 되어 어긋난다.
-    void Awake()
+    void Awake() { 뼈잡기(); }
+
+    /// ★★몸이 둘이 되면서(남/여) **켜져 있는 쪽에서만** 잡아야 한다 (2026-08-04).
+    ///   꺼진 것까지 훑으면 나중에 걸린 쪽 뼈를 쥐게 되어, 팔이 **아무리 눌러도 안 올라간다**
+    ///   (안 보이는 몸의 팔만 올라간다). 몸을 바꾸면 `HeroSwap` 이 이걸 다시 부른다.
+    public void 뼈잡기()
     {
-        foreach (var t in GetComponentsInChildren<Transform>(true))
+        어깨뼈 = 팔뼈 = 팔뚝뼈 = 왼팔뼈 = 왼팔뚝뼈 = null;
+        // ★몸이 향한 쪽 — 각도를 이 축에서 돌린다 (`잡기` 주석 참고).
+        //   뿌리(transform)가 아니라 **모델**이다. 모델은 180° 돌려 놓았을 수 있고,
+        //   눈에 보이는 앞은 모델의 앞이다 (`HeroAnim.모델회전` 과 같은 이유).
+        var an = GetComponentInChildren<Animator>();
+        몸뿌리 = an != null ? an.transform : transform;
+        foreach (var t in GetComponentsInChildren<Transform>(false))   // 켜진 것만
         {
             switch (t.name)
             {
@@ -70,6 +118,13 @@ public class HeroHold : MonoBehaviour
                 case "RightForeArm":  팔뚝뼈 = t; 팔뚝기본 = t.localRotation; break;
                 case "LeftArm":       왼팔뼈 = t; 왼팔기본 = t.localRotation; break;
                 case "LeftForeArm":   왼팔뚝뼈 = t; 왼팔뚝기본 = t.localRotation; break;
+                // 몸통 — 덮어쓰지 않고 얹기만 하므로 기본 자세는 안 들고 있어도 된다
+                // ★계층이 Hips → Spine02 → Spine01 → Spine → 어깨 순이다 (이름과 반대다)
+                case "Hips":          골반뼈 = t; break;
+                case "Spine02":       허리뼈 = t; break;
+                case "Spine01":       등뼈 = t; break;
+                case "Spine":         가슴뼈 = t; break;
+                case "Head":          머리뼈 = t; break;
             }
         }
     }
@@ -79,6 +134,13 @@ public class HeroHold : MonoBehaviour
         지금 = Mathf.Lerp(지금, Mathf.Clamp01(목표), 1f - Mathf.Exp(-따라붙기 * Time.deltaTime));
         if (지금 < 0.001f) return;
 
+        // ★★뼈를 놓쳤으면 **스스로 다시 잡는다** (2026-08-05 — 실측하다 전부 null 인 걸 발견했다).
+        //   `Awake` 에서 한 번만 잡으면, 그 순간 몸이 아직 안 켜져 있었거나 나중에 몸이
+        //   갈리는 순간에 빈손이 되고 **그대로 영영 안 움직인다** — 증상은 「팔이 아예 안
+        //   올라간다」라서 뼈 문제로 안 보인다. 매 프레임 확인은 싸다 (참조 비교 두 번).
+        if (팔뼈 == null || !팔뼈.gameObject.activeInHierarchy) 뼈잡기();
+        if (팔뼈 == null) return;                    // 몸이 하나도 안 켜져 있으면 할 일이 없다
+
         // ★★들리는 게 아니라 **꺾이는** 것처럼 보였던 이유 둘 (2026-08-04 사용자):
         //   ①직선으로 섞었다 — 시작하자마자 최고 속도로 움직이고 도착하는 순간 뚝 선다.
         //     SmoothStep 을 씌워 양 끝을 완만하게 한다.
@@ -87,28 +149,66 @@ public class HeroHold : MonoBehaviour
         float w = Mathf.SmoothStep(0f, 1f, 지금);
         float s = Mathf.Clamp01(침);
 
+        // 몸이 향한 쪽 — 각도를 이 축에서 돌린다 (몸이 돌면 자세도 같이 돈다)
+        var 몸 = (몸뿌리 != null ? 몸뿌리 : transform).rotation;
+
+        // ── ★몸통이 먼저 (운동 사슬) — 골반 → 허리 → 등 → 가슴 → 그다음이 팔.
+        //    팔보다 **먼저** 돌려야 팔이 그 위에 얹혀 같이 따라간다.
+        if (몸통참여)
+        {
+            var 통 = Vector3.Lerp(들때몸통, 칠때몸통, s) * w;
+            얹기(골반뼈, 통 * 골반몫, 몸);
+            // 남은 몫을 척추 세 마디가 나눠 진다 — 한 마디에 몰면 허리만 꺾인 것처럼 보인다
+            var 남은 = 통 * (1f - 골반몫);
+            얹기(허리뼈, 남은 * 0.30f, 몸);
+            얹기(등뼈, 남은 * 0.33f, 몸);
+            얹기(가슴뼈, 남은 * 0.37f, 몸);
+            // 머리는 반대로 조금 남는다 — 몸이 돌아도 보던 쪽을 계속 본다
+            얹기(머리뼈, 통 * 머리몫, 몸);
+        }
+
         // ★부모부터 순서대로 — 어깨를 잡은 뒤라야 팔의 기준이 제대로 선다
-        잡기(어깨뼈, 어깨기본, Vector3.Lerp(어깨, 칠때어깨, s), 늦게(w, 0f));
-        잡기(팔뼈, 팔기본, Vector3.Lerp(팔, 칠때팔, s), 늦게(w, 시차 * 0.5f));
-        잡기(팔뚝뼈, 팔뚝기본, Vector3.Lerp(팔뚝, 칠때팔뚝, s), 늦게(w, 시차));
+        잡기(어깨뼈, 어깨기본, Vector3.Lerp(어깨, 칠때어깨, s), 늦게(w, 0f), 몸);
+        잡기(팔뼈, 팔기본, Vector3.Lerp(팔, 칠때팔, s), 늦게(w, 시차 * 0.5f), 몸);
+        잡기(팔뚝뼈, 팔뚝기본, Vector3.Lerp(팔뚝, 칠때팔뚝, s), 늦게(w, 시차), 몸);
 
         if (두손)
         {
-            잡기(왼팔뼈, 왼팔기본, 왼팔, 늦게(w, 시차 * 0.5f));
-            잡기(왼팔뚝뼈, 왼팔뚝기본, 왼팔뚝, 늦게(w, 시차));
+            잡기(왼팔뼈, 왼팔기본, 왼팔, 늦게(w, 시차 * 0.5f), 몸);
+            잡기(왼팔뚝뼈, 왼팔뚝기본, 왼팔뚝, 늦게(w, 시차), 몸);
         }
+    }
+
+    /// **덮어쓰지 않고 얹는다** — 지금 하고 있는 동작(걷기) 위에 몸 기준 회전을 더한다.
+    /// 팔은 `잡기`(덮어쓰기), 몸통은 이쪽이다. 몸통까지 덮어쓰면 걸음이 통째로 멈춘다.
+    static void 얹기(Transform t, Vector3 각도, Quaternion 몸)
+    {
+        if (t == null || 각도.sqrMagnitude < 1e-6f) return;
+        var 더할것 = 몸 * Quaternion.Euler(각도) * Quaternion.Inverse(몸);
+        t.rotation = 더할것 * t.rotation;
     }
 
     /// 늦게 따라오기 — 앞의 것이 먼저 서고 뒤의 것이 지연만큼 뒤처진다
     static float 늦게(float w, float 지연)
         => 지연 <= 0f ? w : Mathf.Clamp01((w - 지연) / (1f - 지연));
 
-    /// **기본 자세 + 각도**로 덮어쓴다. 애니메이션이 흔들던 것을 지운다
-    static void 잡기(Transform t, Quaternion 기본, Vector3 각도, float 무게)
+    /// **기본 자세 + 각도**로 덮어쓴다. 애니메이션이 흔들던 것을 지운다.
+    ///
+    /// ★★각도는 **몸 기준**이다 (2026-08-04 사용자 "어떤 방향에 있던 한 지점으로 몽둥이를
+    ///   드는데, 그럼 안 되지 않아? … 어떨때는 팔이 등쪽으로해서 올라가").
+    ///
+    ///   전에는 `Quaternion.Euler(각도) * ...` 로 **세상 축**에 걸었다. 그러면 캐릭터가
+    ///   어디를 보든 팔이 **월드의 한 방향**으로 간다 — 북쪽을 볼 땐 앞으로 들리던 팔이
+    ///   남쪽을 보면 같은 회전이 그대로 **등 뒤로** 넘어간다. 몸이 도는데 목표는 안 도니까.
+    ///
+    ///   몸의 회전으로 감싸면(`몸 * 각도 * 몸⁻¹`) 같은 각도가 **몸의 축**에서 돌아,
+    ///   어느 쪽을 보고 있든 「오른쪽 머리 위」는 언제나 같은 「오른쪽 머리 위」가 된다.
+    static void 잡기(Transform t, Quaternion 기본, Vector3 각도, float 무게, Quaternion 몸)
     {
         if (t == null) return;
         var 부모 = t.parent != null ? t.parent.rotation : Quaternion.identity;
-        var 원하는 = Quaternion.Euler(각도) * (부모 * 기본);
+        var 몸기준 = 몸 * Quaternion.Euler(각도) * Quaternion.Inverse(몸);
+        var 원하는 = 몸기준 * (부모 * 기본);
         t.rotation = Quaternion.Slerp(t.rotation, 원하는, 무게);
     }
 }

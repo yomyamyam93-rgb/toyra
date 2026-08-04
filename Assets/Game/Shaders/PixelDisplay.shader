@@ -23,6 +23,9 @@ Shader "Toyra/PixelDisplay"
         _OutlineW ("외곽선 두께 (픽셀)", Float) = 1
         _OutlineT ("외곽선 문턱", Range(0.01,1)) = 0.18
         _OutlineS ("외곽선 세기", Range(0,1)) = 0.65
+        // 두 물체를 「다른 것」으로 칠 최소 값 차이. 한 물체 안에서는 차이가 정확히 0 이라
+        // 아주 작아도 된다 — 크게 잡으면 값이 비슷한 이웃끼리 도로 합쳐진다
+        _IdGap ("물체 구분 문턱", Range(0.002,0.2)) = 0.01
         _Sat ("채도", Range(0,2)) = 1
     }
 
@@ -45,7 +48,7 @@ Shader "Toyra/PixelDisplay"
             TEXTURE2D(_ObjMask);  SAMPLER(sampler_ObjMask);   // 물체만
             float4 _MainTex_TexelSize;
             float4 _Offset;
-            float _Levels, _Dither, _Bands, _OutlineW, _OutlineT, _OutlineS, _Sat;
+            float _Levels, _Dither, _Bands, _OutlineW, _OutlineT, _OutlineS, _Sat, _IdGap;
             float _ShowMask;    // 1 = 마스크를 그대로 보여준다 (어긋남 진단용)
             float _SilT;        // (안 씀 — 마스크 방식으로 바뀜)
             float _UseDepth;    // 1 = 마스크로 실루엣만 · 0 = 색으로 모든 경계
@@ -181,7 +184,30 @@ Shader "Toyra/PixelDisplay"
                         #define VIS(bn, mn) (step(eps, bn) * step(abs((mn) - (bn)), eps))
                         float nearVisible = max(max(VIS(bl, ml), VIS(br, mr)),
                                                 max(VIS(bd, md), VIS(bu, mu)));
-                        edge = step(b, eps) * nearVisible;
+                        float outEdge = step(b, eps) * nearVisible;
+
+                        // ★★물체끼리 맞닿은 자리 (2026-08-04 사용자 "팻들 겹칠때 아웃라인
+                        //   합쳐지는 것"). 위 「바깥선」은 **내가 배경일 때만** 그리므로,
+                        //   펫 둘이 딱 붙으면 사이에 배경 픽셀이 없어 선이 아예 안 생긴다 —
+                        //   그래서 둘이 한 덩어리로 보였다.
+                        //
+                        //   마스크에는 물체마다 다른 값(`Outliner._Id`)이 이미 찍혀 있었는데
+                        //   **그 값을 서로 견주는 곳이 없었다.** 값이 이웃과 다르면 거기가
+                        //   두 물체의 경계다. 한 물체 안에서는 값이 정확히 같으므로 안쪽에는
+                        //   선이 안 생긴다 — 예전에 문제였던 「모델 안쪽까지 선이 낀다」가
+                        //   구조적으로 일어날 수 없다.
+                        //
+                        //   ★값이 **더 큰** 이웃일 때만 그린다. 양쪽에서 다 그리면 경계에
+                        //     선이 두 겹 앉아 두 배로 굵어진다. 한쪽만 그려야 딱 한 칸이다.
+                        // ★매크로는 **한 줄로** 쓴다. `\` 로 줄을 이었더니 파일이 CRLF 라
+                        //   "Unexpected directive" 로 셰이더가 통째로 안 컴파일됐다 (분홍 화면).
+                        #define OTHER(bn, mn) (step(eps, bn) * step(abs((mn) - (bn)), eps) * step(_IdGap, (bn) - b))
+                        float otherNear = max(max(OTHER(bl, ml), OTHER(br, mr)),
+                                              max(OTHER(bd, md), OTHER(bu, mu)));
+                        // 나도 물체이고, 잔디에 가려지지 않았을 때만
+                        float gapEdge = step(eps, b) * step(abs(m - b), eps) * otherNear;
+
+                        edge = max(outEdge, gapEdge);
                     }
                     else
                     {

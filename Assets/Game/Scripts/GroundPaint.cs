@@ -64,7 +64,15 @@ public static class GroundPaint
         var tex = new Texture2D(size, size, TextureFormat.RGBA32, true)
         {
             name = "땅그림",
-            filterMode = FilterMode.Point,      // ★확대해도 뭉개지지 않게 — 텍셀이 곧 픽셀
+            // ★★★점 필터를 쓰면 안 된다 (2026-08-04 사용자 "격자로 잘려있으니까 참").
+            //   여기 「텍셀이 곧 픽셀」이라고 적혀 있었는데 **땅에서는 틀린 말이다.**
+            //   픽셀 느낌은 저해상도 렌더 타겟이 만든다 (1m = 20텍셀). 그런데 이 그림은
+            //   2048px 로 1440m — **한 텍셀이 0.70m = 렌더텍셀 14개 = 화면 42픽셀**이다.
+            //   점 필터로 뽑으면 그 42픽셀 덩어리가 그대로 보이고, 카메라가 45° 라
+            //   정사각 덩어리가 **마름모**로 읽힌다. 그게 「격자」의 정체였다.
+            //   → 이중선형으로 뽑는다. 땅은 월드에서 매끄러워지고, 픽셀로 끊는 일은
+            //     렌더 타겟이 그대로 한다. 픽셀 느낌은 하나도 안 잃는다.
+            filterMode = FilterMode.Bilinear,
             wrapMode = TextureWrapMode.Clamp
         };
 
@@ -90,8 +98,17 @@ public static class GroundPaint
                 //   ★그래도 자잘한 잡티는 안 넣는다 — 큰 면으로만.
                 float n = Mathf.PerlinNoise(w.x * 0.012f + o1, w.z * 0.012f + o1) * 0.62f
                         + Mathf.PerlinNoise(w.x * 0.040f + o1 * 1.7f, w.z * 0.040f + o1 * 1.7f) * 0.38f;
-                int 톤번호 = Mathf.Clamp(Mathf.FloorToInt(n * 톤수 * 1.15f) + 1, 1, 톤수);
-                var c = 톤색(톤번호);
+                // ★★색을 **끊지 않고 이어 붙인다** (2026-08-04 사용자 "바닥은 연속보간해줘").
+                //   전엔 여섯 톤 중 하나로 딱 떨어뜨려서, 색이 바뀌는 자리마다 선이 생겼다.
+                //   이웃한 두 톤을 섞으면 같은 여섯 색 팔레트를 그대로 쓰면서 경계가 사라진다.
+                //   ★팔레트는 그대로다 — 없던 색이 생기는 게 아니라 **사이가 채워질 뿐**이다.
+                float f = Mathf.Clamp(n * 톤수 * 1.15f, 0f, 톤수 - 1.0001f);
+                int i0 = Mathf.FloorToInt(f);
+                var c = Color.Lerp(잔디톤[i0], 잔디톤[Mathf.Min(i0 + 1, 톤수 - 1)], f - i0);
+
+                // ★잔디 포기가 쓸 톤 번호는 여전히 정수다 — 재질을 톤마다 하나씩 쓰기 때문
+                //   (`GrassField`). 땅은 이어지고 풀은 가까운 톤을 고른다
+                int 톤번호 = Mathf.Clamp(i0 + 1, 1, 톤수);
                 잔디자리[y * size + x] = (byte)톤번호;   // 물·모래·길에서 0 으로 지운다
 
                 // ② 물 — 물웅덩이 칸 둘레로 둥글게. 가운데는 깊게

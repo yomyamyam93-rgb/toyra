@@ -294,8 +294,11 @@ public class WorldGen : MonoBehaviour
 
     void Camp(Vector3 c)
     {
-        if (Swap(부화터프리팹 != null ? new[] { 부화터프리팹 } : null, c, false, 4f)) return;
-        Grey.Box(holder, c + Vector3.up * 2f, new Vector3(10f, 4f, 10f), C캠프, "부화터", 5f);
+        Swap(부화터프리팹 != null ? new[] { 부화터프리팹 } : null, c, false, 4f);
+        // ★★모델이 없으면 **아무것도 안 세운다** (2026-08-05 사용자 "바닥에 네모 바닥
+        //   시작 바닥같은거 지우라니까"). 처음엔 10×4×10 빨간 덩어리, 그다음엔 낮은
+        //   바닥판으로 줄였는데 그것도 눈에 거슬린다. 자리 표시가 화면을 더럽히면
+        //   표시로서 값을 못 한다 — 진짜 부화터 모델이 생기면 위 `Swap` 이 세운다.
     }
 
     /// 물은 **땅에 칠한다** (`GroundPaint`) — 겹침·정렬 문제가 없고 픽셀 화면과도 맞는다.

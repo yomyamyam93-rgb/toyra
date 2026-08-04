@@ -18,6 +18,14 @@ public class DayNight : MonoBehaviour
     [Tooltip("시작 시각 (0=자정 · 0.25=아침 · 0.5=정오)")] [Range(0f, 1f)] public float 시작 = 0.28f;
 
     // ★낮은 훤해야 한다. 어둠은 밤의 몫이다 (2026-08-04 사용자)
+    [Header("해 방향")]
+    [Tooltip("해를 머리 위에 박아 둔다 — 그림자가 언제나 발밑에 짧게 진다")]
+    public bool 해고정 = true;
+    [Tooltip("고정할 때 해의 높이 (°) — 90 이면 정확히 수직. 조금 기울여야 그림자가 보인다")]
+    [Range(45f, 90f)] public float 해높이 = 78f;
+    [Tooltip("고정할 때 해가 어느 쪽에서 오나 (°)")]
+    [Range(0f, 360f)] public float 해방위 = 35f;
+
     [Header("해")]
     public float 낮밝기 = 1.35f, 밤밝기 = 0.04f;
     // ★빛에 색을 섞지 않는다 (2026-08-04 사용자 — "잡다한 색들이 섞여 있어서").
@@ -116,8 +124,16 @@ public class DayNight : MonoBehaviour
 
         if (sun != null)
         {
-            // 해가 하늘을 가로지른다 — 그림자 방향이 하루 동안 돈다 (계단식으로)
-            sun.transform.rotation = Quaternion.Euler((시각L - 0.25f) * 360f, 35f, 0f);
+            // ★★해를 **머리 위에 고정**할 수 있다 (2026-08-04 사용자 "수직으로 하늘위로
+            //   태양놓고 그림자정도만 나오게").
+            //
+            //   해가 하루 동안 지평선까지 내려가면 그림자가 길게 누웠다 사라졌다 한다 —
+            //   물체가 땅에 붙어 있다는 느낌(접지)이 시간마다 달라진다. 위에 박아 두면
+            //   **언제나 발밑에 짧게** 져서, 그림자가 연출이 아니라 「거기 서 있다」는 표시가 된다.
+            //   ★밝기·색의 하루 주기는 그대로 돈다 — 고정하는 건 **방향뿐**이다.
+            sun.transform.rotation = 해고정
+                ? Quaternion.Euler(해높이, 해방위, 0f)
+                : Quaternion.Euler((시각L - 0.25f) * 360f, 35f, 0f);
             sun.intensity = Mathf.Lerp(밤밝기, 낮밝기, 낮정도);
             // 지평선 근처면 붉게 (해가 낮게 뜰 때)
             float low = 1f - Mathf.Clamp01(Mathf.Abs(elev) * 3f);

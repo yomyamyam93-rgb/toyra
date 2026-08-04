@@ -58,9 +58,13 @@ public class Hero : MonoBehaviour, IHittable
     public Vector3 LookDir { get; private set; } = Vector3.forward;
     /// 지금 뛰고 있나 — 소리로 야생을 부르는 판정에 쓴다
     public bool Running { get; private set; }
+    /// 지금 웅크리고 있나 (Ctrl) — 걷기 동작을 웅크린 것으로 바꾸는 데 쓴다 (`HeroAnim`)
+    public bool Sneaking { get; private set; }
 
     /// 밖에서 거는 이동 속도 배수 — 휘두르는 동안 발이 느려진다 (`HeroAttack`)
     [HideInInspector] public float MoveMul = 1f;
+    /// 앉아 있는 동안은 발이 묶인다 (의자) — 밖에서 건다 (`HeroAnim`)
+    [HideInInspector] public bool 묶임;
 
     /// 지금 실제로 움직이는 속도 (m/s, 수평) — 걷기 동작을 고르는 데 쓴다
     public Vector3 속도 => new Vector3(vel.x, 0f, vel.z);
@@ -89,7 +93,9 @@ public class Hero : MonoBehaviour, IHittable
         }
 
         // ── 속도 — 지구력이 바닥나면 못 뛴다
+        if (묶임) mv = Vector2.zero;                  // 의자에 앉아 있는 동안은 발이 안 나간다
         Running = wantRun && mv.sqrMagnitude > 0.01f && stamina > 1f;
+        Sneaking = wantSneak && !Running;             // 뛰면서 웅크릴 수는 없다
         float spd = Running ? run : (wantSneak ? sneak : walk);
 
         // ★뛸 때는 마우스가 아니라 **가는 쪽**을 본다 (2026-08-04 사용자).

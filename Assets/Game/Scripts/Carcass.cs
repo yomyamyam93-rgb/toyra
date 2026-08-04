@@ -31,7 +31,19 @@ public class Carcass : MonoBehaviour
             var body = c.transform.GetChild(0);
             body.SetParent(go.transform, false);
             body.localRotation = Quaternion.Euler(0f, 0f, 86f * (Random.value < 0.5f ? 1f : -1f));
-            body.localPosition = new Vector3(0f, c.종.키 * 0.18f, 0f);
+
+            // ★★띄우는 높이를 **재서** 정한다 (2026-08-05 사용자 "공중에서 뒤지는애들도있네").
+            //   전엔 `키 × 0.18` 로 짐작해 띄웠다. 상자 모델일 땐 맞았지만 지금 모델은
+            //   **원점이 이미 발밑**이라 그 띄움이 고스란히 공중으로 뜬다 (티라 4.5m 면 0.81m).
+            //   눕힌 **뒤에** 몸의 제일 낮은 점을 재서 딱 그만큼만 올린다.
+            body.localPosition = Vector3.zero;
+            Physics.SyncTransforms();
+            float 바닥 = float.MaxValue;
+            foreach (var r in body.GetComponentsInChildren<Renderer>(true))
+                바닥 = Mathf.Min(바닥, r.bounds.min.y);
+            body.localPosition = 바닥 < float.MaxValue * 0.5f
+                ? new Vector3(0f, go.transform.position.y - 바닥, 0f)
+                : new Vector3(0f, c.종.키 * 0.18f, 0f);       // 잴 게 없으면 옛 방식
         }
 
         int 몫 = Mathf.Max(1, Mathf.CeilToInt(고기량 / 3f));

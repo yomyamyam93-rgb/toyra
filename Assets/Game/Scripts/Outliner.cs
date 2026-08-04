@@ -49,7 +49,7 @@ public class Outliner : MonoBehaviour
         if (mat != null)
         {
             var ps = FindFirstObjectByType<PixelScreen>();
-            float 한픽셀 = ps != null && ps.픽셀당미터 > 0.01f ? 1f / ps.픽셀당미터 : 0.08f;
+            float 한픽셀 = ps != null && ps.유효픽셀당미터 > 0.01f ? 1f / ps.유효픽셀당미터 : 0.08f;
             mat.SetFloat("_Expand", 한픽셀 * 부풀리기);
         }
 

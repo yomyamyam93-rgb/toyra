@@ -1,4 +1,7 @@
 using UnityEngine;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 /// 캐릭터 걷기 — **동작을 고르는 게 아니라 섞는다.**
 ///
@@ -20,19 +23,36 @@ public class HeroAnim : MonoBehaviour
     [Tooltip("모델이 마우스 반대쪽을 보면 180 으로, 옆을 보면 90 또는 270 으로")]
     [Range(0f, 360f)] public float 모델회전 = 0f;
 
+    // ★★의자 (2026-08-04 사용자 "의자같은데 앉기랑 일어서기가 있는데 그건 의자같은데
+    //   상호작용하게해주면돼"). **웅크리기(Ctrl)와 다른 것**이다 — 실측으로 확인했다:
+    //   웅크린 Hips 는 77~86 인데 앉기는 97 → 56 으로 앉는 높이까지 내려간다.
+    // ★아직 씬에 의자가 없다. 그래서 지금은 시험 키로만 켠다 —
+    //   의자 물건이 생기면 그쪽이 `의자앉음` 을 켜고 끄면 그대로 돌아간다.
+    [Header("의자")]
+    [Tooltip("의자에 앉아 있나 — 의자 물건이 생기면 그쪽이 켠다")]
+    public bool 의자앉음;
+    [Tooltip("시험용 — 이 키로 앉았다 일어난다 (아직 의자가 없어서)")]
+    public Key 의자시험키 = Key.Y;      // ★기능키는 안 들어오는 일이 있다 (HeroSwap 주석 참고)
+
     Hero hero;
     Animator anim;
     float 앞뒤, 좌우, 빠르기;
+    /// 마지막으로 향했던 방향 (길이 1). 멈춰도 이걸 들고 있어야 블렌드가 원점을 안 밟는다
+    Vector2 지난방향 = Vector2.up;
 
     void Awake() { hero = GetComponent<Hero>(); }
 
     void LateUpdate()
     {
-        if (anim == null)
+        // ★몸이 바뀌면(F4 · `HeroSwap`) 애니메이터도 바뀐다. 꺼진 몸을 계속 쥐고 있으면
+        //   화면에 보이는 몸이 첫 프레임에서 굳는다 — 반드시 켜진 쪽을 다시 찾는다.
+        if (anim == null || !anim.isActiveAndEnabled)
         {
-            anim = GetComponentInChildren<Animator>();
+            anim = GetComponentInChildren<Animator>();   // 켜진 것만 찾는다
             if (anim == null) return;
         }
+
+        의자입력();
 
         // 모델 방향 보정 — 실행 중에 값을 바꾸면 바로 반영된다
         anim.transform.localRotation = Quaternion.Euler(0f, 모델회전, 0f);
@@ -70,8 +90,56 @@ public class HeroAnim : MonoBehaviour
         좌우 = Mathf.Lerp(좌우, s, k);
         빠르기 = Mathf.Lerp(빠르기, 목표빠르기, k);
 
-        anim.SetFloat("앞뒤", 앞뒤);
-        anim.SetFloat("좌우", 좌우);
+        // ★★★한 번씩 걸음이 **멈추던** 버그 (2026-08-04 사용자).
+        //
+        //   걷기 블렌드 트리에는 네 방향 클립만 있고 **가운데(0,0)에는 아무것도 없다.**
+        //   그 자리에서는 앞걷기와 뒤로걷기가, 왼걸음과 오른걸음이 서로 상쇄돼
+        //   **자세가 통째로 굳는다** — 걷는데 다리가 멈춘 것처럼 보인다.
+        //
+        //   그런데 앞뒤·좌우를 **따로** 부드럽게 하다 보니, 방향을 뒤집을 때마다
+        //   (W→S · A→D · 몸이 16칸으로 끊겨 돌 때) 좌표가 **원점을 관통**한다.
+        //   그 찰나가 곧 멈춤이다.
+        //
+        //   → 움직이는 동안에는 길이를 1 로 되돌린다. 그러면 좌표가 원을 **돌아서** 가고
+        //     한가운데를 밟지 않는다. 방향은 그대로라 걸음 자체는 안 달라진다.
+        //   ★★★방향은 **언제나 길이 1** 로 보낸다 (2026-08-05).
+        //
+        //     방향 블렌드는 **길이가 0 이거나 아주 작으면** 가중치가 정의되지 않아
+        //     상태의 클립 길이가 0 으로 계산된다. 그러면 `normalizedTime` 이 터지고
+        //     (실측 6.57×10³⁷) **한 번 터지면 눌어붙어** 애니메이션이 통째로 굳는다.
+        //     Ctrl 로 웅크렸다 펴야 풀렸던 게 이것이다 — 상태를 다시 들어가야 초기화된다.
+        //
+        //     처음엔 「멈추면 0.02 로 짧게」 로 막았는데, 그것도 결국 작은 값이라 똑같이 터졌다.
+        //     → **멈춤/걸음은 오직 `빠르기` 가 정한다.** 방향은 늘 원 위에 있고, 서 있을 땐
+        //       그 방향이 어디든 상관없다 (어차피 정지 클립만 재생되므로).
+        var 방향 = new Vector2(좌우, 앞뒤);
+        if (방향.sqrMagnitude > 1e-6f) 지난방향 = 방향.normalized;
+        방향 = 지난방향;                       // 길이는 늘 1
+
+        anim.SetFloat("앞뒤", 방향.y);
+        anim.SetFloat("좌우", 방향.x);
+
+        // ★★그래도 터졌으면 **스스로 되살린다.** 원인을 하나 막아도 다른 길로 터질 수 있고,
+        //   터진 채로 두면 사용자는 「걷기가 안 된다」로만 겪는다. 상태를 다시 들어가면 낫는다.
+        var 상태 = anim.GetCurrentAnimatorStateInfo(0);
+        if (상태.length <= 0.001f || !float.IsFinite(상태.normalizedTime) || Mathf.Abs(상태.normalizedTime) > 1e6f)
+        {
+            anim.Play(상태.fullPathHash, 0, 0f);
+            anim.Update(0f);
+        }
         anim.SetFloat("빠르기", 빠르기);
+
+        // 웅크리기는 Ctrl 을 **누르는 동안만** (사용자 확정). 앉아 있는 동안은 안 겹치게 끈다
+        anim.SetBool("앉기", hero.Sneaking && !의자앉음);
+        anim.SetBool("의자", 의자앉음);
+    }
+
+    void 의자입력()
+    {
+#if ENABLE_INPUT_SYSTEM
+        var k = Keyboard.current;
+        if (k != null && k[의자시험키].wasPressedThisFrame) 의자앉음 = !의자앉음;
+#endif
+        hero.묶임 = 의자앉음;      // 앉아 있는 동안은 발이 안 나간다
     }
 }

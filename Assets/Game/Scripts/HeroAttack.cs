@@ -32,7 +32,11 @@ public class HeroAttack : MonoBehaviour
     [Header("위력")]
     public float 피해 = 14f;
     [Tooltip("닿는 거리 (m)")] public float 사거리 = 2.2f;
-    [Tooltip("쓸고 지나가는 각도 (°)")] public float 각도 = 110f;
+    // ★★110° → 70° (2026-08-04). 팔이 **머리 위에서 앞으로 내려찍는** 동작이 되면서
+    //   판정도 앞쪽으로 좁혀야 그림과 맞는다. 110° 는 옆으로 쓸던 시절의 값이라,
+    //   시작 순간 **왼쪽 55°에 있는 놈**부터 맞아서 "앞을 안 때린다" 로 읽혔다.
+    [Tooltip("쓸고 지나가는 각도 (°) — 앞을 내려찍는 동작이라 좁다")] public float 각도 = 70f;
+    [Tooltip("손목이 젖혔다 눕는 정도 (°) — 몽둥이 끝의 궤적")] public float 손목 = 22f;
     [Tooltip("맞으면 이만큼 밀린다 (m)")] public float 넉백 = 0.6f;
     [Tooltip("맞으면 이만큼 비틀거린다 (초)")] public float 비틀 = 0.35f;
     [Tooltip("한 번 휘두를 때 쓰는 지구력")] public float 지구력소모 = 6f;
@@ -54,8 +58,13 @@ public class HeroAttack : MonoBehaviour
     [Header("몽둥이 (한손)")]
     [Tooltip("길이 (m)")] public float 길이 = 0.8f;
     [Tooltip("굵기 (m)")] public float 굵기 = 0.06f;
-    [Tooltip("손에서 앞으로 얼마나 나가나 (m) — 길이의 절반보다 작으면 손잡이 끝을 쥔 모양")]
-    public float 잡는위치 = 0.3f;
+    // ★★쥐는 자리를 **3축으로** 연다 (2026-08-05 사용자 "몽둥이도 손에 제대로 안들려있네,
+    //   이거는 내가 위치조절이 되나?"). 전엔 「앞으로 얼마나」 한 축뿐이라, 막대가 손바닥을
+    //   벗어나 떠 있어도 당겨 넣을 방법이 없었다.
+    //   ★기준은 **막대 자신의 축**이다: z = 막대가 뻗는 쪽 · x = 손등 좌우 · y = 위아래.
+    //     z 를 줄이면 손잡이 끝을 쥐고, 늘리면 가운데를 쥔다.
+    [Tooltip("손에서 얼마나 떨어져 쥐나 (m) — z=막대 방향 · x=좌우 · y=위아래")]
+    public Vector3 쥔자리 = new Vector3(0f, 0f, 0.3f);
     [Tooltip("팔 방향에서 더 기울이는 각도 (°) — x 를 음수로 주면 끝이 위로 선다")]
     public Vector3 기울임 = new Vector3(-25f, 0f, 0f);
 
@@ -131,7 +140,7 @@ public class HeroAttack : MonoBehaviour
 
         var 손 = 손뼈 != null ? 손뼈.position
                              : transform.TransformPoint(new Vector3(0.3f, 1.15f, 0.15f));
-        무기.SetPositionAndRotation(손 + 회전 * Vector3.forward * 잡는위치, 회전);
+        무기.SetPositionAndRotation(손 + 회전 * 쥔자리, 회전);
         무기.localScale = new Vector3(굵기, 굵기, 길이);
     }
 
@@ -236,15 +245,18 @@ public class HeroAttack : MonoBehaviour
             if (몸 != null) 몸.localRotation = Quaternion.identity;
             return;
         }
-        스윙yaw = dir < 0f ? Mathf.Lerp(0f, -각도 * 0.55f, k)
-                           : Mathf.Lerp(-각도 * 0.5f, 각도 * 0.5f, k);
-        스윙pitch = dir < 0f ? -20f * k : Mathf.Lerp(-20f, 25f, k);
-        float yaw = 스윙yaw;
+        // ★★★몽둥이를 **따로** 휘두르지 않는다 (2026-08-04 사용자 "때리는 모션이 맞긴 한데
+        //   정확히 앞부분을 때리질 않네, 몽둥이 궤적이 좀..").
+        //
+        //   전엔 팔이 안 움직여서 **몽둥이만** 세상 기준 yaw 로 ±55° 옆으로 쓸었다.
+        //   그런데 이제 `HeroHold` 가 팔을 오른쪽 머리 위 → 앞아래로 실제로 내려친다.
+        //   그 위에 옆쓸기까지 얹으니 **두 동작이 겹쳐** 궤적이 옆으로 밀리고 앞을 못 때렸다.
+        //   → 몽둥이는 이제 **손을 따라가기만** 한다. 휘두르는 것은 팔의 몫이다.
+        //   ★남긴 pitch 는 손목이다 — 감을 때 끝을 세우고 칠 때 눕힌다. 옆으로는 안 민다.
+        스윙yaw = 0f;
+        스윙pitch = dir < 0f ? -손목 * k : Mathf.Lerp(-손목, 손목 * 0.6f, k);
 
-        // 몸도 같이 쓴다 — 팔만 움직이면 나무토막처럼 보인다
-        if (몸 != null)
-            몸.localRotation = Quaternion.Euler(dir < 0f ? -6f * k : Mathf.Lerp(-6f, 9f, k),
-                                                yaw * 0.25f, 0f);
+        // 몸은 `HeroHold` 가 골반·척추로 돌린다 (여기서 또 돌리면 두 번 돈다)
     }
 
     /// a→b 각도 구간을 쓸면서, 그 안에 든 놈을 한 번씩 맞힌다

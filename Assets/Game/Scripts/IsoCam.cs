@@ -36,18 +36,48 @@ public class IsoCam : MonoBehaviour
     [Range(0f, 0.5f)] public float mouseLead = 0.18f;
     [Tooltip("클수록 딱 붙어 따라온다")] public float follow = 9f;
 
+    // ★★★카메라가 얼마나 뒤에 서나 (2026-08-04 사용자 "그림자 없어").
+    //   직교 투영이라 이 값은 **화면을 안 바꾼다** — 그래서 예전엔 넉넉하게 300m 였다.
+    //   그런데 **URP 의 그림자 거리는 카메라에서 잰다.** 300m 밖에 서 있으면 화면 안의
+    //   모든 것이 그림자 범위(50m) 밖이라, 빛과 재질을 아무리 맞춰도 그림자가 안 나온다.
+    //   → 잘림면만 안 걸릴 만큼만 물러난다. 그림자 거리 안에 화면이 통째로 들어온다.
+    [Tooltip("카메라가 뒤로 물러나는 거리 (m) — 직교라 화면은 안 변한다. 그림자 거리 안에 들어와야 한다")]
+    public float 물러남 = 50f;
+
     Camera cam;
     PixelSnapper snapper;
+    PixelScreen 픽셀;
     float sizeT;
     Vector3 look;
+
+    /// ★마우스 자리를 **본 카메라가 실제로 그리는 화면 기준**으로 옮겨서 광선을 쏜다.
+    ///   픽셀 화면이 켜져 있으면 본 카메라는 저해상도 텍스처에 그리므로, 화면 좌표를
+    ///   그대로 넣으면 줌인할수록 엉뚱한 데를 가리킨다 (`PixelScreen.화면점` 주석 참고).
+    bool 마우스광선(out Ray ray)
+    {
+        ray = default;
+        if (cam == null) return false;
+#if ENABLE_INPUT_SYSTEM
+        var m = Mouse.current;
+        if (m == null) return false;
+        Vector2 p = m.position.ReadValue();
+#else
+        Vector2 p = Input.mousePosition;
+#endif
+        if (픽셀 == null) 픽셀 = GetComponent<PixelScreen>();
+        if (픽셀 != null && 픽셀.enabled) p = 픽셀.화면점(p);
+        ray = cam.ScreenPointToRay(p);
+        return true;
+    }
 
     void Awake()
     {
         cam = GetComponent<Camera>();
         if (cam == null) cam = gameObject.AddComponent<Camera>();
         cam.orthographic = true;
-        cam.nearClipPlane = 1f;
-        cam.farClipPlane = 800f;
+        // 물러난 거리에 맞춰 잘림면을 좁힌다 — 넓게 잡아 봐야 얻는 게 없고 깊이 정밀도만 잃는다
+        cam.nearClipPlane = 0.3f;
+        cam.farClipPlane = 물러남 * 2f + 120f;
         sizeT = size;
         if (target == null)
         {
@@ -77,7 +107,7 @@ public class IsoCam : MonoBehaviour
             float sc = Input.GetAxis("Mouse ScrollWheel") * 100f;
 #endif
             if (Mathf.Abs(sc) > 0.01f) sizeT = Mathf.Clamp(sizeT - Mathf.Sign(sc) * zoomStep, minSize, maxSize);
-            size = Mathf.Lerp(size, sizeT, 10f * Time.deltaTime);
+            size = Mathf.Lerp(size, sizeT, 1f - Mathf.Exp(-10f * Time.deltaTime));
             cam.orthographicSize = size;
         }
         else size = cam.orthographicSize;
@@ -88,7 +118,13 @@ public class IsoCam : MonoBehaviour
         if (snapper == null) snapper = FindFirstObjectByType<PixelSnapper>();
         var 기준 = snapper != null ? snapper.진짜자리(target) : target.position;
         var want = 기준 + MouseLead();
-        look = Vector3.Lerp(look, want, follow * Time.deltaTime);
+        // ★★프레임률에 안 흔들리는 따라가기 (2026-08-04 사용자 "카메라가 너무 저프레임으로
+        //   움직이는 느낌이 나"). `follow * dt` 를 그대로 섞으면 **한 프레임이 길어질 때마다
+        //   더 많이 따라잡아** 프레임이 튀는 만큼 카메라가 덜컥거린다. 프레임이 고르지
+        //   않을수록 심해져서 「저프레임처럼 보이는」 정체가 된다.
+        //   지수식은 dt 가 얼마든 **같은 시간에 같은 만큼** 좁혀서 그 덜컥임이 사라진다.
+        //   (`HeroAnim` 이 이미 쓰는 식과 같다)
+        look = Vector3.Lerp(look, want, 1f - Mathf.Exp(-follow * Time.deltaTime));
 
         Apply();
     }
@@ -97,7 +133,7 @@ public class IsoCam : MonoBehaviour
     {
         var rot = Quaternion.Euler(pitch, yaw, 0f);
         transform.rotation = rot;
-        transform.position = look + rot * Vector3.back * 300f;   // 직교라 거리는 잘림면만 정한다
+        transform.position = look + rot * Vector3.back * 물러남;
     }
 
     /// 숫자를 정하는 동안만 띄우는 값 — 화면 가로지르는 시간이 곧 체감 템포다
@@ -117,13 +153,7 @@ public class IsoCam : MonoBehaviour
     Vector3 MouseLead()
     {
         if (mouseLead <= 0f || cam == null) return Vector3.zero;
-#if ENABLE_INPUT_SYSTEM
-        var m = Mouse.current;
-        if (m == null) return Vector3.zero;
-        var ray = cam.ScreenPointToRay(m.position.ReadValue());
-#else
-        var ray = cam.ScreenPointToRay(Input.mousePosition);
-#endif
+        if (!마우스광선(out var ray)) return Vector3.zero;
         var plane = new Plane(Vector3.up, target.position);
         if (!plane.Raycast(ray, out float t)) return Vector3.zero;
         var v = ray.GetPoint(t) - target.position;
@@ -138,14 +168,7 @@ public class IsoCam : MonoBehaviour
     public bool MouseGround(float y, out Vector3 hit)
     {
         hit = Vector3.zero;
-        if (cam == null) return false;
-#if ENABLE_INPUT_SYSTEM
-        var m = Mouse.current;
-        if (m == null) return false;
-        var ray = cam.ScreenPointToRay(m.position.ReadValue());
-#else
-        var ray = cam.ScreenPointToRay(Input.mousePosition);
-#endif
+        if (!마우스광선(out var ray)) return false;
         var plane = new Plane(Vector3.up, new Vector3(0f, y, 0f));
         if (!plane.Raycast(ray, out float t)) return false;
         hit = ray.GetPoint(t);

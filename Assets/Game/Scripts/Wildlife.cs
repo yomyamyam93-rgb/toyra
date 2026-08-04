@@ -141,16 +141,21 @@ public class Wildlife : MonoBehaviour
         var home = WorldGrid.Center;
         if ((new Vector2(p.x - home.x, p.z - home.z)).sqrMagnitude < 집안전반경 * 집안전반경) return null;
 
+        // ★★늑구·호동을 뺐다 (2026-08-04 사용자 "늑구, 호동쪽 묶음팻은 없애줘").
+        //   둘은 무리로 몰려다니는 종이라(늑구 4~8 · 호동 2~4) 화면이 금세 그것들로 찬다.
+        //   지금 남은 것은 티라(혼자)와 꼭꼬(작은 떼) 둘뿐이다.
+        //   ★정의는 지운 게 아니라 **안 부르는 것**이다 — 인스펙터 값이 살아 있어서
+        //     되살리려면 아래 case 에 이름만 다시 넣으면 된다.
         var land = world != null ? world.KindAt(p) : WorldGen.Land.빈들판;
         SpeciesDef s;
         switch (land)
         {
             case WorldGen.Land.물웅덩이: return null;
-            case WorldGen.Land.숲: s = Random.value < 0.6f ? 늑구 : 꼭꼬; break;
+            case WorldGen.Land.숲: s = 꼭꼬; break;
             case WorldGen.Land.둥지: s = 꼭꼬; break;
-            case WorldGen.Land.바위지대: s = Random.value < 0.5f ? 티라 : 호동; break;
-            case WorldGen.Land.폐허: s = 호동; break;
-            default: s = Random.value < 0.5f ? 늑구 : 호동; break;
+            case WorldGen.Land.바위지대: s = 티라; break;
+            case WorldGen.Land.폐허: s = 티라; break;
+            default: s = Random.value < 0.7f ? 꼭꼬 : 티라; break;
         }
 
         // 활동 시간이 안 맞으면 안 나온다 — 밤에만 도는 종이 생기는 자리

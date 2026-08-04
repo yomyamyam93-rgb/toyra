@@ -40,7 +40,8 @@ public class PixelSnapper : MonoBehaviour
         if (화면 == null) 화면 = cam.GetComponent<PixelScreen>();
         if (화면 == null || !화면.켬) return;
 
-        float ppu = Mathf.Max(1f, 화면.픽셀당미터);
+        // ★줌을 얹은 값을 쓴다 — 줌이 연속으로 바뀌므로 격자도 같이 따라와야 한다
+        float ppu = Mathf.Max(0.5f, 화면.유효픽셀당미터);
         var right = cam.transform.right;
         var up = cam.transform.up;
 
@@ -81,7 +82,29 @@ public class PixelSnapper : MonoBehaviour
             float a = Vector3.Dot(p, right), b = Vector3.Dot(p, up);
             float sa = Mathf.Round(a * ppu) / ppu;
             float sb = Mathf.Round(b * ppu) / ppu;
-            var snapped = p + right * (sa - a) + up * (sb - b);
+
+            // ★★위아래로는 **절대 안 민다** (2026-08-04 사용자 "가만히 서있을때 위아래로
+            //   엄청나게 떨리는 버그"). 예전엔 `up` 을 그대로 밀었는데, 내려보는 각도가 40°라
+            //   `up` 의 월드 Y 성분이 0.77 이나 된다 → 물체를 **실제로 공중에 띄운다.**
+            //   그런데 `Hero.Update` 는 매 프레임 `pos.y = 0` 으로 되돌린다. 띄운 만큼이
+            //   나머지에 남았는데 자리는 0 으로 돌아가니, 나머지가 영영 안 줄고 매 프레임
+            //   다시 띄웠다 내렸다 한다 — 그게 떨림의 정체다. 0.05m 를 60번/초 왕복했다.
+            //
+            // ★그래도 화면에서는 정확히 픽셀 위에 선다. 화면 세로 = `dot(자리, up)` 인데,
+            //   높이가 고정이면 **땅 위에서 옆으로 밀어도 같은 값을 만들 수 있기** 때문이다.
+            //   `up` 을 땅에 눕힌 방향으로 밀되, 눕히면서 짧아진 만큼(= sin(내려보는각))
+            //   나눠서 보정한다. 세로 픽셀 정렬은 그대로, 몸은 땅에 붙어 있다.
+            var 눕힌up = new Vector3(up.x, 0f, up.z);
+            float 길이 = 눕힌up.magnitude;
+            var 세로밀기 = Vector3.zero;
+            if (길이 > 1e-4f)
+            {
+                눕힌up /= 길이;
+                float 몫 = Vector3.Dot(눕힌up, up);      // = sin(내려보는각). 40°면 0.643
+                if (몫 > 1e-3f) 세로밀기 = 눕힌up * ((sb - b) / 몫);
+            }
+            // `right` 는 카메라에 기울임(roll)이 없어 이미 수평이다 — 그대로 써도 안 뜬다
+            var snapped = p + right * (sa - a) + 세로밀기;
 
             n.자리 = p - snapped;                        // 이번에 잘라낸 몫을 들고 있는다
             t.position = snapped;
