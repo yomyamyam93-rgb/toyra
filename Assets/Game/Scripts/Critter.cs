@@ -142,6 +142,7 @@ public class Critter : MonoBehaviour, IHittable
     float downTotal, downSign = 1f;
     IHittable target;
     float findCd, atkCd, squash, wanderCd, stateT;
+    bool 따라가는중;
     Vector3 wander, 집;
     bool 대표;                     // 무리에서 한 마리만 무리 냉각을 돌린다
 
@@ -205,8 +206,20 @@ public class Critter : MonoBehaviour, IHittable
         // 내 편은 겁내지 않는다 — 주인이 시킨 자리를 지킨다
         if (side == Side.내편)
         {
-            지금상태(적있음 ? (d적 <= 때리는거리(target) ? 상태.공격 : 상태.접근)
-                          : (owner != null && Flat(owner.position, transform.position) > 4f ? 상태.복귀 : 상태.어슬렁));
+            if (적있음) { 지금상태(d적 <= 때리는거리(target) ? 상태.공격 : 상태.접근); return; }
+
+            // ★★따라가기와 어슬렁이 겹치면 안 된다 (2026-08-04 사용자 지적).
+            //   전에는 "4m 밖이면 따라가고 안이면 어슬렁" 이었는데, 어슬렁이 7m 밖 지점을
+            //   고르는 바람에 **멀어지려는 행동과 붙으려는 행동이 매 순간 교대**했다.
+            //   방향이 계속 뒤집혀 헤드뱅잉이 된 정체가 이것이다.
+            //
+            //   → **내 편은 어슬렁대지 않는다.** 따라가거나 서 있거나 둘 중 하나다.
+            //     문턱도 벌린다 (멀어지면 4.5m 부터 따라가고, 2m 안에 들면 선다).
+            float d주인 = owner != null ? Flat(내자리, transform.position) : 0f;
+            if (따라가는중) { if (d주인 < 1.2f) 따라가는중 = false; }
+            else if (d주인 > 4.5f) 따라가는중 = true;
+
+            지금상태(따라가는중 ? 상태.복귀 : 상태.어슬렁);
             return;
         }
 
@@ -292,12 +305,14 @@ public class Critter : MonoBehaviour, IHittable
         switch (지금)
         {
             case 상태.어슬렁:
+                // ★내 편은 어슬렁대지 않는다 — 서서 기다린다 (위 「겹치면 안 된다」 참고)
+                if (side == Side.내편) break;
+
                 wanderCd -= dt;
                 if (wanderCd <= 0f)
                 {
                     wanderCd = Random.Range(2.5f, 6f);
-                    var c = side == Side.내편 && owner != null ? owner.position : 집;
-                    wander = c + new Vector3(Random.Range(-8f, 8f), 0f, Random.Range(-8f, 8f));
+                    wander = 집 + new Vector3(Random.Range(-8f, 8f), 0f, Random.Range(-8f, 8f));
                 }
                 if (Flat(wander, transform.position) > 1f) 걷기(wander, dt, 0.45f);
                 break;
@@ -323,7 +338,7 @@ public class Critter : MonoBehaviour, IHittable
                 break;
 
             case 상태.복귀:
-                걷기(side == Side.내편 && owner != null ? owner.position : 집, dt, 0.9f);
+                걷기(side == Side.내편 && owner != null ? 내자리 : 집, dt, 0.9f);
                 break;
         }
     }
@@ -333,7 +348,8 @@ public class Critter : MonoBehaviour, IHittable
     void 걷기(Vector3 goal, float dt, float 배)
     {
         var d = goal - transform.position; d.y = 0f;
-        if (d.sqrMagnitude < 1e-4f) return;
+        // ★목표에 거의 닿았으면 아예 안 움직인다 — 안 그러면 목표 언저리에서 잘게 떤다
+        if (d.sqrMagnitude < 0.16f) return;
         d.Normalize();
 
         var pos = transform.position + d * 종.이속 * 배 * dt;
@@ -343,19 +359,22 @@ public class Critter : MonoBehaviour, IHittable
         pos.z = Mathf.Clamp(pos.z, 1f, WorldGrid.Size - 1f);
         pos.y = 0f;
         transform.position = pos;
-        transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(d, Vector3.up), 10f * dt);
+        Face(d);
     }
 
     void 바라보기(Vector3 at, float dt)
     {
-        var d = at - transform.position; d.y = 0f;
-        if (d.sqrMagnitude < 1e-4f) return;
-        transform.rotation = Quaternion.Slerp(transform.rotation,
-            Quaternion.LookRotation(d.normalized, Vector3.up), 8f * dt);
+        Face(at - transform.position);
     }
 
+    /// ★서로 밀어내되 **부드럽게** (2026-08-04 사용자 — "비비면서 두두두두 떨리지 않게").
+    ///   한 프레임에 완전히 밀어내면 두 마리가 서로를 튕겨내며 진동한다.
+    ///   ①조금씩만 밀고 ②아주 살짝 겹친 건 그냥 둔다 — 그러면 스르르 자리를 잡는다.
     Vector3 서로밀기(Vector3 pos)
     {
+        const float 여유 = 0.06f;   // 이만큼 겹친 건 못 본 척한다
+        const float 세기 = 0.35f;   // 한 프레임에 이 비율만큼만 민다
+
         for (int i = 0; i < All.Count; i++)
         {
             var o = All[i];
@@ -363,7 +382,10 @@ public class Critter : MonoBehaviour, IHittable
             var v = pos - o.transform.position; v.y = 0f;
             float need = (종.반지름 + o.종.반지름) * 0.9f;
             float d = v.magnitude;
-            if (d < need && d > 1e-3f) pos = o.transform.position + v / d * need;
+            if (d >= need - 여유 || d <= 1e-3f) continue;
+
+            var 목표 = o.transform.position + v / d * need;
+            pos = Vector3.Lerp(pos, 목표, 세기);
         }
         return pos;
     }
@@ -503,6 +525,59 @@ public class Critter : MonoBehaviour, IHittable
         squash = Mathf.Max(0f, squash - dt * 4f);
         float k = 1f + squash * 0.3f;
         body.localScale = new Vector3(bodyScale.x * k, bodyScale.y / k, bodyScale.z * k);
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  ★방향은 16칸으로 — **결과를 밀지 말고 목표를 끊는다** (2026-08-04)
+    //
+    //  처음엔 다 돌아간 각도를 `PixelSnapper` 가 매 프레임 격자로 밀었다. 그런데 펫은
+    //  목표를 향해 **조금씩** 도는 방식이라, 밀어 놓으면 다음 프레임에 다시 목표 쪽으로
+    //  조금 돌고, 또 밀리고… **진자처럼 흔들렸다** (사용자 "엄청나게 헤드뱅잉").
+    //
+    //  → 애초에 **바라볼 각도 자체를 16칸 중 하나로 고르고 즉시 그쪽을 본다.**
+    //    싸울 상대가 없으니 흔들릴 일이 없고, 옛 도트 게임의 뚝뚝 끊기는 방향 전환이 된다.
+    //  → 경계에서 두 칸을 오가지 않게 **버티기**를 둔다 (한 칸의 60% 넘게 벗어나야 넘어간다).
+    // ══════════════════════════════════════════════════════════
+    // ★★따라다니는 펫은 **저마다 자기 자리**가 있어야 한다 (2026-08-04 사용자
+    //   "비비면서 존나 떤다"). 전에는 셋 다 **주인의 똑같은 한 점**을 목표로 삼았다:
+    //   서로 겹치면 밀려나고, 밀려나면 또 그 점으로 가고 — 영원히 떤다.
+    //   밀어내는 세기를 줄여도 원인이 그대로라 안 없어진다.
+    //   → 주인 뒤쪽으로 부챗살 자리를 하나씩 나눠 준다. 자기 자리에 서면 더 안 움직인다.
+    static int 자리번호;
+    int 내번호 = -1;
+
+    Vector3 내자리
+    {
+        get
+        {
+            if (owner == null) return transform.position;
+            if (내번호 < 0) 내번호 = 자리번호++;
+
+            // 주인 뒤쪽 반원에 부챗살로 — 번호가 커질수록 옆·뒤로
+            float a = (내번호 % 6) * 52f - 130f;
+            float r = 2.0f + (내번호 / 6) * 1.5f + 종.반지름 * 2f;
+            var dir = Quaternion.Euler(0f, owner.eulerAngles.y + a, 0f) * Vector3.back;
+            return owner.position + dir * r;
+        }
+    }
+
+    public static int 방향수 = 16;
+    float 본각도; bool 각도있음;
+
+    void Face(Vector3 dir)
+    {
+        dir.y = 0f;
+        if (dir.sqrMagnitude < 1e-6f) return;
+        float want = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+
+        if (방향수 < 2) { transform.rotation = Quaternion.Euler(0f, want, 0f); return; }
+
+        float step = 360f / 방향수;
+        if (!각도있음) { 본각도 = Mathf.Round(want / step) * step; 각도있음 = true; }
+        else if (Mathf.Abs(Mathf.DeltaAngle(본각도, want)) > step * 0.6f)
+            본각도 = Mathf.Round(want / step) * step;
+
+        transform.rotation = Quaternion.Euler(0f, 본각도, 0f);
     }
 
     static float Flat(Vector3 a, Vector3 b) { a.y = 0f; b.y = 0f; return Vector3.Distance(a, b); }

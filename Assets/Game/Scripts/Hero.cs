@@ -62,6 +62,9 @@ public class Hero : MonoBehaviour, IHittable
     /// 밖에서 거는 이동 속도 배수 — 휘두르는 동안 발이 느려진다 (`HeroAttack`)
     [HideInInspector] public float MoveMul = 1f;
 
+    /// 지금 실제로 움직이는 속도 (m/s, 수평) — 걷기 동작을 고르는 데 쓴다
+    public Vector3 속도 => new Vector3(vel.x, 0f, vel.z);
+
     Vector3 vel;
     IsoCam cam;
 
@@ -84,11 +87,21 @@ public class Hero : MonoBehaviour, IHittable
             var d = g - transform.position; d.y = 0f;
             if (d.sqrMagnitude > 0.01f) LookDir = d.normalized;
         }
-        transform.rotation = Quaternion.LookRotation(LookDir, Vector3.up);
 
         // ── 속도 — 지구력이 바닥나면 못 뛴다
         Running = wantRun && mv.sqrMagnitude > 0.01f && stamina > 1f;
         float spd = Running ? run : (wantSneak ? sneak : walk);
+
+        // ★뛸 때는 마우스가 아니라 **가는 쪽**을 본다 (2026-08-04 사용자).
+        //   달리면서 싸울 일이 없으니 시선을 붙들 이유가 없고, 몸과 진행 방향이
+        //   어긋나면 옆걸음·뒷걸음 블렌드가 섞여 달리기가 달리기로 안 읽힌다.
+        //   (걷기는 그대로 마우스 기준 — 보면서 물러나는 게 전투의 뼈대다)
+        var 갈방향 = Quaternion.Euler(0f, cam != null ? cam.yaw : 45f, 0f)
+                   * new Vector3(mv.x, 0f, mv.y);
+        if (Running && 갈방향.sqrMagnitude > 0.01f) LookDir = 갈방향.normalized;
+
+        // 사람도 16칸으로 본다 (`Critter.Face` 와 같은 규칙 — 버티기 포함)
+        FaceQuantized(LookDir);
 
         stamina += (Running ? -runCost : regen) * Time.deltaTime;
         stamina = Mathf.Clamp(stamina, 0f, maxStamina);
@@ -97,9 +110,9 @@ public class Hero : MonoBehaviour, IHittable
         spd *= Mathf.Clamp(MoveMul, 0.05f, 1f);      // 휘두르는 동안 발이 느려진다
 
         // ── 이동 (화면 기준 — 카메라가 고정이라 항상 같다)
-        var want = new Vector3(mv.x, 0f, mv.y);
+        var want = 갈방향;
         if (want.sqrMagnitude > 1f) want.Normalize();
-        want = Quaternion.Euler(0f, cam != null ? cam.yaw : 45f, 0f) * want * spd;
+        want *= spd;
 
         vel = Vector3.MoveTowards(vel, want, accel * Time.deltaTime);
 
@@ -109,6 +122,26 @@ public class Hero : MonoBehaviour, IHittable
         pos.z = Mathf.Clamp(pos.z, 1f, WorldGrid.Size - 1f);
         pos.y = 0f;
         transform.position = pos;
+    }
+
+    /// 바라보는 방향을 16칸 중 하나로 — 결과를 밀지 않고 **목표를 끊는다**
+    /// (`Critter.Face` 와 같은 규칙. 이유는 그쪽 주석 참고)
+    float 본각도; bool 각도있음;
+    void FaceQuantized(Vector3 dir)
+    {
+        dir.y = 0f;
+        if (dir.sqrMagnitude < 1e-6f) return;
+        float want = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+
+        int n = Critter.방향수;
+        if (n < 2) { transform.rotation = Quaternion.Euler(0f, want, 0f); return; }
+
+        float step = 360f / n;
+        if (!각도있음) { 본각도 = Mathf.Round(want / step) * step; 각도있음 = true; }
+        else if (Mathf.Abs(Mathf.DeltaAngle(본각도, want)) > step * 0.6f)
+            본각도 = Mathf.Round(want / step) * step;
+
+        transform.rotation = Quaternion.Euler(0f, 본각도, 0f);
     }
 
     void ReadKeys(out Vector2 mv, out bool wantRun, out bool wantSneak)

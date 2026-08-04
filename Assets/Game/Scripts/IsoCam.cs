@@ -37,6 +37,7 @@ public class IsoCam : MonoBehaviour
     [Tooltip("클수록 딱 붙어 따라온다")] public float follow = 9f;
 
     Camera cam;
+    PixelSnapper snapper;
     float sizeT;
     Vector3 look;
 
@@ -61,19 +62,32 @@ public class IsoCam : MonoBehaviour
     {
         if (target == null) return;
 
-        // 줌 — 휠. 회전 입력은 아예 읽지 않는다 (고정 카메라)
-#if ENABLE_INPUT_SYSTEM
-        var m = Mouse.current;
-        float sc = m != null ? m.scroll.ReadValue().y : 0f;
-#else
-        float sc = Input.GetAxis("Mouse ScrollWheel") * 100f;
-#endif
-        if (Mathf.Abs(sc) > 0.01f) sizeT = Mathf.Clamp(sizeT - Mathf.Sign(sc) * zoomStep, minSize, maxSize);
-        size = Mathf.Lerp(size, sizeT, 10f * Time.deltaTime);
-        cam.orthographicSize = size;
+        // ★픽셀 화면이 켜져 있으면 줌·시야는 그쪽이 쥔다 — 픽셀 밀도를 고정해야 하므로
+        //   시야 크기를 마음대로 바꿀 수 없다 (`PixelScreen.픽셀당미터`)
+        var px = GetComponent<PixelScreen>();
+        bool 픽셀이쥠 = px != null && px.enabled && px.켬;
 
-        // 바라보는 지점 — 캐릭터 + 마우스 쪽으로 조금
-        var want = target.position + MouseLead();
+        if (!픽셀이쥠)
+        {
+            // 줌 — 휠. 회전 입력은 아예 읽지 않는다 (고정 카메라)
+#if ENABLE_INPUT_SYSTEM
+            var m = Mouse.current;
+            float sc = m != null ? m.scroll.ReadValue().y : 0f;
+#else
+            float sc = Input.GetAxis("Mouse ScrollWheel") * 100f;
+#endif
+            if (Mathf.Abs(sc) > 0.01f) sizeT = Mathf.Clamp(sizeT - Mathf.Sign(sc) * zoomStep, minSize, maxSize);
+            size = Mathf.Lerp(size, sizeT, 10f * Time.deltaTime);
+            cam.orthographicSize = size;
+        }
+        else size = cam.orthographicSize;
+
+        // 바라보는 지점 — 캐릭터 + 마우스 쪽으로 조금.
+        // ★캐릭터는 픽셀 격자로 끊겨 움직이므로, 그 자리를 그대로 좇으면 카메라가
+        //   한 칸씩 튄다. **끊기 전 진짜 자리**를 따라가야 부드럽다 (2026-08-04).
+        if (snapper == null) snapper = FindFirstObjectByType<PixelSnapper>();
+        var 기준 = snapper != null ? snapper.진짜자리(target) : target.position;
+        var want = 기준 + MouseLead();
         look = Vector3.Lerp(look, want, follow * Time.deltaTime);
 
         Apply();

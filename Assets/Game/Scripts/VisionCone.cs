@@ -12,7 +12,7 @@ public class VisionCone : MonoBehaviour
     // ★낮엔 사방이 보여야 한다 (2026-08-03 사용자 — "기존이 낮이었어? 밤인 줄 알았는데").
     //   낮에도 부채꼴 밖을 88% 어둡게 하고 있어서 대낮이 밤처럼 보였다.
     //   좀보이드도 낮엔 주변이 다 보이고, 시야가 뜻을 갖는 건 **밤과 실내**다.
-    //   → 낮 어둠은 옅게(0.38), 밤에 짙어진다(`DayNight.밤어둠`).
+    //   → 낮 어둠은 0, 밤에만 짙어진다(`DayNight.밤어둠`).
     [Header("시야")]
     [Tooltip("보이는 거리 (m) — 낮 기준")] public float distance = 45f;
     [Tooltip("부채꼴 반각 (°) — 55 면 110° 만큼 보인다")] public float halfAngle = 55f;
@@ -24,8 +24,13 @@ public class VisionCone : MonoBehaviour
     public float nearSoft = 3f;
 
     [Header("어둠")]
-    [Range(0f, 1f)] [Tooltip("낮에 부채꼴 밖이 얼마나 어두운가 (1 이면 칠흑)")] public float darkness = 0.38f;
-    [Range(0f, 0.6f)] [Tooltip("밝은 안쪽도 멀수록 조금씩 어두워지는 정도")] public float falloff = 0.25f;
+    // ★★낮에는 시야가 **아예 없다** (2026-08-04 사용자 — "낮에는 시야같은 게 아예 안 뜨게,
+    //   밤에만 시야 적용"). 전엔 낮에도 옅은 어둠(0.06)과 거리 감쇠(0.08)가 남아 있어서
+    //   대낮인데도 화면 가장자리가 침침했다. 이제 낮 값은 **0 이 아니라 아예 없다** —
+    //   인스펙터 값으로 두면 씬에 저장된 옛 숫자가 다시 살아나므로 필드째 지웠다.
+    //   낮 어둠은 코드가 0 으로 못박고, 밤 어둠은 `DayNight.밤어둠` 이 정한다.
+    [Range(0f, 0.6f)] [Tooltip("밤에 밝은 안쪽도 멀수록 어두워지는 정도 (낮엔 안 걸린다)")]
+    public float falloff = 0.08f;
 
     Hero hero;
     Camera cam;
@@ -80,15 +85,18 @@ public class VisionCone : MonoBehaviour
         var p = hero.transform.position + Vector3.up * (hero.height * 0.8f);
         var d = hero.LookDir;
 
-        // 밤이면 보이는 거리가 줄고 어둠이 짙어진다 — 밤을 「다른 규칙의 시간」으로 만드는 자리
+        // 밤이면 보이는 거리가 줄고 어둠이 짙어진다 — 밤을 「다른 규칙의 시간」으로 만드는 자리.
+        // 낮(낮정도 1)에는 어둠도 감쇠도 0 이라 덮개가 아무것도 안 그린다.
         float dist = day != null ? distance * day.시야배 : distance;
-        float dark = day != null ? day.어둠(darkness) : darkness;
+        float dark = day != null ? day.어둠() : 0f;
+        // 감쇠도 어둠과 같은 곡선을 탄다 — 어둠이 0 인 낮엔 이것도 0 이어야 자국이 안 남는다
+        float fall = day != null && day.밤어둠 > 1e-4f ? falloff * (dark / day.밤어둠) : falloff;
 
         Shader.SetGlobalVector("_VisionPos", p);
         Shader.SetGlobalVector("_VisionDir", new Vector4(d.x, 0f, d.z, 0f));
         Shader.SetGlobalVector("_VisionAngle", new Vector4(halfAngle, Mathf.Max(0.5f, edgeSoft), 0f, 0f));
         Shader.SetGlobalVector("_VisionDist",
             new Vector4(dist, Mathf.Max(0.5f, distSoft), nearRadius, Mathf.Max(0.5f, nearSoft)));
-        Shader.SetGlobalVector("_VisionDark", new Vector4(dark, falloff, 0f, 0f));
+        Shader.SetGlobalVector("_VisionDark", new Vector4(dark, fall, 0f, 0f));
     }
 }

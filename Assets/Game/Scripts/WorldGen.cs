@@ -123,13 +123,19 @@ public class WorldGen : MonoBehaviour
         holder = new GameObject("월드").transform;
         holder.SetParent(transform, false);
 
-        MakeGround();
+        MakeGround(seed);
 
         int n = WorldGrid.N;
         for (int x = 0; x < n; x++)
             for (int z = 0; z < n; z++)
             {
                 var k = kinds[x, z];
+
+                // ★어느 칸이든 돌·나무를 조금씩 흩뿌린다 (2026-08-04 사용자 "돌이랑 나무도
+                //   좀 넣어줘봐"). 빈 들판이 정말로 텅 비어 있으면 걸어갈 맛이 없다.
+                Random.InitState(WorldGrid.TileSeed(seed, x, z) ^ 0x77aa);
+                if (k != Land.캠프 && k != Land.물웅덩이) 흩뿌리기(x, z, k);
+
                 if (k == Land.빈들판) continue;
 
                 Random.InitState(WorldGrid.TileSeed(seed, x, z) ^ 0x5f3a);
@@ -165,16 +171,38 @@ public class WorldGen : MonoBehaviour
         holder = null;
     }
 
-    /// 땅 — 지형이 아니라 판때기 하나 (완전 평지)
-    void MakeGround()
+    [Header("땅 그림")]
+    [Tooltip("땅 텍스처 한 변의 텍셀 수 (클수록 곱다). 2048 = 텍셀 하나가 0.7m")]
+    public int 땅해상도 = 2048;
+    [Tooltip("잔디·흙길·물가를 칠한다. 끄면 민무늬 초록")]
+    public bool 땅칠하기 = true;
+
+    /// 땅 — 지형이 아니라 판때기 하나 (완전 평지). 잔디·길·물은 **칠해서** 넣는다
+    void MakeGround(int seed)
     {
         var g = GameObject.CreatePrimitive(PrimitiveType.Plane);
         g.name = "땅";
         g.transform.SetParent(holder, true);
         g.transform.position = new Vector3(WorldGrid.Size * 0.5f, 0f, WorldGrid.Size * 0.5f);
         g.transform.localScale = Vector3.one * (WorldGrid.Size / 10f);   // Plane 은 한 변 10m
+
+        // ★★180도 돌린다 (2026-08-04). 유니티 기본 Plane 은 UV 가 **양쪽 축 모두 거꾸로**다
+        //   (world +X,+Z 모서리가 uv 0,0). 그대로 두면 땅 그림이 점대칭으로 뒤집혀 붙어서,
+        //   화면의 흙길과 코드가 아는 흙길의 자리가 **정반대**가 된다.
+        //   → 실제로 "흙길에 잔디가 난다" 는 버그가 났다. 180도 돌리면 딱 맞는다.
+        g.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
         Grey.Strip(g);
-        g.GetComponent<MeshRenderer>().sharedMaterial = Grey.Mat(C땅);
+
+        var mr = g.GetComponent<MeshRenderer>();
+        if (!땅칠하기) { mr.sharedMaterial = Grey.Mat(C땅); return; }
+
+        var tex = GroundPaint.만들기(seed, Mathf.Clamp(땅해상도, 256, 4096), KindAt);
+        var m = new Material(Shader.Find("Universal Render Pipeline/Lit")) { name = "땅" };
+        m.mainTexture = tex;
+        if (m.HasProperty("_BaseMap")) m.SetTexture("_BaseMap", tex);
+        m.SetFloat("_Smoothness", 0.03f);
+        if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0f);
+        mr.sharedMaterial = m;
     }
 
     // ══════════════════════════════════════════════════════════
@@ -207,6 +235,9 @@ public class WorldGen : MonoBehaviour
             hv.hits = 4; hv.perHit = 0;        // 선 나무를 팬다고 나무가 나오진 않는다
             hv.blockAt = p; hv.장애물치우기 = false;
             hv.쓰러짐 = fall;
+
+            // ★나무가 750그루라 그루당 서너 포기면 2천 개가 넘는다 — 켤 때 그게 곧 렉이다
+            밑동풀(p, tr * 1.6f, Random.Range(0, 3));
         }
     }
 
@@ -226,6 +257,8 @@ public class WorldGen : MonoBehaviour
 
             var hv = rock.AddComponent<Harvest>();
             hv.kind = Stock.Kind.돌; hv.hits = Mathf.RoundToInt(3f + w); hv.perHit = 2; hv.blockAt = p;
+
+            밑동풀(p, w * 0.7f, Random.Range(1, 4));
         }
     }
 
@@ -265,18 +298,34 @@ public class WorldGen : MonoBehaviour
         Grey.Box(holder, c + Vector3.up * 2f, new Vector3(10f, 4f, 10f), C캠프, "부화터", 5f);
     }
 
+    /// 물은 **땅에 칠한다** (`GroundPaint`) — 겹침·정렬 문제가 없고 픽셀 화면과도 맞는다.
+    /// 여기서는 물가에 돌만 몇 개 놓는다
     void Water(Vector3 c)
     {
         if (Swap(물프리팹 != null ? new[] { 물프리팹 } : null, c, false, 0f)) return;
-        float r = Random.Range(14f, 26f);
-        var g = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        g.name = "물웅덩이";
-        g.transform.SetParent(holder, true);
-        g.transform.localScale = new Vector3(r * 2f, 0.04f, r * 2f * Random.Range(0.7f, 1.2f));
-        g.transform.rotation = Quaternion.Euler(0f, Random.value * 360f, 0f);
-        g.transform.position = c + Vector3.up * 0.03f;
-        Grey.Strip(g);
-        g.GetComponent<MeshRenderer>().sharedMaterial = Grey.Mat(C물);
+        if (!땅칠하기)
+        {
+            // 칠하기를 껐으면 옛날처럼 파란 원반으로
+            float r0 = Random.Range(14f, 26f);
+            var g = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            g.name = "물웅덩이";
+            g.transform.SetParent(holder, true);
+            g.transform.localScale = new Vector3(r0 * 2f, 0.04f, r0 * 2f);
+            g.transform.position = c + Vector3.up * 0.03f;
+            Grey.Strip(g);
+            g.GetComponent<MeshRenderer>().sharedMaterial = Grey.Mat(C물);
+            return;
+        }
+
+        int n = Random.Range(3, 7);
+        for (int i = 0; i < n; i++)
+        {
+            float a = Random.value * Mathf.PI * 2f;
+            var p = c + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * Random.Range(40f, 48f);
+            float w = Random.Range(0.8f, 2.2f), h = w * Random.Range(0.6f, 1.1f);
+            Grey.Box(holder, p + Vector3.up * (h * 0.4f), new Vector3(w, h, w), C바위, "물가돌",
+                     w * 0.5f, Random.value * 360f);
+        }
     }
 
     /// 그 자리가 어떤 칸인가 — 야생 구성이 이걸 보고 갈린다
@@ -287,6 +336,82 @@ public class WorldGen : MonoBehaviour
         int z = Mathf.Clamp(Mathf.FloorToInt(p.z / WorldGrid.Tile), 0, WorldGrid.N - 1);
         return kinds[x, z];
     }
+
+    [Header("벌판에 흩뿌리기")]
+    [Tooltip("칸 하나에 흩뿌릴 돌 수 (최대)")] public int 흩뿌린돌 = 9;
+    [Tooltip("칸 하나에 흩뿌릴 나무 수 (최대)")] public int 흩뿌린나무 = 3;
+
+    /// 칸 전체에 돌·나무를 성기게 흩뿌린다 — 길·물 위에는 안 놓는다
+    void 흩뿌리기(int gx, int gz, Land k)
+    {
+        var 중심 = WorldGrid.TileCenter(gx, gz);
+        float 반 = WorldGrid.Tile * 0.48f;
+
+        int 돌 = Random.Range(2, 흩뿌린돌 + 1);
+        if (k == Land.바위지대) 돌 *= 2;
+        for (int i = 0; i < 돌; i++)
+        {
+            var p = 중심 + new Vector3(Random.Range(-반, 반), 0f, Random.Range(-반, 반));
+            if (!GroundPaint.잔디인가(p)) continue;
+            float w = Random.Range(0.5f, 1.8f);
+            float h = w * Random.Range(0.5f, 1.0f);
+            Grey.Box(holder, p + Vector3.up * (h * 0.4f),
+                     new Vector3(w, h, w * Random.Range(0.7f, 1.3f)), C바위, "돌멩이",
+                     w * 0.4f, Random.value * 360f);
+        }
+
+        int 나무 = Random.Range(0, 흩뿌린나무 + 1);
+        if (k == Land.숲) 나무 = 0;                       // 숲은 이미 빽빽하다
+        for (int i = 0; i < 나무; i++)
+        {
+            var p = 중심 + new Vector3(Random.Range(-반, 반), 0f, Random.Range(-반, 반));
+            if (!GroundPaint.잔디인가(p)) continue;
+            나무하나(p, Random.Range(7f, 13f));
+        }
+    }
+
+    /// 나무 한 그루 (줄기 + 잎 + 밑동풀 + 벌목)
+    void 나무하나(Vector3 p, float h)
+    {
+        float w = h * Random.Range(0.42f, 0.55f);
+        float tr = h * Random.Range(0.04f, 0.06f);
+
+        var trunk = Grey.Box(holder, p + Vector3.up * (h * 0.3f), new Vector3(tr, h * 0.6f, tr), C줄기, "나무_줄기");
+        var leaf = Grey.Box(holder, p + Vector3.up * (h * 0.75f), new Vector3(w, h * 0.5f, w), C잎, "나무_잎");
+        leaf.transform.SetParent(trunk.transform, true);
+        Blocker.Add(p, tr * 0.7f);
+
+        var fall = trunk.AddComponent<TreeFall>();
+        fall.통나무값 = Mathf.RoundToInt(4f + h * 0.5f);
+        fall.선자리 = p;
+
+        var hv = trunk.AddComponent<Harvest>();
+        hv.kind = Stock.Kind.나무;
+        hv.hits = 4; hv.perHit = 0;
+        hv.blockAt = p; hv.장애물치우기 = false;
+        hv.쓰러짐 = fall;
+
+        밑동풀(p, tr * 1.6f, Random.Range(0, 3));
+    }
+
+    /// ★물체 밑동에 잔디 덤불 (2026-08-04 참고 그림 — 들판을 고르게 덮는 게 아니라
+    ///   바위·나무 **밑동에 모여 있다**). 이것만으로 물체가 땅에 「심긴」 것처럼 보인다.
+    void 밑동풀(Vector3 c, float 반경, int 수)
+    {
+        for (int i = 0; i < 수; i++)
+        {
+            float a = Random.value * Mathf.PI * 2f;
+            var p = c + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * 반경 * Random.Range(0.55f, 1.15f);
+            float h = Random.Range(0.45f, 0.95f);
+            float w = Random.Range(0.35f, 0.7f);
+            var col = Random.value < 0.5f ? C밑동풀A : C밑동풀B;
+            Grey.Box(holder, p + Vector3.up * (h * 0.5f), new Vector3(w, h, w * Random.Range(0.7f, 1.3f)),
+                     col, "풀", 0f, Random.value * 360f);
+        }
+    }
+
+    static readonly Color C밑동풀A = new Color(0.42f, 0.60f, 0.33f);
+    static readonly Color C밑동풀B = new Color(0.36f, 0.53f, 0.29f);
 
     // ── 부품
     Vector3 Scatter(Vector3 c, float radius)

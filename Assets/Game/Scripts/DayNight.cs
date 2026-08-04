@@ -17,15 +17,27 @@ public class DayNight : MonoBehaviour
     [Tooltip("그중 밤의 비율 (0.3 = 30%)")] [Range(0.1f, 0.6f)] public float 밤비율 = 0.3f;
     [Tooltip("시작 시각 (0=자정 · 0.25=아침 · 0.5=정오)")] [Range(0f, 1f)] public float 시작 = 0.28f;
 
+    // ★낮은 훤해야 한다. 어둠은 밤의 몫이다 (2026-08-04 사용자)
     [Header("해")]
-    public float 낮밝기 = 0.85f, 밤밝기 = 0.04f;
-    public Color 낮색 = new Color(1f, 0.97f, 0.88f);
-    public Color 저녁색 = new Color(1f, 0.62f, 0.38f);
-    public Color 밤색 = new Color(0.55f, 0.65f, 0.95f);
+    public float 낮밝기 = 1.35f, 밤밝기 = 0.04f;
+    // ★빛에 색을 섞지 않는다 (2026-08-04 사용자 — "잡다한 색들이 섞여 있어서").
+    //   푸르스름한 햇빛·주변광은 물체의 원래 색에 파란 기를 얹어 색을 흐린다.
+    //   낮에는 **무채색 빛**으로 두고, 색은 물체가 갖게 한다.
+    public Color 낮색 = Color.white;
+    public Color 저녁색 = new Color(1f, 0.72f, 0.52f);
+    public Color 밤색 = new Color(0.62f, 0.68f, 0.85f);
 
     [Header("주변광")]
-    public Color 낮주변 = new Color(0.30f, 0.33f, 0.38f);
+    public Color 낮주변 = new Color(0.58f, 0.58f, 0.58f);
     public Color 밤주변 = new Color(0.03f, 0.04f, 0.07f);
+
+    // ★★해질녘·새벽을 길게 (2026-08-04 사용자 — "2분에 한 번씩 뚝 변경되는 게 아니라
+    //   자연스럽게"). 전엔 해의 높이(sin)에 좁은 구간을 물려서 넘어가는 데 105초뿐이었고,
+    //   조명이 4초에 한 칸씩 계단이라 그 안에 **25칸**밖에 안 들어갔다 — 한 칸이 전체 변화의
+    //   4% 라 뚝뚝 끊겨 보인다. 이제 시각에서 직접 재고, 구간을 두 배로 늘려 칸을 잘게 쪼갠다.
+    //   (계단 자체는 남긴다 — 없애면 픽셀 화면이 지지직 끓는다. 「조명단계」 주석 참고)
+    [Tooltip("해질녘·새벽이 하루의 몇 할인가 (0.18 = 하루 20분 기준 약 3분 36초씩)")]
+    [Range(0.02f, 0.45f)] public float 노을 = 0.18f;
 
     [Header("밤의 시야")]
     [Tooltip("밤엔 보이는 거리가 이 배로 줄어든다")] [Range(0.1f, 1f)] public float 밤시야배 = 0.25f;
@@ -76,19 +88,36 @@ public class DayNight : MonoBehaviour
         Apply();
     }
 
+    // ★★해를 계단식으로 움직인다 (2026-08-04 사용자 — "가만히 서 있는데 지지지직 변한다").
+    //   해가 매 프레임 조금씩 돌면 색이 끊임없이 양자화 경계를 넘나들어, 화면 전체가
+    //   끓는 것처럼 보인다. 픽셀 화면에서는 **조명도 픽셀처럼 계단이어야** 한다.
+    //   288단계 = 하루 20분 기준 약 4초에 한 번만 바뀐다.
+    [Tooltip("해를 하루에 몇 단계로 나눠 움직이나 (클수록 부드럽고, 작을수록 안 흔들린다)")]
+    [Range(24, 2048)] public int 조명단계 = 288;
+
     void Apply()
     {
-        // 해의 높이 — 자정에 -90°, 정오에 +90°
-        float elev = Mathf.Sin((시각 - 0.25f) * Mathf.PI * 2f);
+        // 조명 계산에는 계단진 시각을 쓴다 (시계 표시는 원래 값 그대로)
+        float 시각L = Mathf.Round(시각 * 조명단계) / 조명단계;
 
-        // 밤비율만큼을 「해가 진 시간」으로 본다
-        float night = Mathf.Lerp(-1f, 0f, 밤비율);          // 이 높이 아래면 밤
-        낮정도 = Mathf.Clamp01(Mathf.InverseLerp(night - 0.12f, night + 0.30f, elev));
+        // 해의 높이 — 자정에 -90°, 정오에 +90°
+        float elev = Mathf.Sin((시각L - 0.25f) * Mathf.PI * 2f);
+
+        // 밤비율만큼을 「해가 진 시간」으로 본다 — 자정(0)에서 얼마나 떨어졌나로 잰다.
+        // ★해의 높이(sin)가 아니라 **시각**으로 재는 이유: sin 은 지평선 근처에서 빠르게
+        //   지나가서, 같은 폭을 줘도 넘어가는 시간이 짧고 하루 길이를 바꾸면 또 달라진다.
+        //   시각으로 재면 「노을이 하루의 몇 할」이 그대로 화면에 나온다.
+        float 자정거리 = Mathf.Min(시각L, 1f - 시각L);       // 0 = 자정 · 0.5 = 정오
+        float 밤가장자리 = 밤비율 * 0.5f;
+        float 반 = Mathf.Max(0.005f, 노을 * 0.5f);
+        // SmoothStep — 시작과 끝이 완만해야 "슬슬 어두워진다" 로 읽힌다. 직선이면 양 끝이 각진다
+        낮정도 = Mathf.SmoothStep(0f, 1f,
+                    Mathf.InverseLerp(밤가장자리 - 반, 밤가장자리 + 반, 자정거리));
 
         if (sun != null)
         {
-            // 해가 하늘을 가로지른다 — 그림자 방향이 하루 동안 돈다
-            sun.transform.rotation = Quaternion.Euler((시각 - 0.25f) * 360f, 35f, 0f);
+            // 해가 하늘을 가로지른다 — 그림자 방향이 하루 동안 돈다 (계단식으로)
+            sun.transform.rotation = Quaternion.Euler((시각L - 0.25f) * 360f, 35f, 0f);
             sun.intensity = Mathf.Lerp(밤밝기, 낮밝기, 낮정도);
             // 지평선 근처면 붉게 (해가 낮게 뜰 때)
             float low = 1f - Mathf.Clamp01(Mathf.Abs(elev) * 3f);
@@ -98,10 +127,17 @@ public class DayNight : MonoBehaviour
         RenderSettings.ambientLight = Color.Lerp(밤주변, 낮주변, 낮정도);
     }
 
+    // ★★시야는 **늦게 들어온다** (2026-08-04 사용자 — "밝은 날은 대부분 빼주고,
+    //   어둑어둑해지기 시작할 때부터 은은하게"). 밝기와 나란히 직선으로 걸면 해가 아직
+    //   남아 있는데도 절반이 어두워져 시야가 「낮의 것」처럼 느껴진다.
+    //   제곱을 걸면 해가 반쯤 진 시점에 어둠이 4분의 1뿐이라, 어둑해질 무렵 은은하게
+    //   들어왔다가 밤이 될수록 급히 조여든다 — 밤을 다른 시간으로 만드는 건 그 곡선이다.
+    float 밤정도 { get { float n = 1f - 낮정도; return n * n; } }
+
     /// 시야 거리에 곱할 값 (밤엔 줄어든다)
-    public float 시야배 => Mathf.Lerp(밤시야배, 1f, 낮정도);
-    /// 부채꼴 밖 어둠 (밤엔 짙어진다)
-    public float 어둠(float 낮어둠) => Mathf.Lerp(밤어둠, 낮어둠, 낮정도);
+    public float 시야배 => Mathf.Lerp(1f, 밤시야배, 밤정도);
+    /// 부채꼴 밖 어둠 — 낮엔 0 이라 덮개가 아무것도 안 그린다
+    public float 어둠() => 밤어둠 * 밤정도;
 
     /// 화면에 띄울 시각 — 24시간으로 환산
     public string 시계

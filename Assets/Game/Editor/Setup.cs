@@ -19,6 +19,7 @@ public static class Setup
             Undo.RegisterCreatedObjectUndo(go, "씬 짓기");
         }
         if (cam.GetComponent<IsoCam>() == null) Undo.AddComponent<IsoCam>(cam.gameObject);
+        if (cam.GetComponent<PixelScreen>() == null) Undo.AddComponent<PixelScreen>(cam.gameObject);
         cam.orthographic = true;
         cam.clearFlags = CameraClearFlags.SolidColor;
         cam.backgroundColor = new Color(0.04f, 0.05f, 0.06f);
@@ -55,6 +56,11 @@ public static class Setup
             if (world.GetComponent<HUD>() == null) Undo.AddComponent<HUD>(world.gameObject);
             if (world.GetComponent<DayNight>() == null) Undo.AddComponent<DayNight>(world.gameObject);
         }
+        if (world.GetComponent<ToyShowcase>() == null) Undo.AddComponent<ToyShowcase>(world.gameObject);
+        if (world.GetComponent<Matte>() == null) Undo.AddComponent<Matte>(world.gameObject);
+        if (world.GetComponent<Outliner>() == null) Undo.AddComponent<Outliner>(world.gameObject);
+        if (world.GetComponent<PixelSnapper>() == null) Undo.AddComponent<PixelSnapper>(world.gameObject);
+        if (world.GetComponent<GrassField>() == null) Undo.AddComponent<GrassField>(world.gameObject);
 
         // ── 빛 — 어두운 톤. 밝으면 시야 시스템이 뜻을 잃는다
         var sun = Object.FindFirstObjectByType<Light>();
@@ -66,9 +72,11 @@ public static class Setup
             sun.type = LightType.Directional;
         }
         sun.transform.rotation = Quaternion.Euler(52f, 30f, 0f);
-        sun.intensity = 0.75f;
+        sun.intensity = 1.35f;
         sun.color = new Color(0.85f, 0.88f, 1f);
-        sun.shadows = LightShadows.Soft;
+        // ★부드러운 그림자는 저해상도에서 가장자리가 프레임마다 흔들려 지글거린다.
+        //   픽셀 화면에서는 딱딱한 그림자가 맞다
+        sun.shadows = LightShadows.Hard;
 
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
         RenderSettings.ambientLight = new Color(0.16f, 0.18f, 0.22f);
@@ -89,7 +97,7 @@ public static class Setup
     static readonly (string 종, string 파일)[] 모델표 =
     {
         ("늑구", "chibi_wolf"), ("호동", "chibi_tiger"), ("티라", "chibi_tyranno"),
-        ("꼭꼬", "꼭꼬"),        ("내펫", "랍또"),
+        ("꼭꼬", "꼭꼬"),        // 내펫은 모델을 안 물린다 (랍또 폐기 — 2026-08-04 사용자)
     };
 
     static void 모델끼우기(Wildlife wl)
