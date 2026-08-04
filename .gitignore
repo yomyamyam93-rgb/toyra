@@ -45,5 +45,3 @@ modeling/preview/
 # 옛 장난감 펫 54개 (54MB) — 보기용. 쓸 것이 정해지면 그때 올린다
 Assets/Game/Resources/toys/
 
-# 캐릭터 원본 (각 10MB · 애니메이션마다 메시가 통째로 들어 있어 무겁다)
-Assets/Game/Models/hero/
