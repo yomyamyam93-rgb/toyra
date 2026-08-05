@@ -11,7 +11,11 @@ class GroundImport : AssetPostprocessor
 {
     void OnPreprocessTexture()
     {
-        if (!assetPath.Replace('\\', '/').Contains("Assets/Game/Resources/ground/")) return;
+        var p = assetPath.Replace('\\', '/');
+        if (!p.Contains("Assets/Game/Resources/ground/")) return;
+        // ★`사진/` 밑은 **원본 그대로** 쓰는 재질이라 여기서 손대면 안 된다 (2026-08-05).
+        //   이 함수는 64px·점 필터로 깎는 「픽셀 변환」이다 — `GroundPhotoImport` 가 따로 맡는다.
+        if (p.Contains("/ground/사진/")) return;
 
         var im = (TextureImporter)assetImporter;
         im.textureType = TextureImporterType.Default;

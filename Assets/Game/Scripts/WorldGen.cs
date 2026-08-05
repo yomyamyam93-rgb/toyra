@@ -228,6 +228,7 @@ public class WorldGen : MonoBehaviour
             else DestroyImmediate(old.gameObject);
         }
         holder = null;
+        자잼 = false;          // 손잡이를 만지고 다시 지으면 노이즈 자도 다시 잰다
     }
 
     [Header("땅 그림")]
@@ -268,6 +269,58 @@ public class WorldGen : MonoBehaviour
     [Tooltip("잔 결 하나의 크기 (m) — 땅 그림 한 칸이 0.7m 라 그 아래로는 못 내려간다")]
     [Range(1.5f, 20f)] public float 잔무늬칸 = 4.5f;
 
+    // ══════════════════════════════════════════ 땅 사진 (2026-08-05)
+    //
+    // ★★사용자가 넣어 둔 진짜 재질 13장을 **깎지 않고 그대로** 쓴다
+    //   ("픽셀버전으로 변형하지말고 그대로"). 사진이 색을 쥐고, 팔레트는 물에만 남는다.
+    // ★자리마다 다른 사진이 걸리는 건 **함수**가 한다 — 칸 배정이 아니다 (`GroundPhotos`).
+    //   씨앗을 바꾸면 세상의 주인 사진이 바뀐다.
+    [Header("땅 사진 — 원본 재질 그대로")]
+    [Tooltip("끄면 옛 방식(팔레트 색 × 회색 결)으로 돌아간다")]
+    public bool 땅사진 = true;
+    [Tooltip("사진 한 장이 덮는 크기 (m). 작을수록 결이 잘고 되풀이가 잦다")]
+    [Range(1f, 24f)] public float 사진칸 = 5f;
+    [Tooltip("배열로 묶을 때 맞추는 한 변 (px). 원본이 1250 이하라 1024면 넉넉하다")]
+    public int 사진크기 = 1024;
+    // ★★얼룩을 크게 잡는다 (2026-08-05 사용자 "너무 자주 바뀌지 않게, 3배 5배까지 넓게넓게").
+    //   한 화면이 가로 약 120m 다. 얼룩이 그보다 작으면 **한 화면 안에서 여러 번 바뀌어**
+    //   지역이 아니라 무늬로 읽힌다. 맵 한 변은 1440m.
+    [Tooltip("얼룩 하나의 작은 쪽 (m) — 한 화면 가로가 약 120m 다")]
+    [Range(20f, 400f)] public float 얼룩작게 = 75f;
+    [Tooltip("얼룩 하나의 큰 쪽 (m) — 맵 한 변이 1440m 라 450 이면 지도를 서너 덩어리로 나눈다")]
+    [Range(60f, 900f)] public float 얼룩크게 = 450f;
+    [Tooltip("섞이는 폭 — 작으면 또렷하게 갈리고 크면 뭉근하게 번진다")]
+    [Range(0.02f, 0.6f)] public float 사진섞임 = 0.18f;
+    [Tooltip("큰 명암 흔들기 (색은 안 건드린다)")]
+    [Range(0f, 0.5f)] public float 사진명암 = 0.12f;
+    [Tooltip("바위지대에서 돌바닥이 드러나는 정도")]
+    [Range(0f, 1f)] public float 바위지대돌 = 0.75f;
+    // ★풀이 땅 사진을 찍을 때 쓰는 흐림 정도. 낮으면 결까지 따라와 풀이 지저분해지고,
+    //   높으면 사진 평균에 가까워져 다시 납작해진다. 5 면 1024px 사진의 32×32 쯤이다.
+    [Tooltip("풀이 땅을 찍을 때의 흐림(밉) — 낮으면 결까지 따라오고 높으면 납작해진다")]
+    [Range(0f, 10f)] public float 잔디밉 = 5f;
+
+    /// 바위지대가 어디인가 — 셰이더가 「여기는 돌바닥을 섞어라」로 읽는다.
+    /// ★칸(160m) 단위라 9칸짜리 그림이면 충분하다. 부드럽게 늘려 뽑으므로 경계선이 안 보인다.
+    Texture2D 바위지도만들기()
+    {
+        int n = WorldGrid.N;
+        var t = new Texture2D(n, n, TextureFormat.RGBA32, false)
+        {
+            name = "바위지도", filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp
+        };
+        var px = new Color32[n * n];
+        for (int z = 0; z < n; z++)
+            for (int x = 0; x < n; x++)
+            {
+                byte v = kinds[x, z] == Land.바위지대 ? (byte)Mathf.RoundToInt(바위지대돌 * 255f) : (byte)0;
+                px[z * n + x] = new Color32(v, v, v, 255);
+            }
+        t.SetPixels32(px);
+        t.Apply(false);
+        return t;
+    }
+
     /// 땅 — 지형이 아니라 판때기 하나 (완전 평지). 잔디·길·물은 **칠해서** 넣는다
     void MakeGround(int seed)
     {
@@ -304,6 +357,7 @@ public class WorldGen : MonoBehaviour
             // 결 uv 는 월드 좌표라, 1m 에 몇 장 깔리나로 준다
             m.SetFloat("_DetailTiling", 1f / Mathf.Max(0.05f, 땅결칸));
             m.SetFloat("_DetailStrength", 땅결);
+            사진꽂기(m, seed);
         }
         else
         {
@@ -321,6 +375,52 @@ public class WorldGen : MonoBehaviour
         //   화면만 보고는 「사진 결」과 「노이즈 잔얼룩」을 헷갈리기 쉽다.
         Debug.Log($"[땅] 큰 {큰무늬:0.00}({큰무늬칸:0}m) · 중 {잔무늬:0.00}({잔무늬칸:0.0}m)" +
                   $" · 잔 {땅결:0.00}({땅결칸 * 100f / 64f:0}cm)");
+    }
+
+    /// 사진 갈래를 켠다. 사진이 하나도 없으면 `_PhotoNum = 0` 이라 셰이더가 옛 갈래로 간다.
+    void 사진꽂기(Material m, int seed)
+    {
+        if (!땅사진 || !GroundPhotos.준비(seed, Mathf.Clamp(사진크기, 128, 2048),
+                                        Mathf.Min(얼룩작게, 얼룩크게), Mathf.Max(얼룩작게, 얼룩크게)))
+        {
+            m.SetFloat("_PhotoNum", 0f);
+            Shader.SetGlobalFloat("_GPhotoNum", 0f);      // 풀도 옛 갈래로 돌아간다
+            return;
+        }
+
+        var 바위지도 = 바위지도만들기();
+
+        m.SetTexture("_PhotoArr", GroundPhotos.배열);
+        m.SetTexture("_RockMap", 바위지도);
+        m.SetVectorArray("_PhotoParams", GroundPhotos.파라미터);
+        m.SetVectorArray("_PhotoGroup", GroundPhotos.무리);
+        m.SetFloat("_PhotoNum", GroundPhotos.개수);
+        m.SetFloat("_PhotoTiling", 1f / Mathf.Max(0.5f, 사진칸));
+        m.SetFloat("_PhotoBand", 사진섞임);
+        m.SetFloat("_PhotoShade", 사진명암);
+
+        // ★★풀에게도 같은 배합을 넘긴다 (2026-08-05 사용자 "잔디 색이 땅 텍스처 색상을
+        //   못 따라가네"). **전역으로** 넘기는 이유는 순서 때문이다 — `GrassField` 가 언제
+        //   재질을 만들든 상관없이 값이 이미 놓여 있다. 재질에 직접 꽂으면 누가 먼저
+        //   시작하느냐에 따라 어떤 판에서만 풀이 옛 색으로 나온다.
+        // ★이름 앞에 `_G` 를 붙인다 — `_MaskMap` 같은 흔한 이름을 전역으로 놓으면
+        //   그 이름을 쓰는 **다른 셰이더까지 물든다.**
+        Shader.SetGlobalFloat("_GPhotoNum", GroundPhotos.개수);
+        Shader.SetGlobalFloat("_GPhotoBand", 사진섞임);
+        // ★★풀도 **사진을 직접 찍는다** (2026-08-05 사용자 "뚝뚝 끊어지면서 색이 변해서
+        //   잔디가, 바닥은 그라디언트인데"). 평균색 한 덩어리를 쓰면 한 지역이 통째로
+        //   **납작한 한 색**이 되어, 결이 있는 땅 옆에서 계단처럼 읽힌다.
+        //   → 흐린 밉을 찍으면 결은 안 보이면서 **자리마다 다른 색**이 나온다.
+        Shader.SetGlobalTexture("_GPhotoArr", GroundPhotos.배열);
+        Shader.SetGlobalFloat("_GPhotoTiling", 1f / Mathf.Max(0.5f, 사진칸));
+        Shader.SetGlobalFloat("_GPhotoMip", 잔디밉);
+        // ★큰 명암도 **같이** 넘긴다 — 땅에만 얹고 풀에 안 얹어서 어긋나 있었다
+        Shader.SetGlobalFloat("_GPhotoShade", 사진명암);
+        Shader.SetGlobalVectorArray("_GPhotoParams", GroundPhotos.파라미터);
+        Shader.SetGlobalVectorArray("_GPhotoGroup", GroundPhotos.무리);
+        Shader.SetGlobalVectorArray("_GPhotoAvg", GroundPhotos.평균색);
+        if (GroundPaint.땅마스크 != null) Shader.SetGlobalTexture("_GMaskMap", GroundPaint.땅마스크);
+        Shader.SetGlobalTexture("_GRockMap", 바위지도);
     }
 
     /// 결 그림 한 장을 꽂는다. 없으면 회색(= 아무것도 안 함)이 기본값이라 그냥 비워 둔다
@@ -494,36 +594,228 @@ public class WorldGen : MonoBehaviour
     }
 
     [Header("벌판에 흩뿌리기")]
-    [Tooltip("칸 하나에 흩뿌릴 돌 수 (최대)")] public int 흩뿌린돌 = 9;
-    [Tooltip("칸 하나에 흩뿌릴 나무 수 (최대)")] public int 흩뿌린나무 = 3;
+    // ★「칸 하나에 몇 개」 손잡이 둘은 걷어냈다 (2026-08-06) — 밀도를 이제 노이즈가
+    //   정하므로 쓰이지 않는다. 새 손잡이는 아래 「흩뿌리기 — 노이즈 분포」에 있다.
 
-    /// 칸 전체에 돌·나무를 성기게 흩뿌린다 — 길·물 위에는 안 놓는다
+    // ══════════════════════════════════════════ 흩뿌리기 (2026-08-06)
+    //
+    // ★★★**칸마다 개수를 세지 않는다 — 자리마다 「여기 몇 그루 날까」를 묻는다**
+    //   (사용자 "마인크래프트 생성 방식으로 분포해서, 밀집해서 숲처럼 울창한곳도 있을테고,
+    //   길가 주변에는 좀 떨어져서 덜있다든가").
+    //
+    //   전에는 160m 칸 하나에 나무를 **0~3그루 무작위**로 던졌다. 개수가 칸에 묶여 있으니
+    //   ①어디를 가도 밀도가 똑같고 ②울창한 데가 생길 수가 없고 ③칸 경계에서 뚝 끊겼다.
+    //
+    // ★★마인크래프트가 실제로 하는 것과 격자 방식의 **좋은 쪽만** 겹쳤다
+    //   (2026-08-06 사용자 "마인크래프트는 함수를 활용해서 배치하는걸로 알고있는데" — 맞다.
+    //    MC 는 노이즈로 **바이옴**을 정하고, 밀도는 「청크당 시도 횟수」가 들고 있으며,
+    //    자리는 청크 안 균등 난수다. 노이즈가 자리를 정하지 않는다):
+    //
+    //     ①숲 노이즈      → 여기가 숲인가, 얼마나 진한가        ← MC 의 「바이옴」
+    //     ②칸당 그루수     → 진할수록 한 칸에 1→N 그루          ← MC 의 「청크당 개수」
+    //     ③칸 안 지터      → 그 안에서 무작위 자리               ← MC 의 「청크 안 균등」
+    //     ④빈터 노이즈     → 숲 한복판에도 트인 데를 판다
+    //
+    //   ★②가 없으면 **칸당 한 그루가 상한**이라 아무리 진해도 울창해지지 않는다.
+    //     그게 격자 방식이 인공적으로 보이는 진짜 이유다 (간격이 아니라 상한).
+    //   ★④가 「길가 비우기」보다 중요하다. 숲이 균일하게 꽉 차 있으면 길만 트여 있어서
+    //     지도가 통조림처럼 보인다. 저절로 생긴 공터가 있어야 들어가 볼 마음이 든다.
+    //
+    // ★씨앗은 **자리에서 뽑는다** (`WorldGrid.TileSeed`) — 칸을 어떤 순서로 짓든 결과가 같다.
+    [Header("흩뿌리기 — 노이즈 분포")]
+    [Tooltip("나무 자리 격자 (m)")]
+    [Range(2f, 30f)] public float 나무간격 = 8f;
+    [Tooltip("숲 한 덩어리의 크기 (m)")]
+    [Range(20f, 400f)] public float 숲크기 = 140f;
+    [Tooltip("땅의 몇 쯤이 숲인가 — 낮출수록 개활지가 넓다")]
+    [Range(0.05f, 1f)] public float 숲비율 = 0.42f;
+    [Tooltip("숲 한복판에서 한 칸에 서는 그루 수 — 이게 「울창함」의 상한이다")]
+    [Range(1, 10)] public int 칸당최대 = 7;
+    // ★가장자리는 **얇아야** 대비가 산다. 0.5 로 두면 개활지에도 나무가 흩어져
+    //   "어디나 조금씩 있는 벌판"이 된다 — 숲이 도드라지지 않는 진짜 이유였다.
+    [Tooltip("숲 가장자리에서 한 칸에 서는 그루 수 — 낮을수록 숲과 벌판이 뚜렷하다")]
+    [Range(0f, 1f)] public float 가장자리밀도 = 0.15f;
+
+    [Tooltip("숲 속 빈터 한 덩어리의 크기 (m)")]
+    [Range(10f, 200f)] public float 빈터크기 = 35f;
+    [Tooltip("숲의 몇 쯤이 빈터인가")]
+    [Range(0f, 0.8f)] public float 빈터비율 = 0.22f;
+
+    [Tooltip("돌 자리 격자 (m)")]
+    [Range(2f, 30f)] public float 돌간격 = 12f;
+    [Tooltip("돌밭 한 덩어리의 크기 (m)")]
+    [Range(20f, 400f)] public float 돌밭크기 = 90f;
+    [Tooltip("땅의 몇 쯤에 돌이 깔리나")]
+    [Range(0.05f, 1f)] public float 돌밭비율 = 0.3f;
+    [Tooltip("돌밭 한복판에서 한 칸에 놓이는 돌 수")]
+    [Range(1, 6)] public int 돌칸당최대 = 3;
+
+    // ★★길가는 **비운다.** 길 옆까지 나무가 빽빽하면 길이 길로 안 읽힌다 —
+    //   숲을 헤치고 난 자국이라는 게 눈에 보여야 한다.
+    [Tooltip("길·물에서 이만큼 안쪽은 성글어진다 (m)")]
+    [Range(0f, 20f)] public float 길비우기 = 8f;
+
+    /// 그 자리가 길·물에서 얼마나 트여 있나 — 0(길 위) ~ 1(멀다)
+    /// ★네 방향만 찍는다. 여덟로 늘려도 눈에 안 보이고 두 배 비싸다.
+    float 길에서멂(Vector3 p)
+    {
+        if (길비우기 <= 0.01f) return 1f;
+        int 걸림 = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            float a = i * Mathf.PI * 0.5f;
+            if (!GroundPaint.잔디인가(p + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * 길비우기)) 걸림++;
+        }
+        return 1f - 걸림 * 0.25f;
+    }
+
+    // ★★★**펄린은 0~1 을 고르게 안 쓴다** (2026-08-06 실측 — 사용자 "전혀 숲이랄데가 없는데?").
+    //   1440m 를 4m 간격으로 재 봤더니 **면적의 92% 가 0.7 아래**였고 0.9 를 넘는 자리는 0% 였다:
+    //       최소 0.004 · 최대 0.928 · 평균 0.465   (0.4~0.6 에 41% 가 몰린 종 모양)
+    //
+    //   그런데 `문턱 = 1 - 비율` 로 잡고 `InverseLerp(문턱, 1)` 로 진하기를 재고 있었다.
+    //   그래서 두 번 손해를 봤다:
+    //     ①「숲비율 0.42」라고 적었는데 실제로 문턱을 넘는 면적은 **26%** 뿐이었고
+    //     ②넘은 자리의 평균 진하기가 **0.23** 이라 「칸당 4그루」가 실제로는 **1.3그루**가 됐다
+    //   → 숲이 있을 수가 없었다. 12m 간격의 성긴 벌판이 나온 이유다.
+    //
+    // ★고침: **판을 실제로 재서** ①요청한 면적이 나오는 문턱과 ②그 위쪽 실제 상한을 뽑는다.
+    //   이러면 「숲비율 0.42」가 진짜로 땅의 42% 가 되고, 진하기도 0~1 을 꽉 쓴다.
+    //   짐작한 상수(0.58·1.0)를 실측값으로 바꾸는 것 — 「상수 대신 실측에서 파생」 그대로다.
+    struct 노이즈자 { public float 크기, 오프, 문턱, 상한; }
+
+    static float 노이즈(float x, float z, float 크기, float 오프)
+        => Mathf.PerlinNoise(x / Mathf.Max(1f, 크기) + 오프, z / Mathf.Max(1f, 크기) + 오프 * 1.7f);
+
+    /// 그 노이즈 판을 훑어 「면적 비율」에 해당하는 문턱과 상한을 잰다.
+    /// ★64×64 = 4096 점이면 충분하다 (판을 짓는 동안 딱 한 번 돈다)
+    static 노이즈자 재기(float 크기, float 비율, float 오프)
+    {
+        const int N = 64;
+        var 값 = new float[N * N];
+        float 칸 = WorldGrid.Size / N;
+        for (int i = 0; i < N; i++)
+            for (int j = 0; j < N; j++)
+                값[i * N + j] = 노이즈((i + 0.5f) * 칸, (j + 0.5f) * 칸, 크기, 오프);
+        System.Array.Sort(값);
+
+        비율 = Mathf.Clamp(비율, 0.02f, 0.98f);
+        int 자른데 = Mathf.Clamp(Mathf.RoundToInt((1f - 비율) * (값.Length - 1)), 0, 값.Length - 1);
+        // 상한은 꼭대기가 아니라 **상위 2% 지점** — 한 점의 극값에 끌려가면 진하기가 또 눌린다
+        int 위 = Mathf.Clamp(Mathf.RoundToInt(0.98f * (값.Length - 1)), 자른데 + 1, 값.Length - 1);
+        return new 노이즈자 { 크기 = 크기, 오프 = 오프, 문턱 = 값[자른데], 상한 = Mathf.Max(값[위], 값[자른데] + 0.01f) };
+    }
+
+    /// 그 자리의 「진하기」 0~1 — 문턱 아래는 0, 상한에서 1.
+    static float 진하기(Vector3 p, 노이즈자 자)
+    {
+        float n = 노이즈(p.x, p.z, 자.크기, 자.오프);
+        return n < 자.문턱 ? 0f : Mathf.Clamp01(Mathf.InverseLerp(자.문턱, 자.상한, n));
+    }
+
+    /// 칸 하나를 훑으며 자리마다 「여기 몇 그루 날까」를 묻는다
     void 흩뿌리기(int gx, int gz, Land k)
     {
+        if (!자잼) 자재기();
         var 중심 = WorldGrid.TileCenter(gx, gz);
         float 반 = WorldGrid.Tile * 0.48f;
+        var st = Random.state;
 
-        int 돌 = Random.Range(2, 흩뿌린돌 + 1);
-        if (k == Land.바위지대) 돌 *= 2;
-        for (int i = 0; i < 돌; i++)
-        {
-            var p = 중심 + new Vector3(Random.Range(-반, 반), 0f, Random.Range(-반, 반));
-            if (!GroundPaint.잔디인가(p)) continue;
-            float w = Random.Range(0.5f, 1.8f);
-            float h = w * Random.Range(0.5f, 1.0f);
-            Grey.Box(holder, p + Vector3.up * (h * 0.4f),
-                     new Vector3(w, h, w * Random.Range(0.7f, 1.3f)), C바위, "돌멩이",
-                     w * 0.4f, Random.value * 360f);
-        }
+        if (k != Land.숲) 나무뿌리기(중심, 반);          // 숲 칸은 `Forest()` 가 따로 심는다
+        돌뿌리기(중심, 반, k == Land.바위지대 ? 2f : 1f);
 
-        int 나무 = Random.Range(0, 흩뿌린나무 + 1);
-        if (k == Land.숲) 나무 = 0;                       // 숲은 이미 빽빽하다
-        for (int i = 0; i < 나무; i++)
-        {
-            var p = 중심 + new Vector3(Random.Range(-반, 반), 0f, Random.Range(-반, 반));
-            if (!GroundPaint.잔디인가(p)) continue;
-            나무하나(p, Random.Range(7f, 13f));
-        }
+        Random.state = st;
+    }
+
+    // 판을 짓는 동안 딱 한 번 재고 그대로 쓴다
+    노이즈자 숲자, 빈터자, 돌자, 돌자_바위;
+    bool 자잼;
+
+    void 자재기()
+    {
+        숲자 = 재기(숲크기, 숲비율, 311.7f);
+        빈터자 = 재기(빈터크기, 빈터비율, 77.3f);
+        돌자 = 재기(돌밭크기, 돌밭비율, 57.1f);
+        돌자_바위 = 재기(돌밭크기, Mathf.Clamp01(돌밭비율 * 2f), 57.1f);
+        자잼 = true;
+        Debug.Log($"[흩뿌리기] 숲 문턱 {숲자.문턱:0.00}~{숲자.상한:0.00} · 빈터 {빈터자.문턱:0.00}~{빈터자.상한:0.00}" +
+                  $" · 돌 {돌자.문턱:0.00}~{돌자.상한:0.00}");
+    }
+
+    void 나무뿌리기(Vector3 중심, float 반)
+    {
+        float 격자 = Mathf.Max(2f, 나무간격);
+        int r = Mathf.CeilToInt(반 / 격자);
+        for (int ix = -r; ix <= r; ix++)
+            for (int iz = -r; iz <= r; iz++)
+            {
+                int cx = Mathf.FloorToInt((중심.x + ix * 격자) / 격자);
+                int cz = Mathf.FloorToInt((중심.z + iz * 격자) / 격자);
+                Random.InitState(WorldGrid.TileSeed(0x7ee5, cx, cz));
+
+                var 칸중심 = new Vector3((cx + 0.5f) * 격자, 0f, (cz + 0.5f) * 격자);
+                float 숲 = 진하기(칸중심, 숲자);
+                if (숲 <= 0f) continue;
+
+                // ★숲 속 빈터 — 진한 곳일수록 크게 판다 (개활지엔 팔 게 없다)
+                float 빈터 = 진하기(칸중심, 빈터자);
+                숲 *= 1f - 빈터;
+                if (숲 <= 0.02f) continue;
+
+                숲 *= 길에서멂(칸중심);
+                if (숲 <= 0.02f) continue;
+
+                // ★★여기가 「울창함」이다 — 진할수록 한 칸에 여러 그루.
+                //   소수는 확률로 처리해서 가장자리가 계단으로 안 끊기게 한다
+                float 몇 = Mathf.Lerp(가장자리밀도, 칸당최대, 숲);
+                int n = Mathf.FloorToInt(몇);
+                if (Random.value < 몇 - n) n++;
+
+                for (int i = 0; i < n; i++)
+                {
+                    var at = 칸중심 + new Vector3(Random.value - 0.5f, 0f, Random.value - 0.5f) * 격자 * 0.95f;
+                    if (Mathf.Abs(at.x - 중심.x) > 반 || Mathf.Abs(at.z - 중심.z) > 반) continue;
+                    if (!GroundPaint.잔디인가(at)) continue;
+                    // 빽빽한 곳은 어리고 성긴 곳은 굵다 — 서로 빛을 다투는 숲의 모습
+                    float h = Random.Range(7f, 13f) * Mathf.Lerp(1.1f, 0.85f, 숲);
+                    if (Swap(나무프리팹, at, true, 0.5f)) continue;
+                    나무하나(at, h);
+                }
+            }
+    }
+
+    void 돌뿌리기(Vector3 중심, float 반, float 배)
+    {
+        float 격자 = Mathf.Max(2f, 돌간격);
+        int r = Mathf.CeilToInt(반 / 격자);
+        for (int ix = -r; ix <= r; ix++)
+            for (int iz = -r; iz <= r; iz++)
+            {
+                int cx = Mathf.FloorToInt((중심.x + ix * 격자) / 격자);
+                int cz = Mathf.FloorToInt((중심.z + iz * 격자) / 격자);
+                Random.InitState(WorldGrid.TileSeed(0x3c1d, cx, cz));
+
+                var 칸중심 = new Vector3((cx + 0.5f) * 격자, 0f, (cz + 0.5f) * 격자);
+                float 진 = 진하기(칸중심, 배 > 1.5f ? 돌자_바위 : 돌자) * 길에서멂(칸중심);
+                if (진 <= 0.02f) continue;
+
+                float 몇 = Mathf.Lerp(0.4f, 돌칸당최대, 진);
+                int n = Mathf.FloorToInt(몇);
+                if (Random.value < 몇 - n) n++;
+
+                for (int i = 0; i < n; i++)
+                {
+                    var at = 칸중심 + new Vector3(Random.value - 0.5f, 0f, Random.value - 0.5f) * 격자 * 0.95f;
+                    if (Mathf.Abs(at.x - 중심.x) > 반 || Mathf.Abs(at.z - 중심.z) > 반) continue;
+                    if (!GroundPaint.잔디인가(at)) continue;
+                    if (Swap(바위프리팹, at, true, 1.2f)) continue;
+                    float w = Random.Range(0.5f, 1.8f);
+                    float h = w * Random.Range(0.5f, 1.0f);
+                    Grey.Box(holder, at + Vector3.up * (h * 0.4f),
+                             new Vector3(w, h, w * Random.Range(0.7f, 1.3f)), C바위, "돌멩이",
+                             w * 0.4f, Random.value * 360f);
+                }
+            }
     }
 
     /// 나무 한 그루 (줄기 + 잎 + 밑동풀 + 벌목)
@@ -582,8 +874,88 @@ public class WorldGen : MonoBehaviour
         var pf = set[Random.Range(0, set.Length)];
         if (pf == null) return false;
         var rot = randomYaw ? Quaternion.Euler(0f, Random.value * 360f, 0f) : Quaternion.identity;
-        Instantiate(pf, pos, rot, holder);
+        var inst = Instantiate(pf, pos, rot, holder);
+        환경손질(inst);
         if (blockR > 0f) Blocker.Add(pos, blockR);
         return true;
+    }
+
+    [Header("환경 프리팹 손질")]
+    // ★★받아 온 모델은 **흰색**으로 들어온다 (2026-08-05 사용자 "색도 나뭇잎 색으로 넣어주라").
+    //   `LeafCard` 재질의 `baseColorFactor` 가 (1,1,1) 이고 잎 그림(`leaf_card_soft`)이
+    //   무채색이라, 곱하면 그대로 흰 나무가 된다. 여기서 그 자리를 물들인다.
+    // ★재질 **에셋을 고치지 않는다** — `MaterialPropertyBlock` 으로 그 인스턴스에만 얹는다.
+    //   에셋을 고치면 프로젝트 파일이 바뀌어 모델을 다시 임포트할 때 날아간다.
+    [Tooltip("나뭇잎 색 — 받아 온 모델이 흰색이라 여기서 물들인다")]
+    public Color 잎색 = new Color(0.36f, 0.52f, 0.28f);
+    [Tooltip("잎 색을 포기마다 조금씩 흔든다 (0 이면 전부 같은 색)")]
+    [Range(0f, 0.4f)] public float 잎색흔들기 = 0.14f;
+
+    static MaterialPropertyBlock 잎블록;
+
+    /// 심은 환경 프리팹 손질 — ①테두리를 안 두른다 ②흰 잎을 물들인다
+    void 환경손질(GameObject inst)
+    {
+        if (inst == null) return;
+
+        // ★표식 하나면 모델 이름이 무엇이든 테두리가 안 붙는다 (`NoOutline` 참고)
+        if (inst.GetComponent<NoOutline>() == null) inst.AddComponent<NoOutline>();
+
+        잎블록 ??= new MaterialPropertyBlock();
+        float 흔들 = Random.Range(-잎색흔들기, 잎색흔들기);
+        var 색 = new Color(Mathf.Clamp01(잎색.r + 흔들 * 0.7f),
+                          Mathf.Clamp01(잎색.g + 흔들),
+                          Mathf.Clamp01(잎색.b + 흔들 * 0.5f), 1f);
+
+        foreach (var r in inst.GetComponentsInChildren<Renderer>(true))
+        {
+            var m = r.sharedMaterial;
+            if (m == null) continue;
+            // 잎인가 — 재질 이름과 오브젝트 이름 둘 다 본다 (모델마다 다르게 부른다)
+            if (!m.name.Contains("Leaf") && !m.name.Contains("Canopy")
+                && !r.gameObject.name.Contains("Canopy")) continue;
+
+            r.sharedMaterial = 잎재질(m);
+            if (!m.HasProperty("baseColorFactor")) continue;
+
+            r.GetPropertyBlock(잎블록);
+            잎블록.SetColor("baseColorFactor", 색);
+            r.SetPropertyBlock(잎블록);
+        }
+    }
+
+    // ★★★**잎을 「자르기(cutout)」로 바꾼다** (2026-08-06 사용자 "나무 그림자가 잎의
+    //   빈공간까지 그림자를 받아버리는 버그").
+    //
+    //   받아온 잎 재질은 **투명(Transparent)** 이다. 투명 재질은 그림자를 그릴 때
+    //   **알파를 안 자른다** — 잎 카드의 네모 판 전체가 그림자가 되어, 잎 사이 빈 곳까지
+    //   시커먼 덩어리로 진다. 화면에 보이는 잎 모양과 그림자 모양이 어긋나는 이유다.
+    //
+    //   → 투명 대신 **알파 컷아웃**으로 돌린다. 그림자 패스가 같은 문턱으로 잘라내므로
+    //     **그림자가 잎 모양 그대로** 진다. 덤으로 정렬 문제도 사라진다(불투명이라 뎁스를 쓴다).
+    //
+    // ★재질을 **원본마다 한 벌만** 만들어 나눠 쓴다. 나무 하나에 한 벌씩 만들면
+    //   1만 그루에 재질 1만 개가 생겨 드로콜이 폭발한다. 색 변주는 `MaterialPropertyBlock`
+    //   이 맡으므로 재질을 나눠 써도 그루마다 다른 색이 나온다.
+    static readonly Dictionary<Material, Material> 잎재질캐시 = new Dictionary<Material, Material>();
+
+    static Material 잎재질(Material 원본)
+    {
+        if (잎재질캐시.TryGetValue(원본, out var 있던) && 있던 != null) return 있던;
+
+        var m = new Material(원본) { name = 원본.name + "_컷아웃" };
+        if (m.HasProperty("alphaCutoff")) m.SetFloat("alphaCutoff", 0.5f);
+        if (m.HasProperty("_AlphaClip")) m.SetFloat("_AlphaClip", 1f);
+        if (m.HasProperty("_Surface")) m.SetFloat("_Surface", 0f);       // 0 = 불투명
+        if (m.HasProperty("_SrcBlend")) m.SetFloat("_SrcBlend", 1f);
+        if (m.HasProperty("_DstBlend")) m.SetFloat("_DstBlend", 0f);
+        if (m.HasProperty("_ZWrite")) m.SetFloat("_ZWrite", 1f);
+        m.EnableKeyword("_ALPHATEST_ON");
+        m.DisableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        m.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+        m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.AlphaTest;
+
+        잎재질캐시[원본] = m;
+        return m;
     }
 }

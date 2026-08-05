@@ -32,6 +32,28 @@ public class GrassField : MonoBehaviour
     //   0.127m 갈 때마다 324,000칸 — 걸어 다니면 초당 스무 번이다.
     //   → 간격을 넉넉히 두고, 빽빽함은 아래 「뭉치기」로 낸다.
     [Tooltip("포기 사이 간격 (m) — 작을수록 빽빽하고 **훨씬** 무겁다")] public float 간격 = 0.5f;
+
+    // ★★목록을 다시 뽑는 주기를 **간격에서 떼어냈다** (2026-08-05 사용자 "렉 안 먹으면서
+    //   빽빽히"). 전에는 주인공이 한 「간격」 칸을 움직일 때마다 다시 뽑았다 — 간격이
+    //   3m 일 땐 3m 마다라 티가 안 났지만, 빽빽하게 하려고 0.5m 로 낮추면 **반 미터마다
+    //   수만 개를 다시 만든다.** 무거운 건 그리기가 아니라 이 재구성이다.
+    //   → 다시 뽑는 칸은 따로 둔다. 반경에 여유(`여유`)를 두어 가장자리가 안 비게 한다.
+    [Tooltip("몇 미터를 움직여야 목록을 다시 뽑나 — 클수록 덜 버벅이고 그만큼 여유가 필요하다")]
+    [Range(1f, 16f)] public float 다시뽑기칸 = 6f;
+    [Tooltip("반경에 더해 두는 여유 (m) — 「다시뽑기칸」보다 커야 가장자리가 안 빈다")]
+    public float 여유 = 8f;
+
+    [Tooltip("그림자를 받는다 (남이 드리운 그림자가 풀에 진다)")]
+    public bool 그림자받기 = true;
+    // ★★풀끼리 그림자를 주고받으려면 **드리우는 쪽**을 켜야 한다 (2026-08-05 사용자
+    //   "지들끼리는 그림자 안받아?"). 대가가 크다 — 그림자맵에 들어가는 순간
+    //   **풀을 한 번 더 그리는 셈**이고, 캐스케이드가 둘이면 두 번 더다.
+    //   ☆먼저 `밑동어둡게` 로 해 보라. 풀 밑동이 어두운 건 실제로 서로 가려서인데,
+    //     그 결과만 흉내 내면 공짜다. 그림자맵은 그래도 부족할 때 켠다.
+    [Tooltip("풀도 그림자를 드리운다 — 풀끼리 그늘이 진다. **비싸다**")]
+    public bool 그림자드리우기 = false;
+    [Tooltip("밑동을 얼마나 어둡게 — 바닥에 박힌 느낌. 0 이면 안 씀")]
+    [Range(0f, 0.8f)] public float 밑동어둡게 = 0.35f;
     [Tooltip("한 자리에 풀이 있을 확률")] [Range(0f, 1f)] public float 밀도 = 0.9f;
 
     // ★★균등하게 깔면 「카펫」이 되고, 뭉쳐서 깔면 「덤불」이 된다 (2026-08-04 사용자
@@ -190,7 +212,9 @@ public class GrassField : MonoBehaviour
         땅그림물리기();
 
         var p = hero.transform.position;
-        var 칸 = new Vector2Int(Mathf.FloorToInt(p.x / 간격), Mathf.FloorToInt(p.z / 간격));
+        // ★다시 뽑는 칸은 「간격」이 아니라 「다시뽑기칸」이다 (위 주석 참고)
+        float 뽑기칸 = Mathf.Max(간격, 다시뽑기칸);
+        var 칸 = new Vector2Int(Mathf.FloorToInt(p.x / 뽑기칸), Mathf.FloorToInt(p.z / 뽑기칸));
 
         // ★화면 대각선의 절반을 덮어야 「잔디가 끝나는 선」이 안 보인다
         if (화면따라가기)
@@ -219,11 +243,14 @@ public class GrassField : MonoBehaviour
         for (int i = 0; i < 그림수; i++)
             그릴것[i].Clear();
 
-        int r = Mathf.CeilToInt(반경 / 간격);
+        // ★반경에 여유를 더해 깐다 — 다시 뽑는 사이에 걸어 나간 만큼을 미리 채워 둔다.
+        //   이게 없으면 「다시뽑기칸」을 키운 만큼 화면 가장자리에서 잔디가 사라진다.
+        float 깔반경 = 반경 + Mathf.Max(여유, 다시뽑기칸);
+        int r = Mathf.CeilToInt(깔반경 / 간격);
         int cx = Mathf.FloorToInt(p.x / 간격), cz = Mathf.FloorToInt(p.z / 간격);
         var rot = Quaternion.Euler(0f, yaw, 0f);
         var 집 = WorldGrid.Center;
-        float r2 = 반경 * 반경;
+        float r2 = 깔반경 * 깔반경;
 
         var st = Random.state;
         for (int gx = cx - r; gx <= cx + r; gx++)
@@ -270,6 +297,8 @@ public class GrassField : MonoBehaviour
 
     void 그리기()
     {
+        Shader.SetGlobalFloat("_GRootDark", 밑동어둡게);
+
         int 그림수 = 재질들.Length;
         for (int i = 0; i < 그림수; i++)
         {
@@ -279,8 +308,14 @@ public class GrassField : MonoBehaviour
                 int n = Mathf.Min(묶음, 목록.Count - s);
                 목록.CopyTo(s, 버퍼, 0, n);
 
+                // ★그림자를 **받는다** (2026-08-05 사용자 "잔디도 그림자 받을 수 있도록").
+                //   드리우는 쪽(캐스팅)은 계속 끈다 — 수만 포기가 그림자맵에 들어가면
+                //   그림자 그리기가 한 번 더 도는 셈이라 값이 제일 비싸다.
+                //   셰이더는 이미 그림자를 계산하고 있었다 — 여기 `false` 가 막고 있었을 뿐이다.
                 Graphics.DrawMeshInstanced(판, 0, 재질들[i], 버퍼, n, null,
-                    UnityEngine.Rendering.ShadowCastingMode.Off, false);
+                    그림자드리우기 ? UnityEngine.Rendering.ShadowCastingMode.TwoSided
+                                : UnityEngine.Rendering.ShadowCastingMode.Off,
+                    그림자받기);
 
                 // 실루엣 마스크에도 같이 (펫 테두리가 잔디 위에 덧그려지지 않게)
                 if (마스크재질 != null && 마스크재질[i] != null)

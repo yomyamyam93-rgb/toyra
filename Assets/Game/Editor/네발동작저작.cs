@@ -97,6 +97,41 @@ public static class 네발동작저작
             줄들.Add(new 줄 { 뼈 = 다리 + "_shin", 축 = 축.옆, 키들 = 정강, 위상 = 위상 });
             return this;
         }
+
+        // ══════════════════════════════════════ 발자취 (2본 IK)
+        //
+        // ★★★**각도 대신 「발끝이 어디를 지나는가」를 적는다** (2026-08-06 사용자
+        //   "발이 앞쪽을 기준으로 왔다갔다하는거같은데 그래서 떠있는 느낌이었나봐 … 다그런거같아").
+        //   실측해 보니 정말 모든 종이 그랬다 — 걷기 한 바퀴 동안 발끝 높이에
+        //   **같은 값이 이어지는 구간이 하나도 없었다.** 각도만 찍으니 발이 엉덩이를 축으로
+        //   원호를 그리는 게 전부였다.
+        //   → 접지 구간엔 발끝을 땅에 못박고, 각도는 `발IK` 가 그 몸을 재서 푼다.
+        public 동작 발자취(string 다리, float 위상, 발길 길)
+        {
+            길.다리 = 다리; 길.위상 = 위상;
+            발길들.Add(길);
+            return this;
+        }
+
+        public List<발길> 발길들 = new List<발길>();
+    }
+
+    /// 발끝이 한 사이클 동안 그리는 자취.
+    /// ★단위는 **다리 길이 배수**다 — 미터로 적으면 큰 몸과 작은 몸이 같은 보폭을 걸어
+    ///   하나는 종종거리고 하나는 다리가 찢어진다.
+    public class 발길
+    {
+        public string 다리; public float 위상;
+        /// 한 걸음에 발이 지나는 앞뒤 거리
+        public float 보폭 = 0.55f;
+        /// 흔들 때 발끝이 뜨는 높이
+        public float 들기 = 0.16f;
+        /// 한 사이클 중 **땅에 붙어 있는** 비율 (네발 걷기는 0.6~0.75)
+        public float 접지 = 0.6f;
+        /// 발을 다리뿌리보다 앞/뒤 어디에 놓나 (+ 가 앞)
+        public float 중심 = 0f;
+        /// 다리를 완전히 펴지 않는다 — 일직선이면 무릎이 튄다
+        public float 최대뻗음 = 0.97f;
     }
 
     // ───────────────────────────────── 이징
@@ -200,6 +235,70 @@ public static class 네발동작저작
         // ★무릎이 어느 쪽으로 접히는지 — 그 몸을 **재서** 정한다 (아래 `무릎방향재기`)
         var 접힘 = 무릎방향재기(견본.name, g, 뼈);
 
+        // ── 발자취(IK) — 프레임마다 각도를 **미리 풀어 둔다**
+        //   ★쉬는 자세를 기준으로 한 **차이**를 넣는다. 굽는 쪽이 "쉬는 자세에서 얼마나 더
+        //     돌리나"를 먹기 때문이다.
+        //   ★부호: 월드 X 를 + 로 돌리면 다리가 **뒤로** 간다. IK 의 「방향」은 앞이 + 이므로
+        //     허벅에는 **뒤집어서** 넣는다. 무릎은 표와 같은 「접힘 = 양수」라 그대로 둔다
+        //     (아래 루프에서 `접힘부호` 가 곱해진다).
+        var IK각 = new Dictionary<string, float[]>();
+        if (m.발길들.Count > 0)
+        {
+            float 바닥y = float.MaxValue;
+            foreach (var r in g.GetComponentsInChildren<Renderer>(true))
+                바닥y = Mathf.Min(바닥y, r.bounds.min.y);
+            if (바닥y == float.MaxValue) 바닥y = 0f;
+
+            // ★★★**그 몸의 「앞」이 어디인지 잰다** (2026-08-06 사용자 "앞쪽으로 더 올라간거같은데
+            //   발 위치가,, 반대로 하면돼"). 뒤집는 건 맞는데 **종마다 방향이 다르다** —
+            //   재 보니 티라노는 뒤로, 테러버드는 앞으로 밀려 있었다. 통째로 뒤집으면
+            //   하나는 맞고 하나는 더 틀어진다.
+            //   → 머리와 엉덩이의 z 를 견줘 **그 몸의 앞**을 정한다. 블렌더에서 앞뒤가
+            //     어느 쪽으로 들어왔든 상관없어진다 (모델 정리 때 못 정한 그 방향이다).
+            float 앞부호 = 1f;
+            if (뼈.TryGetValue("head", out var 머리뼈) && 뼈.TryGetValue("spine_hip", out var 골반뼈))
+                앞부호 = Mathf.Sign(머리뼈.position.z - 골반뼈.position.z);
+            if (앞부호 == 0f) 앞부호 = 1f;
+
+            foreach (var 자취 in m.발길들)
+            {
+                if (!뼈.TryGetValue(자취.다리 + "_thigh", out var 허벅뼈)) continue;
+                if (!뼈.TryGetValue(자취.다리 + "_shin", out var 정강뼈)) continue;
+
+                var 자 = 발IK.재기(허벅뼈, 정강뼈, 바닥y);
+                if (!자.잼) { Debug.LogWarning("[저작] 다리를 못 쟀다: " + 견본.name + " " + 자취.다리); continue; }
+                // ★무릎이 접히는 쪽을 IK 에도 넘긴다 — 안 넘기면 반대편 해로 풀려 발이 딴 데 놓인다
+                float 무릎쪽 = 접힘.TryGetValue(자취.다리 + "_shin", out var sg) ? sg : 1f;
+                발IK.쉬는각(자, 무릎쪽, out float 쉼허벅, out float 쉼무릎);
+
+                var 허벅값 = new float[프레임]; var 무릎값 = new float[프레임];
+                for (int f = 0; f < 프레임; f++)
+                {
+                    float u = m.길이 > 0f ? Mathf.Repeat(f / (float)초당 / m.길이 + 자취.위상, 1f) : 0f;
+                    // ★★★보폭의 **중심은 「발이 원래 있던 자리」**다 (2026-08-06 사용자
+                    //   "다리가 뒤쪽으로 갔다 앞쪽으로갔다 이동하는데 이 구간이 앞쪽으로
+                    //   몰쳐있어서 이상하다").
+                    //   전에는 엉덩이 관절 **바로 밑**을 중심으로 잡았다. 그런데 짐승의 발은
+                    //   엉덩이 밑에 있지 않다 — 수각류는 뒤쪽에, 네발은 바깥쪽에 선다.
+                    //   그 차이만큼 보폭이 통째로 앞으로 밀려 있었다.
+                    //   → 쉬는 자세의 발 자리를 **재서** 그걸 중심으로 삼는다. 짐작이 없다.
+                    float 쉼앞뒤 = 자.발끝.z - 자.뿌리.z;
+                    // ★보폭은 **그 몸의 앞** 방향으로 뻗는다 (`앞부호`). 중심은 이미 실측한
+                    //   월드 값이라 부호를 안 곱한다 — 곱하면 두 번 뒤집는 셈이 된다.
+                    var 목 = 발IK.목표(u, 자취.보폭 * 자.길이 * 앞부호, 자취.들기 * 자.길이, 자취.접지,
+                                       쉼앞뒤 + 자취.중심 * 자.길이 * 앞부호, 자.뿌리높이);
+                    발IK.풀기(목, 자, 자취.최대뻗음, 무릎쪽, out float 허벅각, out float 무릎각);
+                    허벅값[f] = -(허벅각 - 쉼허벅);
+                    무릎값[f] = 무릎각 - 쉼무릎;
+                }
+                IK각[자취.다리 + "_thigh"] = 허벅값;
+                IK각[자취.다리 + "_shin"] = 무릎값;
+                // 표에 줄이 없어도 그 뼈를 돌려야 하므로 자리를 만들어 둔다
+                if (!뼈별회전.ContainsKey(자취.다리 + "_thigh")) 뼈별회전[자취.다리 + "_thigh"] = new List<줄>();
+                if (!뼈별회전.ContainsKey(자취.다리 + "_shin")) 뼈별회전[자취.다리 + "_shin"] = new List<줄>();
+            }
+        }
+
         foreach (var kv in 뼈별회전)
         {
             var 이름 = kv.Key;
@@ -218,6 +317,8 @@ public static class 네발동작저작
                     float v = 값(r, u);
                     if (r.축 == 축.옆) 옆 += v * 접힘부호; else if (r.축 == 축.위) 위 += v; else 앞 += v;
                 }
+                // 발자취(IK)가 푼 각도 — 표와 같은 길로 넣어야 `접힘부호` 가 무릎에 똑같이 먹는다
+                if (IK각.TryGetValue(이름, out var ik)) 옆 += ik[f] * 접힘부호;
                 var W = Quaternion.Euler(옆, 위, 앞);
                 var q = (Pi * W * P) * R;
                 if (Quaternion.Dot(q, 앞것) < 0f) q = new Quaternion(-q.x, -q.y, -q.z, -q.w); // 뒤집힘 방지
@@ -363,7 +464,9 @@ public static class 네발동작저작
         var smrs = g.GetComponentsInChildren<SkinnedMeshRenderer>(true);
         var 적을것 = new List<string>();
 
-        foreach (var 다리 in new[] { "legFL", "legFR", "legBL", "legBR" })
+        // ★두발(`legL`·`legR`)도 같이 잰다 (2026-08-06) — 안 재면 부호가 기본값 +1 로 남아
+        //   무릎이 반대로 접힌다. 없는 이름은 아래에서 알아서 건너뛴다.
+        foreach (var 다리 in new[] { "legFL", "legFR", "legBL", "legBR", "legL", "legR" })
         {
             string 정강이름 = 다리 + "_shin";
             if (!뼈.TryGetValue(정강이름, out var 정강) || !뼈.TryGetValue(다리 + "_thigh", out var 허벅)) continue;
@@ -456,7 +559,10 @@ public static class 네발동작저작
         int 만든수 = 0;
         foreach (var 몸 in 모델)
         {
-            foreach (var m in 네발동작표.만들기(몸.name))
+            // ★★체형은 **뼈 이름으로** 가른다 (2026-08-06) — 모델 이름 목록을 코드에 안 적는다.
+            //   `legL_thigh` 가 있으면 두발, 없으면 네발이다. 새 모델이 들어와도 저절로 갈린다.
+            var 표 = 두발동작표.두발인가(몸) ? 두발동작표.만들기(몸.name) : 네발동작표.만들기(몸.name);
+            foreach (var m in 표)
             {
                 var clip = 굽기(m, 몸);
                 string ap = 저장 + "/" + m.이름 + "_" + 몸.name + ".anim";
@@ -473,7 +579,7 @@ public static class 네발동작저작
                 EditorUtility.SetDirty(ctrl);
                 만든수++;
             }
-            Debug.Log("[저작] " + 몸.name + " — 동작 " + 네발동작표.만들기(몸.name).Count + "개");
+            Debug.Log("[저작] " + 몸.name + "(" + (두발동작표.두발인가(몸) ? "두발" : "네발") + ") — 동작 " + 표.Count + "개");
         }
         AssetDatabase.SaveAssets();
         Debug.Log("[저작] 클립 " + 만든수 + "개 완료");
