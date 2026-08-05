@@ -185,6 +185,11 @@ public class Critter : MonoBehaviour, IHittable
         }
         if (staggerT > 0f) { staggerT -= dt; Squash(dt); return; }
 
+        // ★★**서 있을 때도 비켜선다** (2026-08-05). `걷기` 안의 밀어내기는 움직일 때만 도는데,
+        //   자리에 다 온 펫은 거기서 멈춘다(`걷기` 의 이른 반환). 그 뒤에 주인이 걸어 들어오면
+        //   **파묻힌 채 그대로** 있었다 — 겹침이 안 풀리던 나머지 반쪽이 이것이다.
+        비켜서기();
+
         atkCd -= dt; stateT += dt;
 
         findCd -= dt;
@@ -367,6 +372,17 @@ public class Critter : MonoBehaviour, IHittable
         Face(at - transform.position);
     }
 
+    /// 서 있든 걷든, 남과 겹친 만큼은 늘 비켜선다
+    void 비켜서기()
+    {
+        if (!Alive) return;
+        var p = 서로밀기(transform.position);
+        if ((p - transform.position).sqrMagnitude < 1e-6f) return;
+        p = Blocker.Resolve(p, 종.반지름);
+        p.y = 0f;
+        transform.position = p;
+    }
+
     /// ★서로 밀어내되 **부드럽게** (2026-08-04 사용자 — "비비면서 두두두두 떨리지 않게").
     ///   한 프레임에 완전히 밀어내면 두 마리가 서로를 튕겨내며 진동한다.
     ///   ①조금씩만 밀고 ②아주 살짝 겹친 건 그냥 둔다 — 그러면 스르르 자리를 잡는다.
@@ -386,6 +402,24 @@ public class Critter : MonoBehaviour, IHittable
 
             var 목표 = o.transform.position + v / d * need;
             pos = Vector3.Lerp(pos, 목표, 세기);
+        }
+
+        // ★★★**캐릭터도 밀어낸다** (2026-08-05 사용자 — "팻이랑 캐릭터랑 계속 겹치는
+        //   문제가있어 … 꼬리에 겹쳐서 라인이 이상하게 그려진다거나").
+        //   `All` 은 **생물 목록**이라 사람이 들어 있지 않다. 그래서 펫끼리는 서로 비켜서는데
+        //   **주인 몸에는 그대로 파고들어** 서 있었다. 외곽선이 겹쳐 이상하게 보인 건 그
+        //   증상일 뿐이고, 원인은 둘이 같은 자리에 서 있는 것이었다.
+        //
+        // ★미는 건 **펫 쪽만** 한다. 사람을 같이 밀면 걷는 손맛에 손이 얹히는 셈이라
+        //   조작이 미끄러워진다 — 비켜서는 건 짐승의 일이다.
+        var 주인 = Hero.Me;
+        if (주인 != null)
+        {
+            var v = pos - 주인.transform.position; v.y = 0f;
+            float need = (종.반지름 + 주인.Radius) * 0.9f;
+            float d = v.magnitude;
+            if (d < need - 여유 && d > 1e-3f)
+                pos = Vector3.Lerp(pos, 주인.transform.position + v / d * need, 세기);
         }
         return pos;
     }

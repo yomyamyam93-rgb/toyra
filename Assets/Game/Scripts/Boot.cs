@@ -13,6 +13,11 @@ public class Boot : MonoBehaviour
     [Header("동행 펫")]
     public bool 펫데리고시작 = true;
 
+    // ★씬을 안 고쳐도 되게 여기서 붙인다 — F1 을 누르기 전엔 아무 일도 안 한다
+    [Header("동작 진열 (F1)")]
+    [Tooltip("F1 = 구워 놓은 네발 동작 60개를 격자로 세워 보여준다 (다시 누르면 치운다)")]
+    public bool 동작진열키 = true;
+
     /// ★크기를 눈으로 견주려고 셋을 **다른 덩치**로 데리고 나간다 (사람 1.8m 기준).
     ///   무릎께 · 가슴께 · 올려다보는 것. 이래야 크기 규칙을 실제로 정할 수 있다.
     ///   ★큰 놈일수록 느리게 — 덩치와 속도가 같이 가야 크기가 읽힌다.
@@ -35,6 +40,8 @@ public class Boot : MonoBehaviour
     {
         if (world == null) world = FindFirstObjectByType<WorldGen>();
         if (hero == null) hero = FindFirstObjectByType<Hero>();
+
+        if (동작진열키 && GetComponent<동작진열>() == null) gameObject.AddComponent<동작진열>();
 
         Stock.Clear();
         if (world != null) world.Generate();

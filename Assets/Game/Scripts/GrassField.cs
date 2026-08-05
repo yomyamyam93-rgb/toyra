@@ -47,23 +47,29 @@ public class GrassField : MonoBehaviour
 
     [Header("생김새")]
     public float 최소키 = 0.45f, 최대키 = 0.95f;
+    // ★1 이면 발밑 땅과 **완전히 같은 색**이다. 1.06 은 땅이 아직 팔레트 색이던 시절
+    //   풀이 묻혀 보여서 올려 둔 것인데, 이제 풀이 땅을 직접 찍으므로 올릴 이유가 없다
+    //   (2026-08-05 "잔디 색이 튀는데?").
     [Tooltip("발밑 땅색에 곱하는 값 — 1이면 땅과 완전히 같은 색")]
-    public float 밝기 = 1.06f;
+    public float 밝기 = 1f;
     [Tooltip("땅에서 살짝 띄운다 (겹치면 지지직거린다)")] public float 띄우기 = 0.03f;
 
     const int 묶음 = 1000;                 // 한 번에 그리는 최대 개수 (한계 1023)
 
-    // ★[그림][땅톤] 로 재질을 나눈다 (2026-08-04).
-    //   인스턴스마다 색을 다르게 주려 했더니 URP 기본 재질이 그걸 안 받아서
-    //   색이 제멋대로 튀고 **반짝거렸다.** 재질을 나누면 확실하게 색이 고정된다.
-    Material[,] 재질들;
+    // ★★★**묶지 않는다** (2026-08-05 사용자 — "잔디가 왜 묶여있어? … 그냥 잔디하나당
+    //   그아래 땅을 보게해줘"). 전에는 [그림][땅톤] 으로 재질을 나눠 묶었는데, 묶으면 한 칸
+    //   안의 풀이 전부 같은 색이라 **땅색이 스르르 변하는 자리에서 풀만 계단처럼 끊긴다.**
+    //   ☆2026-08-04 에 묶은 이유는 "인스턴스마다 색을 주려니 URP 기본 재질이 안 받아서" 였다.
+    //     이제 **풀 전용 셰이더**(`Toyra/Grass`)가 있으니 그 제약이 없어졌다 —
+    //     풀이 자기 세계 좌표로 땅 그림을 찍어 색을 가져온다. 재질은 그림당 하나면 된다.
+    Material[] 재질들;
     Material[] 마스크재질;      // 그림마다 하나 (알파 모양이 달라서)
     float[] 비율;
     Texture2D[] 흰그림들;
     Mesh 판;
     float yaw = 45f;
 
-    List<Matrix4x4>[,] 그릴것;
+    List<Matrix4x4>[] 그릴것;
     Vector2Int 지난칸 = new Vector2Int(int.MinValue, int.MinValue);
 
     void Start()
@@ -112,45 +118,36 @@ public class GrassField : MonoBehaviour
             enabled = false; return;
         }
 
-        var sh = Shader.Find("Universal Render Pipeline/Lit");
-        int 톤수 = GroundPaint.톤수;
-        재질들 = new Material[그림.Length, 톤수];
-        그릴것 = new List<Matrix4x4>[그림.Length, 톤수];
+        var sh = Shader.Find("Toyra/Grass");
+        if (sh == null)
+        {
+            Debug.LogError("[잔디] Toyra/Grass 셰이더를 못 찾았다");
+            enabled = false; return;
+        }
+
+        재질들 = new Material[그림.Length];
+        그릴것 = new List<Matrix4x4>[그림.Length];
         비율 = new float[그림.Length];
 
         흰그림들 = new Texture2D[그림.Length];
         for (int i = 0; i < 그림.Length; i++)
         {
             비율[i] = 그림[i].width / (float)그림[i].height;
-            var 흰그림 = 흰색으로(그림[i]);          // ★색은 땅이 정한다 (아래 참고)
+            var 흰그림 = 흰색으로(그림[i]);          // ★색은 100% 땅이 정한다
             흰그림들[i] = 흰그림;
+            그릴것[i] = new List<Matrix4x4>();
 
-            for (int t = 0; t < 톤수; t++)
-            {
-                그릴것[i, t] = new List<Matrix4x4>();
-
-                var m = new Material(sh) { name = $"잔디{i}_{t}" };
-                m.mainTexture = 흰그림;
-                if (m.HasProperty("_BaseMap")) m.SetTexture("_BaseMap", 흰그림);
-
-                // ★발밑 땅색에 맞춘다 — 그림이 밝은 연두라 그대로 쓰면 바닥에서 뜬다
-                var c = GroundPaint.톤색(t + 1) * 밝기; c.a = 1f;
-                m.color = c;
-                if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", c);
-
-                m.EnableKeyword("_ALPHATEST_ON");
-                m.SetFloat("_AlphaClip", 1f);
-                m.SetFloat("_Cutoff", 0.5f);
-                m.renderQueue = 2450;
-                if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0f);
-                if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0f);
-                if (m.HasProperty("_SpecularHighlights")) m.SetFloat("_SpecularHighlights", 0f);
-                if (m.HasProperty("_EnvironmentReflections")) m.SetFloat("_EnvironmentReflections", 0f);
-                if (m.HasProperty("_Cull")) m.SetFloat("_Cull", 0f);
-                m.enableInstancing = true;
-                재질들[i, t] = m;
-            }
+            var m = new Material(sh) { name = "잔디" + i };
+            m.SetTexture("_BaseMap", 흰그림);
+            m.SetFloat("_WorldSize", WorldGrid.Size);
+            m.SetFloat("_Cutoff", 0.5f);
+            var c = new Color(밝기, 밝기, 밝기, 1f);
+            m.SetColor("_Tint", c);
+            m.renderQueue = 2450;
+            m.enableInstancing = true;
+            재질들[i] = m;
         }
+        땅그림물리기();
 
         // ★실루엣 마스크에도 그린다 — 안 그리면 펫의 테두리가 **잔디 위에 덧그려진다**
         //   (2026-08-04 사용자 "펫들 발 부분 보면 실루엣이 잔디 위로 그려지는 버그").
@@ -172,10 +169,25 @@ public class GrassField : MonoBehaviour
         }
     }
 
+    /// 땅 그림을 재질에 물린다. 땅이 아직 안 만들어졌으면 다음 프레임에 다시 시도한다
+    bool 땅물림;
+    void 땅그림물리기()
+    {
+        if (땅물림 || 재질들 == null) return;
+        var 땅 = GroundPaint.땅그림;
+        if (땅 == null) return;
+        foreach (var m in 재질들) if (m != null) m.SetTexture("_GroundMap", 땅);
+        땅물림 = true;
+        // ★확인용 — 이게 안 뜨면 풀이 **흰 땅**을 보고 있다는 뜻이고, 그러면 햇빛을 받아
+        //   누르스름한 색으로 떠 보인다 (색이 튀는 첫째 후보다)
+        Debug.Log("[잔디] 땅 그림 물림 — 이제 발밑 색을 따라간다");
+    }
+
     void Update()
     {
         var hero = Hero.Me;
         if (hero == null || 재질들 == null) return;
+        땅그림물리기();
 
         var p = hero.transform.position;
         var 칸 = new Vector2Int(Mathf.FloorToInt(p.x / 간격), Mathf.FloorToInt(p.z / 간격));
@@ -203,9 +215,9 @@ public class GrassField : MonoBehaviour
 
     void 목록뽑기(Vector3 p)
     {
-        int 그림수 = 재질들.GetLength(0), 톤수 = 재질들.GetLength(1);
+        int 그림수 = 재질들.Length;
         for (int i = 0; i < 그림수; i++)
-            for (int t = 0; t < 톤수; t++) 그릴것[i, t].Clear();
+            그릴것[i].Clear();
 
         int r = Mathf.CeilToInt(반경 / 간격);
         int cx = Mathf.FloorToInt(p.x / 간격), cz = Mathf.FloorToInt(p.z / 간격);
@@ -240,8 +252,7 @@ public class GrassField : MonoBehaviour
                 if (톤 <= 0) continue;
                 if ((new Vector2(at.x - 집.x, at.z - 집.z)).sqrMagnitude < 9f * 9f) continue;
 
-                // 한 칸에 여러 포기를 몰아 심는다 — 덤불 안이 빽빽해진다
-                int 톤칸 = Mathf.Clamp(톤 - 1, 0, 톤수 - 1);
+                // ★색은 셰이더가 발밑 땅을 찍어서 정한다 — 여기서 분류할 게 없다
                 int 몇 = Mathf.Max(1, 칸당);
                 for (int k = 0; k < 몇; k++)
                 {
@@ -249,7 +260,7 @@ public class GrassField : MonoBehaviour
                              : new Vector3((gx + Random.value) * 간격, 띄우기, (gz + Random.value) * 간격);
                     int i = Random.Range(0, 그림수);
                     float h = Random.Range(최소키, 최대키);
-                    그릴것[i, 톤칸].Add(Matrix4x4.TRS(자리, rot, new Vector3(h * 비율[i], h, 1f)));
+                    그릴것[i].Add(Matrix4x4.TRS(자리, rot, new Vector3(h * 비율[i], h, 1f)));
                 }
             }
         Random.state = st;
@@ -259,24 +270,23 @@ public class GrassField : MonoBehaviour
 
     void 그리기()
     {
-        int 그림수 = 재질들.GetLength(0), 톤수 = 재질들.GetLength(1);
+        int 그림수 = 재질들.Length;
         for (int i = 0; i < 그림수; i++)
-            for (int t = 0; t < 톤수; t++)
+        {
+            var 목록 = 그릴것[i];
+            for (int s = 0; s < 목록.Count; s += 묶음)
             {
-                var 목록 = 그릴것[i, t];
-                for (int s = 0; s < 목록.Count; s += 묶음)
-                {
-                    int n = Mathf.Min(묶음, 목록.Count - s);
-                    목록.CopyTo(s, 버퍼, 0, n);
+                int n = Mathf.Min(묶음, 목록.Count - s);
+                목록.CopyTo(s, 버퍼, 0, n);
 
-                    Graphics.DrawMeshInstanced(판, 0, 재질들[i, t], 버퍼, n, null,
-                        UnityEngine.Rendering.ShadowCastingMode.Off, false);
+                Graphics.DrawMeshInstanced(판, 0, 재질들[i], 버퍼, n, null,
+                    UnityEngine.Rendering.ShadowCastingMode.Off, false);
 
-                    // 실루엣 마스크에도 같이 (펫 테두리가 잔디 위에 덧그려지지 않게)
-                    if (마스크재질 != null && 마스크재질[i] != null)
-                        Graphics.DrawMeshInstanced(판, 0, 마스크재질[i], 버퍼, n, null,
-                            UnityEngine.Rendering.ShadowCastingMode.Off, false, Outliner.잔디층);
-                }
+                // 실루엣 마스크에도 같이 (펫 테두리가 잔디 위에 덧그려지지 않게)
+                if (마스크재질 != null && 마스크재질[i] != null)
+                    Graphics.DrawMeshInstanced(판, 0, 마스크재질[i], 버퍼, n, null,
+                        UnityEngine.Rendering.ShadowCastingMode.Off, false, Outliner.잔디층);
             }
+        }
     }
 }

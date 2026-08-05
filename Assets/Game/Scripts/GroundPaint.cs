@@ -50,15 +50,252 @@ public static class GroundPaint
         return 잔디자리[y * 마스크크기 + x];
     }
 
-    /// 톤 번호(1부터)에 해당하는 땅색
-    public static Color 톤색(int t) => 잔디톤[Mathf.Clamp(t - 1, 0, 잔디톤.Length - 1)];
+    /// ★★**잰 평균색**을 쓴다 (2026-08-05 사용자 — "잔디색은 해당타일의 평균색과 같으면될듯한데").
+    ///   팔레트 값(`잔디톤`)은 **칠하기 전의 색**이다. 실제 땅은 그 위에 큰 무늬·잔 무늬가
+    ///   얹혀 있어서 팔레트와 다르다. 그래서 다 칠한 **뒤에 재서** 그 평균을 쓴다.
+    ///   → 잔디 포기가 발밑 땅에서 뜨지 않는다.
+    static Color[] 잰톤색;
+    static Color 잰흙색 = new Color(0.78f, 0.72f, 0.52f);
+    static Color 잰모래색 = new Color(0.84f, 0.80f, 0.62f);
+
+    /// 톤 번호(1부터)에 해당하는 땅색 — 잰 값이 있으면 그것
+    public static Color 톤색(int t)
+    {
+        int i = Mathf.Clamp(t - 1, 0, 잔디톤.Length - 1);
+        return 잰톤색 != null ? 잰톤색[i] : 잔디톤[i];
+    }
     public static int 톤수 => 잔디톤.Length;
 
+    /// 그 자리가 무엇인가 — 0 물 · 1 잔디 · 2 모래 · 3 흙(길)
+    public static int 종류(Vector3 w)
+    {
+        if (결종류 == null) return 1;
+        int x = Mathf.Clamp(Mathf.FloorToInt(w.x / 마스크m당), 0, 마스크크기 - 1);
+        int y = Mathf.Clamp(Mathf.FloorToInt(w.z / 마스크m당), 0, 마스크크기 - 1);
+        return 결종류[y * 마스크크기 + x];
+    }
+
+    /// 잔디가 아닌 자리(흙길·모래)의 잰 평균색 — 그 위에 선 풀이 여기 맞춰 마른 색이 된다
+    public static Color 종류색(int k) => k == 3 ? 잰흙색 : 잰모래색;
+
+    /// 다 칠한 **뒤에** 자리마다 평균색을 잰다
+    static void 평균색재기(Color32[] px, int size)
+    {
+        int n = 잔디톤.Length;
+        var 합 = new Vector3[n]; var 수 = new int[n];
+        Vector3 흙합 = Vector3.zero; int 흙수 = 0;
+        Vector3 모래합 = Vector3.zero; int 모래수 = 0;
+
+        for (int i = 0; i < px.Length; i++)
+        {
+            var v = new Vector3(px[i].r, px[i].g, px[i].b) / 255f;
+            byte k = 결종류[i];
+            if (k == 3) { 흙합 += v; 흙수++; }
+            else if (k == 2) { 모래합 += v; 모래수++; }
+            else if (k == 1)
+            {
+                int t = Mathf.Clamp(잔디자리[i] - 1, 0, n - 1);
+                합[t] += v; 수[t]++;
+            }
+        }
+
+        잰톤색 = new Color[n];
+        for (int t = 0; t < n; t++)
+            잰톤색[t] = 수[t] > 0 ? new Color(합[t].x / 수[t], 합[t].y / 수[t], 합[t].z / 수[t]) : 잔디톤[t];
+        if (흙수 > 0) 잰흙색 = new Color(흙합.x / 흙수, 흙합.y / 흙수, 흙합.z / 흙수);
+        if (모래수 > 0) 잰모래색 = new Color(모래합.x / 모래수, 모래합.y / 모래수, 모래합.z / 모래수);
+    }
+
+    // ══════════════════════════════════════════ 땅의 결
+    //
+    // ★★★**색은 그대로 두고 명암 무늬만 곱한다** (2026-08-05 사용자가 A안 선택).
+    //   여섯 색 잔디 팔레트는 직접 고르신 것이고 「바닥은 연속보간」도 그대로 살아야 한다.
+    //   그래서 사진에서 뽑은 결은 **색을 갖지 않는다** — 밝고 어두운 얼룩으로만 곱해진다.
+    //   결의 평균을 1 로 맞추므로 **전체 밝기는 한 톨도 안 변한다.**
+    //
+    // ★★크기: **결 그림 한 칸 = 땅 텍셀 하나 = 0.70m** 이다. 64칸짜리라 무늬는 45m 마다
+    //   되풀이되고 얼룩 하나가 **0.7~1.4m** — 사람 키의 절반 이하다.
+    //   ☆처음엔 그림을 3x3 으로 뭉개서 만들었더니 얼룩이 2~4m 짜리 **위장 무늬**가 됐다
+    //     (2026-08-05 사용자 "과하게 뻥튀기해서 넣었어"). 뭉갤 이유였던 「무지개 잡티」는
+    //     밝기만 끊는 방식으로 이미 사라졌었다 — 없앤 문제의 대책을 그대로 들고 있던 것이다.
+    // ★칸 종류마다 다른 그림이 걸린다 — 잔디엔 잔디결, 물가 모래엔 모래결, 길엔 흙결.
+    //   물에는 안 얹는다 (물은 결이 있으면 물로 안 보인다).
+
+    /// 텍셀마다 어떤 결을 얹을까 — 0 물(안 얹음) · 1 잔디 · 2 모래 · 3 흙
+    static byte[] 결종류;
+    static Color32[][] 결그림; static int[] 결폭; static float[] 결평균, 결진폭;
+
+    static void 결준비()
+    {
+        if (결그림 != null) return;
+        string[] 이름 = { "ground/땅_잔디", "ground/땅_모래", "ground/땅_흙" };
+        결그림 = new Color32[이름.Length][];
+        결폭 = new int[이름.Length]; 결평균 = new float[이름.Length]; 결진폭 = new float[이름.Length];
+
+        for (int i = 0; i < 이름.Length; i++)
+        {
+            var t = Resources.Load<Texture2D>(이름[i]);
+            if (t == null) { Debug.LogWarning("[땅] 결 그림 없음: " + 이름[i]); continue; }
+            try { 결그림[i] = t.GetPixels32(); }
+            catch { Debug.LogWarning("[땅] 결 그림을 못 읽는다(읽기 가능이 꺼져 있다): " + 이름[i]); continue; }
+
+            결폭[i] = t.width;
+            // ★평균과 진폭을 **재 둔다** — 그래야 「세기」가 곧 밝기 흔들림의 폭이 된다.
+            //   0.5 를 기준으로 삼으면 어두운 그림은 땅을 통째로 어둡게 만든다.
+            float 합 = 0f;
+            for (int k = 0; k < 결그림[i].Length; k++) 합 += 밝기(결그림[i][k]);
+            결평균[i] = 합 / 결그림[i].Length;
+            float 최대 = 0f;
+            for (int k = 0; k < 결그림[i].Length; k++)
+                최대 = Mathf.Max(최대, Mathf.Abs(밝기(결그림[i][k]) - 결평균[i]));
+            결진폭[i] = Mathf.Max(0.001f, 최대);
+        }
+    }
+
+    static float 밝기(Color32 c) => (c.r * 0.299f + c.g * 0.587f + c.b * 0.114f) / 255f;
+
+    /// ★★**칸 마스크** — 땅 셰이더가 「이 자리는 무엇인가」를 읽는 그림.
+    ///   R = 잔디 · G = 흙(길) · B = 모래 · A = 물이 아님(0 이면 결을 안 얹는다).
+    ///   이게 있어야 **자리마다 다른 결**이 걸린다 (유니티 기본 재질은 결이 한 장뿐이라 못 했다).
+    public static Texture2D 땅마스크 { get; private set; }
+
+    /// 다 칠한 땅 그림 — 잔디 포기가 **자기 발밑을 찍어 보는 데** 쓴다
+    public static Texture2D 땅그림 { get; private set; }
+
+    static void 마스크만들기(int size)
+    {
+        var px = new Color32[size * size];
+        for (int i = 0; i < px.Length; i++)
+        {
+            byte k = 결종류[i];
+            px[i] = new Color32(
+                k == 1 ? (byte)255 : (byte)0,   // 잔디
+                k == 3 ? (byte)255 : (byte)0,   // 흙(길)
+                k == 2 ? (byte)255 : (byte)0,   // 모래
+                k == 0 ? (byte)0 : (byte)255);  // 물이면 0
+        }
+
+        땅마스크 = new Texture2D(size, size, TextureFormat.RGBA32, false)
+        {
+            name = "땅마스크",
+            // ★부드럽게 뽑는다 — 잔디와 흙길 경계에서 결이 뚝 끊기면 그 선이 보인다
+            filterMode = FilterMode.Bilinear,
+            wrapMode = TextureWrapMode.Clamp
+        };
+        땅마스크.SetPixels32(px);
+        땅마스크.Apply(false);
+    }
+
+    static void 결얹기(Color32[] px, int size, float 세기)
+    {
+        if (세기 <= 0.001f) return;
+        결준비();
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                int i = y * size + x;
+                int k = 결종류[i] - 1;
+                if (k < 0 || k >= 결그림.Length || 결그림[k] == null) continue;
+
+                int w = 결폭[k];
+                float l = 밝기(결그림[k][(y % w) * w + (x % w)]);
+                float 곱 = 1f + (l - 결평균[k]) / 결진폭[k] * 세기;
+
+                var c = px[i];
+                px[i] = new Color32(
+                    (byte)Mathf.Clamp(c.r * 곱, 0f, 255f),
+                    (byte)Mathf.Clamp(c.g * 곱, 0f, 255f),
+                    (byte)Mathf.Clamp(c.b * 곱, 0f, 255f), c.a);
+            }
+    }
+
     /// 맵 전체를 칠한 텍스처를 만든다. `size` 는 한 변의 텍셀 수
-    public static Texture2D 만들기(int seed, int size, System.Func<Vector3, WorldGen.Land> 칸종류)
+    // ══════════════════════════════════════════ 잔얼룩
+    //
+    // ★★★"약간의 얼룩덜룩한 잔디와 땅의 재질" 을 **사진이 아니라 노이즈로** 낸다
+    //   (2026-08-05 사용자 — "아주 은은하게 그걸 재질로 해결하려했는데").
+    //
+    //   사진에서 뽑은 결은 세 번 다듬어도 「때」로 읽혔다. 원인은 **불규칙**이다.
+    //   노이즈는 **부드럽게 이어지는 값**이라 자국이라는 게 생기지 않는다 — 색이 스르르
+    //   짙어졌다 옅어질 뿐이다. 그게 원하던 "은은한 얼룩덜룩" 이다.
+    //
+    // ★왜 지금은 안 보였나: 땅색을 흔드는 겹이 **83m 와 25m 두 개뿐**이라 한 화면(약 110m)에
+    //   한두 번밖에 안 출렁인다. **사람 크기쯤(10m 안팎)의 겹**이 빠져 있었다.
+    //
+    // ★색이 아니라 **밝기만** 흔든다. 팔레트를 건드리지 않으므로 없던 색이 생기지 않는다.
+    //   물에는 안 얹는다 (물이 얼룩덜룩하면 물로 안 보인다).
+    /// ★★★**fBm — 노이즈를 겹겹이 쌓는다** (2026-08-05 사용자 — "아주 큰 불규칙한 무늬에,
+    ///   또 그안에 작은 불규칙한 무늬 두가지가 겹쳐지는거야", "실제로 많이 사용되는 방식으로").
+    ///   게임·영화에서 지형과 재질 무늬를 만들 때 거의 언제나 쓰는 방식이다.
+    ///   한 겹 내려갈 때마다 **크기는 2.7배 잘아지고 세기는 절반**이 된다. 큰 흐름이 판을
+    ///   깔고 잔 겹이 그 위에 결을 얹는다 — 자연에 있는 무늬가 대개 이런 모양이다.
+    ///
+    /// ★★사진과 결정적으로 다른 점: **노이즈는 작아져도 부드럽다.** 옆 칸과 이어져 있어서
+    ///   아무리 잘게 해도 「잡음」이 되지 않는다. 사진은 줄이는 순간 픽셀끼리 무관해져
+    ///   반드시 잡음이 됐다 — 오늘 네 번 실패한 이유가 그것이었다.
+    ///
+    /// ★크기가 2.7배씩(2배가 아니라) 잘아지는 이유: 배수가 정확히 2 면 겹끼리 마루가
+    ///   같은 자리에 겹쳐 격자무늬가 비친다. 어긋난 배수여야 불규칙하게 섞인다.
+    /// ★★한 덩어리 fBm 이 아니라 **두 가지를 따로** 둔다 (2026-08-05 사용자 — "큰 흐름은
+    ///   훨씬더 커야함 … 그리고 잔결은 하나도 안보이네?").
+    ///   겹마다 세기를 반씩 줄이는 정석 fBm 은 **가장 잔 겹이 전체의 12% 밖에 안 된다** —
+    ///   큰 것을 키우면 잔 것은 자동으로 안 보인다. 둘을 한 손잡이에 묶은 게 문제였다.
+    ///   → 「큰 무늬」와 「잔 무늬」에 **각각 크기와 세기**를 준다. 서로 간섭하지 않는다.
+    ///
+    /// ★각각은 안에서 두 겹을 쓴다 (그 크기 + 2.7배 잔 것). 한 겹만 쓰면 규칙적인
+    ///   물결로 보이기 때문이다. 2.7 인 이유는 정확히 2 면 마루가 겹쳐 격자가 비쳐서다.
+    static float 두겹(float wx, float wz, float 주파, float o)
+    {
+        float a = Mathf.PerlinNoise(wx * 주파 + o, wz * 주파 + o) - 0.5f;
+        float b = Mathf.PerlinNoise(wx * 주파 * 2.7f + o * 1.3f, wz * 주파 * 2.7f + o * 1.3f) - 0.5f;
+        return (a + b * 0.5f) / 1.5f;             // -0.5 ~ 0.5
+    }
+
+    static void 무늬얹기(Color32[] px, int size, float m당, int seed,
+                         float 큰세기, float 큰칸, float 잔세기, float 잔칸)
+    {
+        if (큰세기 <= 0.001f && 잔세기 <= 0.001f) return;
+        float o = (seed & 0xFFFF) * 0.017f + 313f;
+        float 큰주파 = 1f / Mathf.Max(1f, 큰칸);
+        float 잔주파 = 1f / Mathf.Max(0.5f, 잔칸);
+
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                int i = y * size + x;
+                if (결종류[i] == 0) continue;                 // 물은 건너뛴다
+
+                float wx = (x + 0.5f) * m당, wz = (y + 0.5f) * m당;
+
+                // ★★★**밝기가 아니라 「진하기」를 흔든다** (2026-08-05 사용자 — "이 검게
+                //   그리고 회색빛으로 조금씩 물드는게 너무 지저분해보여, 황토색이면 조금더
+                //   진한 황토색, 연두색이면 조금더 짙은 연두색 같이 애니메이션 스타일처럼").
+                //
+                //   밝기를 곱하면 색이 **흰색이나 검정 쪽으로 끌려간다** — 그래서 회색빛으로
+                //   물들고 때처럼 보였다. 밝게만 해도 마찬가지다 (흰색 쪽으로 바래니까).
+                //   → 밝기는 **그대로 두고**, 색이 회색에서 얼마나 떨어져 있나(채도)만 키운다.
+                //     색조는 한 톨도 안 변하고 **진해지기만** 한다. 애니메이션 채색이 이 방식이다.
+                float t = (두겹(wx, wz, 큰주파, o) + 0.5f) * 큰세기
+                        + (두겹(wx, wz, 잔주파, o + 511f) + 0.5f) * 잔세기;
+
+                var c = px[i];
+                float 밝기 = c.r * 0.299f + c.g * 0.587f + c.b * 0.114f;
+                float k = 1f + t;                     // 회색에서 멀어지는 배수
+                px[i] = new Color32(
+                    (byte)Mathf.Clamp(밝기 + (c.r - 밝기) * k, 0f, 255f),
+                    (byte)Mathf.Clamp(밝기 + (c.g - 밝기) * k, 0f, 255f),
+                    (byte)Mathf.Clamp(밝기 + (c.b - 밝기) * k, 0f, 255f), c.a);
+            }
+    }
+
+    public static Texture2D 만들기(int seed, int size, System.Func<Vector3, WorldGen.Land> 칸종류,
+                                   float 결세기 = 0f,
+                                   float 큰무늬 = 0.28f, float 큰무늬칸 = 120f,
+                                   float 잔무늬 = 0.14f, float 잔무늬칸 = 4.5f)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         잔디자리 = new byte[size * size];
+        결종류 = new byte[size * size];
         마스크크기 = size;
         마스크m당 = WorldGrid.Size / size;
         var tex = new Texture2D(size, size, TextureFormat.RGBA32, true)
@@ -110,6 +347,7 @@ public static class GroundPaint
                 //   (`GrassField`). 땅은 이어지고 풀은 가까운 톤을 고른다
                 int 톤번호 = Mathf.Clamp(i0 + 1, 1, 톤수);
                 잔디자리[y * size + x] = (byte)톤번호;   // 물·모래·길에서 0 으로 지운다
+                결종류[y * size + x] = 1;                // 잔디결 (물·모래·길에서 바뀐다)
 
                 // ② 물 — 물웅덩이 칸 둘레로 둥글게. 가운데는 깊게
                 if (칸종류 != null && 칸종류(w) == WorldGen.Land.물웅덩이)
@@ -119,9 +357,10 @@ public static class GroundPaint
                     // 물가도 매끈한 원이면 계단으로 보인다 — 두 겹 노이즈로 들쭉날쭉하게
                     float r = 36f + Mathf.PerlinNoise(w.x * 0.02f + o2, w.z * 0.02f + o2) * 18f
                                   + (Mathf.PerlinNoise(w.x * 0.11f + o2, w.z * 0.11f + o2) - 0.5f) * 7f;
-                    if (d < r * 0.72f) { c = 깊은물; 잔디자리[y * size + x] = 0; }
-                    else if (d < r) { c = 물; 잔디자리[y * size + x] = 0; }
-                    else if (d < r * 1.12f) { c = 모래; 잔디자리[y * size + x] = 0; }
+                    // 물엔 결을 안 얹는다 (0) — 결이 있으면 물로 안 보인다
+                    if (d < r * 0.72f) { c = 깊은물; 잔디자리[y * size + x] = 0; 결종류[y * size + x] = 0; }
+                    else if (d < r) { c = 물; 잔디자리[y * size + x] = 0; 결종류[y * size + x] = 0; }
+                    else if (d < r * 1.12f) { c = 모래; 잔디자리[y * size + x] = 0; 결종류[y * size + x] = 2; }
                 }
 
                 px[y * size + x] = c;
@@ -131,8 +370,21 @@ public static class GroundPaint
         // ③ 길은 **찍어서** 그린다 (아래 참고) — 픽셀마다 거리를 재면 안 된다
         길찍기(px, size, m당, 길, o2);
 
+        // ④ 결 — **맨 마지막에** 얹는다. 물·모래·길이 다 정해진 뒤라야 칸마다 맞는 결이 걸린다
+        결얹기(px, size, 결세기);
+
+        // ④' 무늬 — 큰 흐름과 잔 결, 두 가지를 밝기로만 얹는다
+        무늬얹기(px, size, m당, seed, 큰무늬, 큰무늬칸, 잔무늬, 잔무늬칸);
+
+        // ⑤ 칸 마스크 — 셰이더가 자리마다 다른 결을 고르는 데 쓴다
+        마스크만들기(size);
+
+        // ⑥ 자리마다 평균색을 잰다 — 잔디 포기가 이 색을 따라간다
+        평균색재기(px, size);
+
         tex.SetPixels32(px);
         tex.Apply(true);
+        땅그림 = tex;          // 잔디 셰이더가 발밑을 찍어 보려고 쓴다
         Debug.Log($"[땅] {size}×{size} 칠하기 {sw.ElapsedMilliseconds}ms");
         return tex;
     }
@@ -233,13 +485,16 @@ public static class GroundPaint
                 if (d > 겉) continue;
 
                 int i = y * size + x;
-                if (d < r) { px[i] = 흙; 잔디자리[i] = 0; }
+                if (d < r) { px[i] = 흙; 잔디자리[i] = 0; 결종류[i] = 3; }   // 길엔 흙결
                 else
                 {
                     float t = (d - r) / 1.8f;
                     var cur = (Color)px[i];
                     px[i] = Color.Lerp(흙, cur, t);
-                    if (t < 0.5f) 잔디자리[i] = 0;      // 길 가장자리에도 안 난다
+                    // ★★흙이 **조금이라도 섞인 자리**엔 풀을 안 낸다 (2026-08-05 사용자 —
+                    //   "흙으로 넘어가는 잔디들이있어"). 전에는 절반(t<0.5)만 지워서, 바깥
+                    //   절반에 남은 풀이 갈색 길 위에 초록으로 서 있었다.
+                    if (t < 0.92f) { 잔디자리[i] = 0; 결종류[i] = 3; }
                 }
             }
     }

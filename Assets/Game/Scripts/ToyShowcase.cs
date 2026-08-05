@@ -9,10 +9,10 @@ using UnityEngine.InputSystem;
 /// ★씬 창이 아니라 게임 화면이어야 하는 이유: 픽셀 마감·시야·낮밤이 전부 걸린 상태로
 ///   봐야 진짜 인상을 알 수 있다. 씬 창에서는 예뻤는데 게임에서는 안 읽히는 일이 흔하다.
 ///
-/// F1 로 세우고 치운다. `Resources/toys` 에 있는 모델을 전부 불러온다.
+/// F4 로 세우고 치운다. `Resources/toys` 에 있는 모델을 전부 불러온다.
 public class ToyShowcase : MonoBehaviour
 {
-    [Tooltip("F1 을 누르면 세운다")] public bool 시작할때세우기 = false;
+    [Tooltip("F4 를 누르면 세운다")] public bool 시작할때세우기 = false;
     [Tooltip("한 줄에 몇 마리")] public int 한줄 = 10;
     [Tooltip("좌우 간격 (m)")] public float 간격 = 4f;
     [Tooltip("줄 간격 (m)")] public float 줄간격 = 5f;
@@ -28,7 +28,9 @@ public class ToyShowcase : MonoBehaviour
     {
 #if ENABLE_INPUT_SYSTEM
         var k = Keyboard.current;
-        if (k != null && k.f1Key.wasPressedThisFrame)
+        // ★F1 은 `동작진열`(네발 동작 60개 격자)이 가져갔다 — 이쪽은 F4 로 물러난다
+        //   (2026-08-05 사용자 "F1 눌렀을 때 동작을 반복하도록"). 은퇴가 아니라 자리 옮김이다.
+        if (k != null && k.f4Key.wasPressedThisFrame)
         {
             if (진열 != null) 치우기(); else 세우기();
         }

@@ -45,8 +45,67 @@ public class WorldGen : MonoBehaviour
     Transform holder;
 
     // ══════════════════════════════════════════════════════════
+    // ★★★**씬(과 유니티가 메모리에 들고 있는 값)이 코드 기본값을 이긴다.**
+    //   필드 기본값을 고쳐도 **이미 열려 있는 씬의 부품에는 안 먹는다** — 유니티가 컴파일할
+    //   때마다 부품 값을 저장했다 되살리기 때문이다. 그래서 「씬을 다시 열면 괜찮아지는」
+    //   이상한 일이 생긴다 (2026-08-05 사용자 — "sample scene 여니까 또 괜찮은거 같고
+    //   계속 열어줘야하니 혹시?"). 씬을 여닫는 건 사용자가 할 일이 아니다.
+    //   → `PixelScreen` 과 같은 방식: **정본 번호**를 두고, 씬에 적힌 번호가 낮으면
+    //     아래 값들을 코드 것으로 덮어쓴다. 숫자를 새로 정할 때 번호를 하나 올리면 된다.
+    //   ★플레이 중 인스펙터로 만지는 건 그대로 먹는다 (그때는 이미 덮어쓴 뒤다).
+    const int 정본지금 = 18;
+    [Tooltip("코드가 정한 값으로 맞춘 번호 — 건드리지 않는다")] public int 정본 = 0;
+
+    void 정본맞추기()
+    {
+        if (정본 >= 정본지금) return;
+        // ★★땅은 **두 겹**이다 (2026-08-05 사용자 — "크게 얼룩덜룩은 그대로 두고,
+        //   잘게도 재질을 작게 텍스처도 넣어서"):
+        //     ①큰 얼룩덜룩 = 노이즈 (11m) — 색이 스르르 짙어졌다 옅어진다
+        //     ②잘은 결     = 사진 타일 (3m 에 32칸 = 한 칸 9cm) — 표면의 결
+        //   ★잘은 것은 **아주 약해야** 한다. 앞서 세 번 「지저분하다」고 한 건 잘아서가
+        //     아니라 **세서**였다 (0.35 → 자국이 또렷해져 때로 읽혔다). 0.12 면 밝기가
+        //     ±5% 라 자국이 안 잡히고 표면의 결로만 읽힌다.
+        //   ☆한 번 껐었다 (2026-08-05). 0.35 → 0.12 → 0.06 으로 낮춰도 "지저분하다" 가
+        //     계속 나왔는데, 알고 보니 자글거림의 정체가 **픽셀 화면의 디더링**이었다.
+        //     디더링을 끄고 나니 이 결이 비로소 제 몫을 한다 — 사용자가 "추가로 자글자글이
+        //     있어야함" 이라 한 그 자리다. 그래서 되켠다.
+        //   ☆★결론: **사진에서 뽑은 결로는 안 된다** (2026-08-05 사용자 — "자글자글은
+        //     넣기만하면 왜이렇게 오류가 날까 … 재질 자체 문제인거같긴한데". 맞는 진단이었다).
+        //     사진을 줄이면 픽셀 하나하나가 옆 칸과 무관한 값이 되어 **잡음**이 된다.
+        //     사람이 찍는 픽셀은 두세 칸이 뭉쳐 하나의 자국이 되고 그 사이가 **비어 있다.**
+        //     세기를 낮추면 잡음의 세기가 줄 뿐, 잡음이라는 성질은 그대로다.
+        땅결 = 0f;
+        땅결칸 = 3f;
+        땅얼룩 = 0f;        // 땅 그림에 굽는 방식 — 0.7m 가 한계라 안 쓴다
+        // ★★큰 것과 잔 것 (2026-08-05 사용자 — "60m정도로 큰거는 넣어주고,
+        //   작은거는 1m까지 못줄이나?"). 120m 는 한 화면에 하나뿐이라 안 보였다 → 60m.
+        // ☆채도를 키우면 **황토색이 주황빛으로 탁해진다** (2026-08-05 "색도 탁해졌고").
+        //   진하기 방식도 세게 주면 못 쓴다 — 아주 옅게만 남기고, 제대로 된 방식은 셰이더로.
+        큰무늬 = 0.12f;
+        큰무늬칸 = 45f;
+        잔무늬 = 0.06f;
+        잔무늬칸 = 2f;
+        // ★★★**10cm 짜리는 땅 그림에 못 굽는다** (2026-08-05 "작은 자글자글은 지금보다
+        //   10분의1 정도"). 1440m 를 10cm 로 그리려면 36000픽셀짜리 그림이 필요하다.
+        //   → 그 크기는 **재질에 타일로 깔아야** 한다. 해상도와 무관해지기 때문이다.
+        //   이제 그 타일은 사진이 아니라 **노이즈로 찍은 것**이라 잘아도 잡음이 안 된다.
+        //   6.4m 마다 되풀이되고 얼룩 하나가 **10cm** 다.
+        // ★잔결도 **진하기**로 바꿨다 — 타일이 파랑만 빼도록 구워져 있어서,
+        //   어느 땅색이든 색조 그대로 진해지기만 한다 (밝기는 거의 안 변한다).
+        // ★이제 **땅 전용 셰이더**가 자리마다 다른 결을 깐다 (`Toyra/Ground`).
+        //   결 uv 가 월드 좌표라 땅 그림 해상도와 무관하다 — 크기를 마음대로 정할 수 있다.
+        땅결 = 0.35f;
+        땅결칸 = 2f;        // 결 한 장이 2m 를 덮는다 (32칸이면 한 칸 6cm)
+        // 2048 로 되돌린다 — 제일 잔 무늬가 재질 타일로 옮겨 갔으므로 해상도를 올릴 이유가
+        // 없어졌다. 4배 느려질 일도 없다.
+        땅해상도 = 2048;
+        정본 = 정본지금;
+    }
+
     public void Generate()
     {
+        정본맞추기();
         int seed = worldSeed != 0 ? worldSeed : Random.Range(1, int.MaxValue);
         var save = Random.state;
 
@@ -176,6 +235,38 @@ public class WorldGen : MonoBehaviour
     public int 땅해상도 = 2048;
     [Tooltip("잔디·흙길·물가를 칠한다. 끄면 민무늬 초록")]
     public bool 땅칠하기 = true;
+    // ★★★결은 땅 그림에 **굽지 않는다** (2026-08-05 사용자 "여전히 깨지는데, 훨씬 재질이
+    //   작게작게 적용돼야하지않을까"). 땅 그림은 1440m 를 2048칸으로 덮어 **한 칸이 0.7m** 고,
+    //   격자로 안 보이게 **부드럽게 늘려서** 뽑는다. 그러니 아무리 잘게 그려도 0.7m 가
+    //   최소 단위이고 그게 다시 뭉개진다 — 재질이 아니라 얼룩이 되는 이유가 이것이다.
+    //   → 결은 **재질에 따로 깔아** 몇 미터마다 되풀이시킨다. 땅 그림 해상도와 무관해진다.
+    [Tooltip("결 타일 한 장이 덮는 크기 (m) — 작을수록 재질이 잘아진다")]
+    [Range(0.5f, 16f)] public float 땅결칸 = 4f;
+    // ★★★기본은 **끔**이다 (2026-08-05 사용자 — 세 번 다듬었는데 세 번 다 "지저분해").
+    //   사진에서 뽑은 결은 아무리 잘게·드물게 해도 **불규칙**하다. 그런데 화면의 나머지
+    //   전부(장난감 펫 · 뚜렷한 외곽선 · 크게 나눈 색면)가 **규칙적이고 깔끔한 것**이라,
+    //   그 사이에 낀 불규칙한 얼룩은 재질이 아니라 **때**로 읽힌다.
+    //   → 방법을 더 다듬을 문제가 아니라 **전제가 틀린 것**이었다. 장치는 남기고 끈다.
+    //   ☆땅에 무언가가 필요하다고 느껴지면 표면이 아니라 **잔디 포기**(`GrassField`)를
+    //     늘리는 쪽이 맞다 — 그건 규칙적인 모양이라 이 화면에 어울린다.
+    [Tooltip("결의 세기 (0 = 끔). 사진 결은 이 스타일과 안 맞아서 꺼 뒀다")]
+    [Range(0f, 1f)] public float 땅결 = 0f;
+    // 굽는 방식은 지우지 않고 꺼 둔다 (은퇴는 삭제가 아니라 스위치).
+    // 켜면 0.7m 짜리 큰 얼룩이 생긴다 — 결이 아니라 「땅 무늬」가 필요할 때 쓸 자리다.
+    [Tooltip("땅 그림에 직접 굽는 사진 결 (0 = 안 씀)")]
+    [Range(0f, 0.5f)] public float 땅얼룩 = 0f;
+
+    // ★★"은은한 얼룩덜룩" 은 **사진이 아니라 노이즈**로 낸다 (`GroundPaint.잔얼룩얹기` 참고).
+    //   부드럽게 이어지는 값이라 자국이 안 생긴다 — 색이 스르르 짙어졌다 옅어질 뿐이다.
+    // ★★큰 것과 잔 것은 **따로** 잡는다. 한 손잡이에 묶으면 큰 걸 키울 때 잔 게 묻힌다
+    [Tooltip("큰 흐름의 세기 (0.28 = 밝기 ±14%)")]
+    [Range(0f, 0.6f)] public float 큰무늬 = 0.28f;
+    [Tooltip("큰 흐름 하나의 크기 (m)")]
+    [Range(20f, 400f)] public float 큰무늬칸 = 120f;
+    [Tooltip("잔 결의 세기 (0.14 = 밝기 ±7%)")]
+    [Range(0f, 0.4f)] public float 잔무늬 = 0.14f;
+    [Tooltip("잔 결 하나의 크기 (m) — 땅 그림 한 칸이 0.7m 라 그 아래로는 못 내려간다")]
+    [Range(1.5f, 20f)] public float 잔무늬칸 = 4.5f;
 
     /// 땅 — 지형이 아니라 판때기 하나 (완전 평지). 잔디·길·물은 **칠해서** 넣는다
     void MakeGround(int seed)
@@ -196,13 +287,75 @@ public class WorldGen : MonoBehaviour
         var mr = g.GetComponent<MeshRenderer>();
         if (!땅칠하기) { mr.sharedMaterial = Grey.Mat(C땅); return; }
 
-        var tex = GroundPaint.만들기(seed, Mathf.Clamp(땅해상도, 256, 4096), KindAt);
-        var m = new Material(Shader.Find("Universal Render Pipeline/Lit")) { name = "땅" };
-        m.mainTexture = tex;
-        if (m.HasProperty("_BaseMap")) m.SetTexture("_BaseMap", tex);
-        m.SetFloat("_Smoothness", 0.03f);
-        if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0f);
+        var tex = GroundPaint.만들기(seed, Mathf.Clamp(땅해상도, 256, 4096), KindAt,
+                                     땅얼룩, 큰무늬, 큰무늬칸, 잔무늬, 잔무늬칸);
+        // ★★땅 전용 셰이더가 있으면 그걸 쓴다 — **자리마다 다른 결**을 깔 수 있는 건 이쪽뿐이다.
+        //   없으면 예전대로 유니티 기본 재질로 돌아간다 (은퇴는 삭제가 아니라 스위치).
+        var 땅셰이더 = Shader.Find("Toyra/Ground");
+        Material m;
+        if (땅셰이더 != null)
+        {
+            m = new Material(땅셰이더) { name = "땅" };
+            m.SetTexture("_BaseMap", tex);
+            if (GroundPaint.땅마스크 != null) m.SetTexture("_MaskMap", GroundPaint.땅마스크);
+            결텍스처(m, "_GrassTex", "ground/결_잔디");
+            결텍스처(m, "_DirtTex", "ground/결_흙");
+            결텍스처(m, "_SandTex", "ground/결_모래");
+            // 결 uv 는 월드 좌표라, 1m 에 몇 장 깔리나로 준다
+            m.SetFloat("_DetailTiling", 1f / Mathf.Max(0.05f, 땅결칸));
+            m.SetFloat("_DetailStrength", 땅결);
+        }
+        else
+        {
+            Debug.LogWarning("[땅] Toyra/Ground 셰이더를 못 찾았다 — 기본 재질로 간다");
+            m = new Material(Shader.Find("Universal Render Pipeline/Lit")) { name = "땅" };
+            m.mainTexture = tex;
+            if (m.HasProperty("_BaseMap")) m.SetTexture("_BaseMap", tex);
+            m.SetFloat("_Smoothness", 0.03f);
+            if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0f);
+            결깔기(m);
+        }
         mr.sharedMaterial = m;
+
+        // ★무엇이 실제로 걸렸는지 남긴다 — 짐작으로 값을 만지지 않으려고 (2026-08-05).
+        //   화면만 보고는 「사진 결」과 「노이즈 잔얼룩」을 헷갈리기 쉽다.
+        Debug.Log($"[땅] 큰 {큰무늬:0.00}({큰무늬칸:0}m) · 중 {잔무늬:0.00}({잔무늬칸:0.0}m)" +
+                  $" · 잔 {땅결:0.00}({땅결칸 * 100f / 64f:0}cm)");
+    }
+
+    /// 결 그림 한 장을 꽂는다. 없으면 회색(= 아무것도 안 함)이 기본값이라 그냥 비워 둔다
+    static void 결텍스처(Material m, string 자리, string 길)
+    {
+        var t = Resources.Load<Texture2D>(길);
+        if (t != null) m.SetTexture(자리, t);
+        else Debug.LogWarning("[땅] 결 그림 없음: " + 길);
+    }
+
+    /// ★땅에 **결을 깐다** — 땅 그림과 따로, 몇 미터마다 되풀이되는 작은 타일로.
+    ///
+    /// ★URP 의 detail 은 **「밑색 × (결 × 2)」**로 곱한다. 그래서 결 그림은 회색이고
+    ///   평균이 정확히 0.5 다 (0.5 × 2 = 1 = 아무것도 안 함). 덕분에 팔레트 색도,
+    ///   땅 전체 밝기도 하나도 안 변하고 **얼룩만** 생긴다.
+    /// ★세기는 `_DetailAlbedoMapScale` 하나로 조절한다 — 그림을 다시 안 만들고
+    ///   인스펙터에서 바로 맞출 수 있어야 하므로 대비는 그림에 넉넉히 넣어 뒀다.
+    void 결깔기(Material m)
+    {
+        if (땅결 <= 0.001f) return;
+        // ★사진에서 뽑은 결(`결_잔디`)이 아니라 **노이즈로 찍은 결**을 쓴다.
+        //   사진은 픽셀끼리 무관해져 잡음이 됐다 — 노이즈는 잘아도 옆 칸과 이어진다.
+        var 결 = Resources.Load<Texture2D>("ground/결_노이즈");
+        if (결 == null) { Debug.LogWarning("[땅] Resources/ground/결_노이즈 를 못 찾았다"); return; }
+        if (!m.HasProperty("_DetailAlbedoMap")) return;
+
+        m.EnableKeyword("_DETAIL_MULX2");        // 이걸 안 켜면 셰이더가 결을 아예 안 읽는다
+        m.SetTexture("_DetailAlbedoMap", 결);
+        float 반복 = WorldGrid.Size / Mathf.Max(0.5f, 땅결칸);
+        m.SetTextureScale("_DetailAlbedoMap", Vector2.one * 반복);
+        if (m.HasProperty("_DetailAlbedoMapScale")) m.SetFloat("_DetailAlbedoMapScale", 땅결);
+
+        // ★물 위엔 결을 안 깐다 — 마스크의 알파가 곧 결의 세기다
+        if (GroundPaint.땅마스크 != null && m.HasProperty("_DetailMask"))
+            m.SetTexture("_DetailMask", GroundPaint.땅마스크);
     }
 
     // ══════════════════════════════════════════════════════════
