@@ -63,7 +63,24 @@ public class Outliner : MonoBehaviour
     float cd;
     readonly HashSet<int> 처리됨 = new HashSet<int>();
 
-    void Start() { 훑기(); }
+    void Start() { 층가리기(); 훑기(); }
+
+    /// ★★★**실루엣 복사본은 본 카메라에 절대 안 보여야 한다** (2026-08-06 사용자 —
+    ///   "모델링이 두겹이라고", "두개가 겹쳐서 각각 따로 움직인다고").
+    ///
+    ///   테두리를 그리려고 몸마다 **부풀린 복사본**을 하나씩 더 만들어 31번 층에 둔다.
+    ///   그 층을 빼고 찍는 일을 **`PixelScreen` 이 하고 있었는데**, 그건 픽셀 화면이 켜져
+    ///   있을 때만 돈다(`만들기` 는 `!켬` 이면 바로 돌아간다). 픽셀 화면이 꺼지는 순간
+    ///   복사본이 그대로 보여 **모든 생물이 두 겹**이 된다.
+    ///   ☆게다가 복사본은 원본과 따로 굳어 있어서 「각각 따로 움직이는」 것처럼 보인다.
+    ///
+    ///   → 남의 스위치에 기대지 않는다. **복사본을 만드는 쪽이 스스로 가린다.**
+    void 층가리기()
+    {
+        var cam = Camera.main;
+        if (cam == null) return;
+        cam.cullingMask &= ~((1 << 층) | (1 << 잔디층));
+    }
 
     void Update()
     {
@@ -72,6 +89,8 @@ public class Outliner : MonoBehaviour
         {
             mat.SetFloat("_Expand", 밀거리());
         }
+
+        층가리기();          // 카메라가 새로 생기거나 마스크가 덮여도 다시 가린다
 
         if (다시훑기 <= 0f) return;
         cd -= Time.deltaTime;

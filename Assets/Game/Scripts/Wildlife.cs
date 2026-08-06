@@ -9,45 +9,60 @@ using UnityEngine;
 ///   조합을 바꿀 이유가 생긴다.
 public class Wildlife : MonoBehaviour
 {
+    // ★★★**지어낸 종 이름을 다 지웠다** (2026-08-06 사용자 — "꼭꼬랑 호동, 늑구 이런쪽은
+    //   싹다 지우라고했다"). 옛 이름(늑구·호동·꼭꼬·티라)은 앞 프로젝트에서 온 것이고,
+    //   **실제로 우리가 가진 모델과 하나도 안 맞았다.** 이름이 둘이면 어느 게 진짜인지
+    //   매번 헷갈린다 — 모델 파일 이름을 그대로 쓴다.
+    //   ☆수치는 옛것을 가져왔다 (검증된 값이라). 크기·체력은 눈으로 보고 다시 정할 자리다.
     [Header("종 — 크기가 곧 성격이다")]
-    public SpeciesDef 늑구 = new SpeciesDef
+    public SpeciesDef 다람쥐 = new SpeciesDef
     {
-        이름 = "늑구", 키 = 1.2f, 반지름 = 0.4f, 무게 = 0.7f,
-        체력 = 24f, 이속 = 3.6f, 피해 = 4f, 간격 = 0.9f, 사거리 = 1.1f,
-        시야 = 22f, 시야각 = 200f, 청각 = 32f,
-        겁 = 0.45f, 공격성 = 0.7f, 영역 = 50f,
-        무리최소 = 4, 무리최대 = 8, 새끼비율 = 0.25f,
-        번식 = SpeciesDef.번식식.태생, 활동시간 = SpeciesDef.활동.언제나
-    };
-
-    public SpeciesDef 호동 = new SpeciesDef
-    {
-        이름 = "호동", 키 = 2f, 반지름 = 0.65f, 무게 = 2.2f,
-        체력 = 60f, 이속 = 2.7f, 피해 = 9f, 간격 = 1.3f, 사거리 = 1.4f,
-        시야 = 24f, 시야각 = 180f, 청각 = 34f,
-        겁 = 0.3f, 공격성 = 0.75f, 영역 = 55f,
-        무리최소 = 2, 무리최대 = 4, 새끼비율 = 0.3f,
-        번식 = SpeciesDef.번식식.태생, 활동시간 = SpeciesDef.활동.언제나
-    };
-
-    public SpeciesDef 티라 = new SpeciesDef
-    {
-        이름 = "티라", 키 = 4.5f, 반지름 = 1.2f, 무게 = 8f,
-        체력 = 170f, 이속 = 2.1f, 피해 = 22f, 간격 = 2f, 사거리 = 2.2f,
-        시야 = 28f, 시야각 = 160f, 청각 = 40f,
-        겁 = 0.05f, 공격성 = 0.95f, 영역 = 70f,          // 거의 안 물러선다
-        무리최소 = 1, 무리최대 = 1, 새끼비율 = 0f,        // 혼자 다닌다
-        번식 = SpeciesDef.번식식.알, 활동시간 = SpeciesDef.활동.언제나
-    };
-
-    public SpeciesDef 꼭꼬 = new SpeciesDef
-    {
-        이름 = "꼭꼬", 키 = 0.9f, 반지름 = 0.3f, 무게 = 0.4f,
+        이름 = "다람쥐", 키 = 0.9f, 반지름 = 0.3f, 무게 = 0.4f,
         체력 = 14f, 이속 = 4.2f, 피해 = 2f, 간격 = 1.1f, 사거리 = 0.9f,
         시야 = 20f, 시야각 = 260f, 청각 = 36f,           // 겁쟁이는 뒤도 잘 본다
         겁 = 0.9f, 공격성 = 0.1f, 영역 = 40f,            // 보면 도망간다
         무리최소 = 5, 무리최대 = 10, 새끼비율 = 0f,
         번식 = SpeciesDef.번식식.알, 활동시간 = SpeciesDef.활동.낮
+    };
+
+    public SpeciesDef 늑대 = new SpeciesDef
+    {
+        이름 = "늑대", 키 = 1.2f, 반지름 = 0.4f, 무게 = 0.7f,
+        체력 = 24f, 이속 = 3.6f, 피해 = 4f, 간격 = 0.9f, 사거리 = 1.1f,
+        시야 = 22f, 시야각 = 200f, 청각 = 32f,
+        겁 = 0.45f, 공격성 = 0.7f, 영역 = 50f,
+        무리최소 = 4, 무리최대 = 8, 새끼비율 = 0.25f,   // ★태생 무리 — 새끼를 노리는 사냥
+        번식 = SpeciesDef.번식식.태생, 활동시간 = SpeciesDef.활동.언제나
+    };
+
+    public SpeciesDef 사슴 = new SpeciesDef
+    {
+        이름 = "사슴", 키 = 1.8f, 반지름 = 0.5f, 무게 = 1.6f,
+        체력 = 40f, 이속 = 4.6f, 피해 = 5f, 간격 = 1.4f, 사거리 = 1.3f,
+        시야 = 26f, 시야각 = 240f, 청각 = 40f,
+        겁 = 0.8f, 공격성 = 0.15f, 영역 = 60f,           // 먼저 안 덤빈다. 잘 도망간다
+        무리최소 = 3, 무리최대 = 7, 새끼비율 = 0.25f,
+        번식 = SpeciesDef.번식식.태생, 활동시간 = SpeciesDef.활동.낮
+    };
+
+    public SpeciesDef 랩터 = new SpeciesDef
+    {
+        이름 = "랩터", 키 = 1.6f, 반지름 = 0.45f, 무게 = 1.1f,
+        체력 = 34f, 이속 = 4.4f, 피해 = 7f, 간격 = 0.8f, 사거리 = 1.2f,
+        시야 = 26f, 시야각 = 190f, 청각 = 34f,
+        겁 = 0.25f, 공격성 = 0.85f, 영역 = 60f,
+        무리최소 = 3, 무리최대 = 6, 새끼비율 = 0f,       // ★알집 — 한 번에 여럿
+        번식 = SpeciesDef.번식식.알, 활동시간 = SpeciesDef.활동.언제나
+    };
+
+    public SpeciesDef 티라노 = new SpeciesDef
+    {
+        이름 = "티라노", 키 = 4.5f, 반지름 = 1.2f, 무게 = 8f,
+        체력 = 170f, 이속 = 2.1f, 피해 = 22f, 간격 = 2f, 사거리 = 2.2f,
+        시야 = 28f, 시야각 = 160f, 청각 = 40f,
+        겁 = 0.05f, 공격성 = 0.95f, 영역 = 70f,          // 거의 안 물러선다
+        무리최소 = 1, 무리최대 = 1, 새끼비율 = 0f,        // 혼자 다닌다
+        번식 = SpeciesDef.번식식.알, 활동시간 = SpeciesDef.활동.언제나
     };
 
     // ★동행 펫도 여기에 둔다 — 모델을 인스펙터에서 끼울 수 있어야 하기 때문.
@@ -69,6 +84,10 @@ public class Wildlife : MonoBehaviour
     [Tooltip("이 거리를 넘으면 지운다 (m)")] public float 지우는거리 = 130f;
     public float 채우는간격 = 1.5f;
     [Tooltip("집에서 이만큼 안은 안전하다 (m)")] public float 집안전반경 = 45f;
+
+    // ★★거리로 위험을 정한다 (발하임식). 세상이 약해지는 게 아니라 **내가 더 멀리 간다.**
+    [Tooltip("안전반경 밖으로 이만큼 나가면 제일 사납다 (m)")] public float 사나워지는거리 = 520f;
+    [Tooltip("클수록 집 가까이가 오래 순하다 (1 = 고르게)")] [Range(0.5f, 3f)] public float 사나움쏠림 = 1.6f;
 
     WorldGen world;
     DayNight day;
@@ -141,21 +160,51 @@ public class Wildlife : MonoBehaviour
         var home = WorldGrid.Center;
         if ((new Vector2(p.x - home.x, p.z - home.z)).sqrMagnitude < 집안전반경 * 집안전반경) return null;
 
-        // ★★늑구·호동을 뺐다 (2026-08-04 사용자 "늑구, 호동쪽 묶음팻은 없애줘").
-        //   둘은 무리로 몰려다니는 종이라(늑구 4~8 · 호동 2~4) 화면이 금세 그것들로 찬다.
-        //   지금 남은 것은 티라(혼자)와 꼭꼬(작은 떼) 둘뿐이다.
-        //   ★정의는 지운 게 아니라 **안 부르는 것**이다 — 인스펙터 값이 살아 있어서
-        //     되살리려면 아래 case 에 이름만 다시 넣으면 된다.
         var land = world != null ? world.KindAt(p) : WorldGen.Land.빈들판;
+
+        // ★★★**집에서 멀수록 사납다** (2026-08-06 — 발하임이 바이옴을 세계 중심에서의
+        //   거리로 정하는 방식).
+        //
+        //   헌법 3번: *"성장해도 세상이 안 약해진다. 성장의 보상은 쉬워지는 게 아니라
+        //   **저기까지 갈 수 있게 된다**"*. 그런데 지금까지 우리 세계는 **어디나 위험이
+        //   똑같았다** — 「저기」가 없으면 그 헌법이 작동할 데가 없다.
+        //   ☆세상이 약해지는 게 아니다. **세상은 그대로고 내가 더 멀리 갈 뿐이다.**
+        float 멂 = Mathf.Clamp01((new Vector2(p.x - home.x, p.z - home.z).magnitude - 집안전반경)
+                                  / Mathf.Max(1f, 사나워지는거리));
+        멂 = Mathf.Pow(멂, 사나움쏠림);          // 가까운 쪽이 넓다 — 초반이 답답하지 않게
+
+        // ★칸 종류가 후보를 정하고, **집에서의 거리**가 그 안에서 사나운 쪽으로 기울인다
         SpeciesDef s;
+        float r = Random.value;
         switch (land)
         {
             case WorldGen.Land.물웅덩이: return null;
-            case WorldGen.Land.숲: s = 꼭꼬; break;
-            case WorldGen.Land.둥지: s = 꼭꼬; break;
-            case WorldGen.Land.바위지대: s = 티라; break;
-            case WorldGen.Land.폐허: s = 티라; break;
-            default: s = Random.value < 0.7f ? 꼭꼬 : 티라; break;
+
+            // 숲 — 다람쥐와 사슴의 자리. 멀어지면 늑대가 섞이고 더 멀면 티라노
+            case WorldGen.Land.숲:
+                s = r < 0.40f ? 다람쥐
+                  : r < 0.70f ? 사슴
+                  : r < 0.70f + 멂 * 0.20f ? 늑대 : (멂 > 0.55f ? 티라노 : 다람쥐);
+                break;
+
+            // 둥지 — 알을 낳는 종만
+            case WorldGen.Land.둥지:
+                s = r < 0.6f ? 다람쥐 : (멂 > 0.5f ? 티라노 : 랩터);
+                break;
+
+            // 바위지대·폐허 — 사나운 쪽
+            case WorldGen.Land.바위지대:
+            case WorldGen.Land.폐허:
+                s = r < 0.30f + 멂 * 0.35f ? 랩터
+                  : r < 0.65f + 멂 * 0.30f ? 늑대 : (멂 > 0.4f ? 티라노 : 다람쥐);
+                break;
+
+            // 빈들판 — 떼가 몰려오는 자리 (헌법 5번의 「수」)
+            default:
+                s = r < 0.35f ? 사슴
+                  : r < 0.65f ? 다람쥐
+                  : r < 0.65f + 멂 * 0.25f ? 늑대 : (멂 > 0.6f ? 티라노 : 사슴);
+                break;
         }
 
         // 활동 시간이 안 맞으면 안 나온다 — 밤에만 도는 종이 생기는 자리

@@ -73,6 +73,24 @@ public static class 네발동작저작
         /// 기본은 `안파묻힘` — 아래로만 막으므로 뛰어오르는 건 그대로 산다.
         /// `딱붙임` 은 뜨는 것도 끌어내린다 (죽음처럼 반드시 바닥에 놓여야 하는 것).
         public 바닥 바닥맞춤 = 바닥.안파묻힘;
+
+        /// ★★**접지는 점이 아니라 면이다** (2026-08-06 사용자 — "사슴이 죽을때 뿔때문에
+        ///   공중에 뜨는데, 몸이 땅에 닿아야 하는데").
+        ///
+        ///   땅에 닿았는지를 「제일 낮은 정점 하나」로 재면, **뿔끝·등가시·꼬리끝·발톱**처럼
+        ///   가늘고 뾰족한 것 하나가 땅을 짚는 순간 몸 전체가 그 위에 얹혀 뜬다.
+        ///   ☆사슴만의 문제가 아니다 — 스테고의 등가시, 트리케의 뿔, 티라의 꼬리가 전부 같다.
+        ///
+        ///   ★가려내는 기준은 **두께**다: 뾰족한 것은 정점이 몇 개 안 되고, 땅에 눌린
+        ///     몸통은 수천 개가 같은 높이에 깔린다.
+        ///   → 「가장 낮은 이 비율만큼은 튀어나온 것으로 보고 무시한다」 로 한 줄에 끝난다.
+        ///     종마다 따로 적을 필요가 없다 — 새 모델을 넣어도 그냥 맞는다.
+        ///
+        ///   ☆걷기·뛰기는 **0 이어야 한다.** 발끝은 진짜로 점으로 닿는 것이라
+        ///     무시하면 발이 땅에 파묻힌다. 그래서 종이 아니라 **동작마다** 정한다.
+        [Tooltip("가장 낮은 이 비율(0~1)의 정점은 「튀어나온 것」으로 보고 접지에서 뺀다")]
+        public float 접지무시 = 0f;
+
         public List<줄> 줄들 = new List<줄>();
 
         public 동작 회전(string 뼈, 축 축, params 키[] 키들)
@@ -350,7 +368,7 @@ public static class 네발동작저작
         }
 
         if (m.바닥맞춤 != 바닥.그대로 && 길.ContainsKey("spine_hip"))
-            땅에붙이기(clip, g, 길["spine_hip"], 쉬는위치["spine_hip"], m.길이, m.바닥맞춤);
+            땅에붙이기(clip, g, 길["spine_hip"], 쉬는위치["spine_hip"], m.길이, m.바닥맞춤, m.접지무시);
 
         var s = AnimationUtility.GetAnimationClipSettings(clip);
         s.loopTime = m.반복;
@@ -365,23 +383,38 @@ public static class 네발동작저작
     ///   (늑대 0.25m · 브론토 0.67m). 굴러가는 동안 최저점이 골반이 아니라 **목·꼬리로
     ///   옮겨다니기** 때문이다. 그래서 프레임마다 실제 최저점을 재서 그만큼 올린다.
     ///   보정은 뿌리 높이 하나만 움직이므로 한 번에 정확히 맞는다 (선형 관계).
-    static void 땅에붙이기(AnimationClip clip, GameObject g, string 뿌리길, Vector3 쉬는뿌리, float 길이, 바닥 모드)
+    static void 땅에붙이기(AnimationClip clip, GameObject g, string 뿌리길, Vector3 쉬는뿌리, float 길이, 바닥 모드, float 접지무시 = 0f)
     {
         bool 딱 = 모드 == 바닥.딱붙임;
         // ★이름을 `바닥` 이라 두면 **열거형 `바닥` 과 부딪힌다** — 이 안에서는 지역 변수가
         //   이겨서 `바닥.한번만` 이 컴파일 에러가 된다. 하는 일 그대로 `밑재기` 로 부른다.
+        //
+        // ★`접지무시` 가 0 이면 예전 그대로 **가장 낮은 한 점**을 쓴다 (걷기·뛰기 — 발끝은
+        //   진짜로 점으로 닿는다). 0 보다 크면 그 비율만큼은 뾰족한 것으로 보고 건너뛴다
+        //   (죽음·피격 — 뿔·가시가 땅을 짚어 몸이 뜨는 것을 막는다).
+        var 통 = new List<float>();
         System.Func<float> 밑재기 = () =>
         {
             float lo = float.MaxValue;
+            통.Clear();
             foreach (var r in g.GetComponentsInChildren<Renderer>(true))
             {
                 var sk = r as SkinnedMeshRenderer; if (sk == null) continue;
                 var mesh = new Mesh(); sk.BakeMesh(mesh, true);
                 var mtx = sk.transform.localToWorldMatrix;
-                foreach (var v in mesh.vertices) { float y = mtx.MultiplyPoint3x4(v).y; if (y < lo) lo = y; }
+                foreach (var v in mesh.vertices)
+                {
+                    float y = mtx.MultiplyPoint3x4(v).y;
+                    if (y < lo) lo = y;
+                    if (접지무시 > 0f) 통.Add(y);
+                }
                 Object.DestroyImmediate(mesh);
             }
-            return lo;
+            if (접지무시 <= 0f || 통.Count == 0) return lo;
+            // 가장 낮은 쪽 `접지무시` 만큼을 건너뛴 자리가 **몸이 실제로 눌리는 높이**다
+            통.Sort();
+            int 건너뜀 = Mathf.Clamp(Mathf.RoundToInt(통.Count * 접지무시), 0, 통.Count - 1);
+            return 통[건너뜀];
         };
 
         // ★★★"서 있는 높이" 는 **클립을 재생하기 전** 에 재야 한다 (2026-08-05 사용자

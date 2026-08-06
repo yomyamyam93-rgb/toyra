@@ -20,7 +20,9 @@ public class WorldGen : MonoBehaviour
     public int worldSeed = 0;
 
     [Header("칸 종류가 뽑히는 비율")]
-    public float w빈들판 = 4f, w숲 = 2.5f, w바위 = 2f, w물 = 1f, w폐허 = 0.8f, w둥지 = 0.8f;
+    // ★`w물` 은 0 이다 — 물은 칸이 아니라 노이즈 장(`물기`)이 정한다 (2026-08-06).
+    //   손잡이는 `물칸`·`물문턱`. 여긴 은퇴한 자리라 지우지 않고 0 으로 둔다.
+    public float w빈들판 = 4f, w숲 = 2.5f, w바위 = 2f, w물 = 0f, w폐허 = 0.8f, w둥지 = 0.8f;
 
     [Header("★교체 자리 — 프리팹을 넣으면 상자 대신 그게 나온다")]
     public GameObject[] 나무프리팹;
@@ -136,13 +138,10 @@ public class WorldGen : MonoBehaviour
                 kinds[x, z] = Roll();
             }
 
-        // 물은 뭉쳐야 호수로 보인다
-        var add = new List<Vector2Int>();
-        for (int x = 0; x < n; x++)
-            for (int z = 0; z < n; z++)
-                if (kinds[x, z] == Land.빈들판 && Neighbors(x, z, Land.물웅덩이) >= 2)
-                    add.Add(new Vector2Int(x, z));
-        foreach (var p in add) kinds[p.x, p.y] = Land.물웅덩이;
+        // ★★물 칸을 뭉치던 규칙은 **은퇴**했다 (2026-08-06). 물은 이제 칸이 아니라
+        //   **노이즈 장**(`물기`)이 정한다 — 칸을 뭉칠 이유가 없어졌고, 칸으로 두면
+        //   「칸은 물인데 실제로는 뭍」 같은 어긋남이 생긴다.
+        //   ☆`w물` 도 0 으로 내렸다. 손잡이는 `물칸`·`물문턱` 쪽이다.
 
         // 바위가 넉 칸 넘게 뭉치면 벽이 된다 — 하나를 튼다
         for (int x = 0; x < n; x++)
@@ -205,6 +204,17 @@ public class WorldGen : MonoBehaviour
                 {
                     c.x += Random.Range(-1f, 1f) * WorldGrid.Tile * 0.25f;
                     c.z += Random.Range(-1f, 1f) * WorldGrid.Tile * 0.25f;
+
+                    // ★★물이 「장」이 된 뒤로는 랜드마크가 호수 위에 앉을 수 있다 (2026-08-06).
+                    //   마른 자리를 몇 번 찔러 보고, 끝내 못 찾으면 이 칸은 물이 차지한 것이다.
+                    var 원래 = c;
+                    bool 마름 = !물인가(c);
+                    for (int t = 0; t < 8 && !마름; t++)
+                    {
+                        c = 원래 + new Vector3(Random.Range(-1f, 1f), 0f, Random.Range(-1f, 1f)) * WorldGrid.Tile * 0.42f;
+                        마름 = !물인가(c);
+                    }
+                    if (!마름) continue;              // 온통 물이면 아무것도 안 세운다
                 }
 
                 switch (k)
@@ -492,6 +502,63 @@ public class WorldGen : MonoBehaviour
             // ★나무가 750그루라 그루당 서너 포기면 2천 개가 넘는다 — 켤 때 그게 곧 렉이다
             밑동풀(p, tr * 1.6f, Random.Range(0, 3));
         }
+
+        // ★★★**심지** — 숲 안에 **큰 놈이 못 들어오는 덤불**을 몇 군데 박는다 (헌법 7번).
+        //   *"지형이 무기다 — 다만 「높낮이」가 아니라 「폭」이다."*
+        for (int k = 0; k < 심지수; k++)
+            심지심기(Scatter(c, spread * 0.7f));
+    }
+
+    // ★★재 보고 정한 값이다 (2026-08-06). 통과 조건은
+    //   **나무 간격 > 2 × (나무반지름 + 몸반지름)** 이다:
+    //     다람쥐(r0.3) 1.4m · 늑대(r0.4) 1.6m · **티라노(r1.2) 3.1m**
+    //   → 간격 2.4m 면 **티라만 못 지나간다.** 이게 「도망칠 곳」이다.
+    //   ☆전에는 숲 칸 160×160m 에 나무가 106그루(평균 간격 15.5m)뿐이라
+    //     티라가 95% 를 그냥 지나갔다. 넓게 촘촘히가 아니라 **좁은 데 몰아야** 한다.
+    [Header("★숲의 심지 — 큰 놈이 못 들어오는 덤불 (헌법 7번)")]
+    // ★실측 (씨앗 12345 · 숲 칸에서 무작위 1600점):
+    //     심지 0군데 → 티라 5% · 늑대 2% 막힘   (사실상 아무 데나 지나간다)
+    //     심지 3군데 15m 2.4m → **티라 10% · 늑대 4%** — 티라만 2.5배 막힌다
+    //   ☆숲 전체를 막지 않는 게 맞다. **숨을 주머니**가 군데군데 있으면 된다.
+    [Tooltip("숲 하나에 심지를 몇 군데")] [Range(0, 6)] public int 심지수 = 3;
+    [Tooltip("심지 반경 (m) — 너무 크면 숲이 통째로 벽이 된다")] [Range(4f, 30f)] public float 심지반경 = 15f;
+    [Tooltip("심지 안 나무 간격 (m) — 2.4 면 티라만 못 지난다")] [Range(1.6f, 6f)] public float 심지간격 = 2.4f;
+
+    void 심지심기(Vector3 c)
+    {
+        if (심지수 <= 0 || 심지반경 < 1f) return;
+        float s = Mathf.Max(1.6f, 심지간격);
+        int r = Mathf.CeilToInt(심지반경 / s);
+        for (int ix = -r; ix <= r; ix++)
+            for (int iz = -r; iz <= r; iz++)
+            {
+                // ★흔들어 심되 **간격의 4분의 1까지만** — 크게 흔들면 틈이 생겨 규칙이 깨진다
+                var p = c + new Vector3(ix * s + Random.Range(-0.25f, 0.25f) * s, 0f,
+                                        iz * s + Random.Range(-0.25f, 0.25f) * s);
+                float d = new Vector2(p.x - c.x, p.z - c.z).magnitude;
+                if (d > 심지반경) continue;
+                // 가장자리는 성글게 — 경계가 원으로 보이지 않게
+                if (d > 심지반경 * 0.72f && Random.value < 0.45f) continue;
+                if (!GroundPaint.잔디인가(p)) continue;
+
+                if (Swap(나무프리팹, p, true, 0.45f)) continue;
+                float h = Random.Range(7f, 11f);          // 심지는 어리고 가늘다 — 빛을 다툰다
+                float w = Random.Range(2.6f, 4.2f);
+                float tr = Random.Range(0.35f, 0.5f);
+                var trunk = Grey.Box(holder, p + Vector3.up * (h * 0.3f), new Vector3(tr, h * 0.6f, tr), C줄기, "나무_줄기");
+                var leaf = Grey.Box(holder, p + Vector3.up * (h * 0.75f), new Vector3(w, h * 0.5f, w), C잎, "나무_잎");
+                leaf.transform.SetParent(trunk.transform, true);
+                Blocker.Add(p, tr * 0.7f);
+
+                var fall = trunk.AddComponent<TreeFall>();
+                fall.통나무값 = Mathf.RoundToInt(3f + h * 0.4f);
+                fall.선자리 = p;
+                var hv = trunk.AddComponent<Harvest>();
+                hv.kind = Stock.Kind.나무;
+                hv.hits = 4; hv.perHit = 0;
+                hv.blockAt = p; hv.장애물치우기 = false;
+                hv.쓰러짐 = fall;
+            }
     }
 
     void Rocks(Vector3 c)
@@ -513,10 +580,90 @@ public class WorldGen : MonoBehaviour
 
             밑동풀(p, w * 0.7f, Random.Range(1, 4));
         }
+
+        // ★★굴은 **바위지대에만** 난다 (2026-08-06). 인과가 있어야 한다 —
+        //   허허벌판 한가운데 동굴 입구가 뚫려 있으면 "왜 여기 있나"에 답을 못 한다.
+        //   ☆굴이 값을 하는 자리: 야행성 종의 서식지 · 비 피하기 · 광석 · 좁아서 병목이 된다.
+        if (굴넣기 && Random.value < 굴확률)
+        {
+            var 입구 = Scatter(c, spread * 0.6f);
+            int 조각수 = 절차.정수(Random.value, 굴조각최소, 굴조각최대, 굴쏠림);
+            float 반경 = Mathf.Lerp(14f, 굴반경, Mathf.InverseLerp(굴조각최소, 굴조각최대, 조각수));
+            // ★굴은 폐허보다 축이 더 세다 — 4분의 3을 한 줄기로 파고든다.
+            //   그래야 「입구 → 가장 깊은 방」이 생기고, 나머지가 막다른 곁가지(광석·둥지)가 된다.
+            직소.짓기(holder, 굴주머니(), "굴방", 입구, Random.Range(int.MinValue, int.MaxValue),
+                      new 직소.설정 { 조각한도 = 조각수, 반경 = 반경,
+                                      깊이한도 = Mathf.Clamp(2 + 조각수, 4, 24),
+                                      줄기 = Mathf.Max(3, 조각수 * 3 / 4) });
+        }
+    }
+
+    [Header("★굴 (바위지대에만)")]
+    [Tooltip("바위지대에 굴을 판다")] public bool 굴넣기 = true;
+    [Tooltip("바위지대 몇 곳에 굴이 나나")] [Range(0f, 1f)] public float 굴확률 = 0.45f;
+    [Tooltip("제일 작은 굴의 조각 수")] [Range(2, 12)] public int 굴조각최소 = 3;
+    [Tooltip("제일 큰 굴의 조각 수")] [Range(4, 40)] public int 굴조각최대 = 18;
+    [Tooltip("클수록 작은 굴이 흔해진다")] [Range(1f, 4f)] public float 굴쏠림 = 2.4f;
+    [Tooltip("굴이 퍼지는 반경 (m)")] [Range(10f, 70f)] public float 굴반경 = 45f;
+    [Tooltip("★비우면 상자로 짓는다")] public GameObject[] 굴조각_방, 굴조각_통로, 굴조각_잡동사니;
+
+    List<직소.주머니> 굴주머니()
+    {
+        if (굴조각_방 == null || 굴조각_방.Length == 0) return 직소상자.굴주머니();
+        return new List<직소.주머니>
+        {
+            new 직소.주머니 { 이름 = "굴방",     조각들 = 굴조각_방 },
+            new 직소.주머니 { 이름 = "굴통로",   조각들 = 굴조각_통로 },
+            new 직소.주머니 { 이름 = "잡동사니", 조각들 = 굴조각_잡동사니 },
+        };
+    }
+
+    // ★★폐허는 **조각을 이어 붙여** 짓는다 (2026-08-06 사용자 — 마인크래프트 직소 방식).
+    //   전에는 돌기둥을 원으로 둘러 세우기만 했다. 그건 매번 「원」이라 두 번만 봐도 같다.
+    //   이제는 방·복도·꺾임이 이어 붙어 **크기도 모양도 매번 달라진다.**
+    //   ☆`폐허조각` 이 비어 있으면 상자 조각으로 짓는다 (상자 먼저, 모델 나중).
+    // ★★**크기는 고정값이 아니라 범위에서 뽑는다** (2026-08-06 — MC 의 직소 `size` 자리).
+    //   폐허마다 조각 수가 3~24 로 갈리고, `절차.작은쪽으로` 가 **작은 폐허를 흔하게,
+    //   큰 폐허를 드물게** 만든다. 균등하게 뽑으면 큰 게 자주 나와서 특별하지 않게 된다.
+    [Header("★직소 폐허")]
+    [Tooltip("끄면 옛 방식(돌기둥 원)으로 돌아간다")] public bool 직소폐허 = true;
+    [Tooltip("제일 작은 폐허의 조각 수")] [Range(2, 20)] public int 폐허조각최소 = 3;
+    [Tooltip("제일 큰 폐허의 조각 수")] [Range(4, 60)] public int 폐허조각최대 = 24;
+    [Tooltip("클수록 작은 폐허가 흔해진다 (1 = 균등)")] [Range(1f, 4f)] public float 폐허쏠림 = 2.2f;
+    [Tooltip("폐허가 퍼지는 반경 (m) — 조각 수에 맞춰 늘어난다")] [Range(15f, 90f)] public float 폐허반경 = 55f;
+    [Tooltip("★비우면 상자로 짓는다. 진짜 모델이 생기면 여기에 꽂는다")]
+    public GameObject[] 폐허조각_방, 폐허조각_복도, 폐허조각_잡동사니;
+
+    List<직소.주머니> 폐허주머니()
+    {
+        // 프리팹을 하나라도 꽂았으면 그걸 쓴다 — 아니면 상자
+        bool 진짜 = (폐허조각_방 != null && 폐허조각_방.Length > 0);
+        if (!진짜) return 직소상자.폐허주머니();
+        return new List<직소.주머니>
+        {
+            new 직소.주머니 { 이름 = "폐허터",   조각들 = 폐허조각_방 },
+            new 직소.주머니 { 이름 = "돌담길",   조각들 = 폐허조각_복도 },
+            new 직소.주머니 { 이름 = "잡동사니", 조각들 = 폐허조각_잡동사니 },
+        };
     }
 
     void Ruin(Vector3 c)
     {
+        if (직소폐허)
+        {
+            // ★크기를 뽑는다 — 작은 게 흔하고 큰 게 드물다
+            int 조각수 = 절차.정수(Random.value, 폐허조각최소, 폐허조각최대, 폐허쏠림);
+            float 반경 = Mathf.Lerp(20f, 폐허반경, Mathf.InverseLerp(폐허조각최소, 폐허조각최대, 조각수));
+            int 깊이 = Mathf.Clamp(2 + 조각수 / 3, 2, 10);
+            // ★줄기 = 절반 — 「바깥에서 안쪽으로」 축이 생기고 나머지가 곁가지로 붙는다.
+            //   축이 있어야 폐허가 읽힌다 (한 덩어리로 뭉치면 어디가 안쪽인지 모른다).
+            int 놓음 = 직소.짓기(holder, 폐허주머니(), "폐허터", c, Random.Range(int.MinValue, int.MaxValue),
+                                  new 직소.설정 { 조각한도 = 조각수, 반경 = 반경, 깊이한도 = 깊이,
+                                                  줄기 = Mathf.Max(2, 조각수 / 2) });
+            if (놓음 > 0) return;
+            // 한 조각도 못 놓았으면 옛 방식으로 (조용히 빈 칸이 되는 것보다 낫다)
+        }
+
         int count = Random.Range(5, 9);
         float r = Random.Range(8f, 14f);
         float a0 = Random.value * Mathf.PI * 2f;
@@ -584,9 +731,44 @@ public class WorldGen : MonoBehaviour
         }
     }
 
+    // ───────────────────────────────── ★물은 「장」이다 (칸이 아니다)
+    //
+    // ★★온 세계의 물을 **이 함수 하나**가 정한다 (2026-08-06). 땅 그림·칸 종류·잔디·
+    //   야생 스폰·나무 흩뿌리기가 **전부 여기를 본다** — 두 곳에서 따로 계산하면
+    //   언젠가 갈라져서 물 위에 나무가 서게 된다.
+    //
+    // ★크기가 저절로 다양해진다: 노이즈가 문턱을 살짝 넘은 자리는 **웅덩이**,
+    //   깊이 넘은 자리는 **큰 호수**다. 도장이 아니라서 두 번 같은 모양이 안 나온다.
+    [Header("★물 (도장이 아니라 노이즈 장)")]
+    [Tooltip("물 무늬 하나의 크기 (m) — 클수록 호수가 크고 드물다")] public static float 물칸 = 260f;
+    // ★실측: 문턱 0.54 → 땅의 15.6%가 물 · 0.58 → 8.4% · 0.62 → 4.1%.
+    //   0.59 는 약 7% — 목마름이 랜드마크가 될 만큼 드물면서, 걷다 보면 만나는 정도다.
+    [Tooltip("이 값을 넘으면 물이다 — 높일수록 물이 줄어든다 (0.59 ≈ 땅의 7%)")]
+    public static float 물문턱 = 0.59f;
+    [Tooltip("물가가 번지는 폭 — 클수록 얕은 물·모래가 넓다")] public static float 물가폭 = 0.13f;
+    [Tooltip("씨앗 (세계마다 다르게)")] public static float 물씨 = 11.7f;
+
+    /// 그 자리가 얼마나 물인가 — **0이면 뭍**, 0보다 크면 물(0.18 미만은 물가 모래, 0.55 넘으면 깊은 물)
+    public static float 물기(float x, float z)
+    {
+        // ★집 둘레는 물이 없다 — 나가자마자 호수면 답답하다 (칸 종류에서 하던 배려를 옮겨 왔다)
+        var 집 = WorldGrid.Center;
+        float 집d = new Vector2(x - 집.x, z - 집.z).magnitude;
+        if (집d < 55f) return 0f;
+
+        float n = 절차.결(x, z, 물칸, 4, 물씨);
+        float t = 물문턱;
+        if (집d < 110f) t += (1f - (집d - 55f) / 55f) * 0.12f;      // 집 둘레는 문턱을 높여 물을 밀어낸다
+        return 절차.넘은만큼(n, t, 물가폭);
+    }
+
+    public static bool 물인가(Vector3 p) => 물기(p.x, p.z) > 0.18f;
+
     /// 그 자리가 어떤 칸인가 — 야생 구성이 이걸 보고 갈린다
     public Land KindAt(Vector3 p)
     {
+        // ★물이 칸보다 세다 — 물 위에 숲이라고 답하면 나무가 물에 선다
+        if (물인가(p)) return Land.물웅덩이;
         if (kinds == null) return Land.빈들판;
         int x = Mathf.Clamp(Mathf.FloorToInt(p.x / WorldGrid.Tile), 0, WorldGrid.N - 1);
         int z = Mathf.Clamp(Mathf.FloorToInt(p.z / WorldGrid.Tile), 0, WorldGrid.N - 1);
@@ -631,6 +813,16 @@ public class WorldGen : MonoBehaviour
     [Range(0.05f, 1f)] public float 숲비율 = 0.42f;
     [Tooltip("숲 한복판에서 한 칸에 서는 그루 수 — 이게 「울창함」의 상한이다")]
     [Range(1, 10)] public int 칸당최대 = 7;
+
+    // ★★숲의 **심지** — 제일 진한 곳만 나무를 몰아 심어 큰 놈이 못 지나가게 한다 (헌법 7번).
+    //   0 이면 예전처럼 고르게 깔린다 (은퇴는 삭제가 아니라 스위치).
+    // ★★이건 **효과가 없었다** (2026-08-06 실측: 2.2 로 올려도 티라 통과율 95%→94%).
+    //   벌판에 흩뿌리는 나무는 애초에 너무 성겨서 몰아 심어도 벽이 안 된다.
+    //   진짜 답은 `Forest()` 의 **심지**였다 (아래). 여기는 **0 으로 꺼 둔다** — 지우지는 않는다.
+    [Tooltip("(은퇴) 벌판 나무를 몰아 심기 — 효과가 없어서 0")]
+    [Range(0f, 4f)] public float 숲빽빽 = 0f;
+    [Tooltip("숲 진하기가 이 값을 넘는 데부터 심지다 — 높일수록 심지가 좁고 드물다")]
+    [Range(0.3f, 0.95f)] public float 심지문턱 = 0.72f;
     // ★가장자리는 **얇아야** 대비가 산다. 0.5 로 두면 개활지에도 나무가 흩어져
     //   "어디나 조금씩 있는 벌판"이 된다 — 숲이 도드라지지 않는 진짜 이유였다.
     [Tooltip("숲 가장자리에서 한 칸에 서는 그루 수 — 낮을수록 숲과 벌판이 뚜렷하다")]
@@ -768,12 +960,24 @@ public class WorldGen : MonoBehaviour
                 // ★★여기가 「울창함」이다 — 진할수록 한 칸에 여러 그루.
                 //   소수는 확률로 처리해서 가장자리가 계단으로 안 끊기게 한다
                 float 몇 = Mathf.Lerp(가장자리밀도, 칸당최대, 숲);
+
+                // ★★★**심지** — 숲의 제일 진한 곳은 **큰 놈이 못 지나가게** 빽빽하다
+                //   (2026-08-06 — 헌법 7번 "지형이 무기다, 높낮이가 아니라 폭이다").
+                //   ☆재 보니 그냥 나무를 촘촘히 깔면 티라(반지름 1.2)가 96% 지나갔다.
+                //     고르게 깔면 나무 사이 간격도 고르게 벌어져서 **틈이 항상 있기** 때문이다.
+                //   → 넓게 촘촘히 하는 게 아니라, **좁은 자리에 몰아** 심는다. 그게 심지다.
+                //     심지 밖은 그대로 성기니까 숲 전체가 벽이 되지는 않는다.
+                float 심지 = 숲빽빽 > 0f ? Mathf.InverseLerp(심지문턱, 1f, 숲) : 0f;
+                몇 *= 1f + 심지 * 숲빽빽;
+
                 int n = Mathf.FloorToInt(몇);
                 if (Random.value < 몇 - n) n++;
 
                 for (int i = 0; i < n; i++)
                 {
-                    var at = 칸중심 + new Vector3(Random.value - 0.5f, 0f, Random.value - 0.5f) * 격자 * 0.95f;
+                    // 심지에서는 흩어지는 폭을 좁혀 **서로 붙여** 심는다 — 이게 틈을 없앤다
+                    float 퍼짐 = 격자 * Mathf.Lerp(0.95f, 0.45f, 심지);
+                    var at = 칸중심 + new Vector3(Random.value - 0.5f, 0f, Random.value - 0.5f) * 퍼짐;
                     if (Mathf.Abs(at.x - 중심.x) > 반 || Mathf.Abs(at.z - 중심.z) > 반) continue;
                     if (!GroundPaint.잔디인가(at)) continue;
                     // 빽빽한 곳은 어리고 성긴 곳은 굵다 — 서로 빛을 다투는 숲의 모습

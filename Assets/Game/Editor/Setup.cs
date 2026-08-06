@@ -93,24 +93,29 @@ public static class Setup
         Debug.Log("[씬] 완성 · 저장까지 끝 — 플레이를 누르세요.");
     }
 
-    /// 종마다 모델을 파일 이름으로 찾아 끼운다 — 씬이 날아가도 버튼 하나로 되돌아온다
-    static readonly (string 종, string 파일)[] 모델표 =
+    /// 종마다 모델을 파일 이름으로 찾아 끼운다 — 씬이 날아가도 버튼 하나로 되돌아온다.
+    /// ★지어낸 이름(늑구·호동·꼭꼬·티라)을 다 지우고 **실제 모델 이름**으로 바꿨다
+    ///   (2026-08-06 사용자). 리깅된 것은 `Resources/rig` 에 있으므로 거기서 찾는다.
+    static readonly (string 종, string 길)[] 모델표 =
     {
-        ("늑구", "chibi_wolf"), ("호동", "chibi_tiger"), ("티라", "chibi_tyranno"),
-        ("꼭꼬", "꼭꼬"),        // 내펫은 모델을 안 물린다 (랍또 폐기 — 2026-08-04 사용자)
+        ("다람쥐", "rig/검치다람쥐"),
+        ("늑대",   "rig/다이어울프"),
+        ("사슴",   "rig/큰뿔사슴"),
+        ("랩터",   "rig/랩터"),
+        ("티라노", "rig/티라노"),
     };
 
     static void 모델끼우기(Wildlife wl)
     {
         if (wl == null) return;
         var so = new SerializedObject(wl);
-        foreach (var (종, 파일) in 모델표)
+        foreach (var (종, 길) in 모델표)
         {
             var p = so.FindProperty(종);
             if (p == null) continue;
             var slot = p.FindPropertyRelative("모델");
             if (slot == null || slot.objectReferenceValue != null) continue;   // 이미 있으면 둔다
-            var m = AssetDatabase.LoadAssetAtPath<GameObject>($"Assets/Game/Models/{파일}.glb");
+            var m = AssetDatabase.LoadAssetAtPath<GameObject>($"Assets/Game/Resources/{길}.glb");
             if (m != null) slot.objectReferenceValue = m;
         }
         so.ApplyModifiedProperties();

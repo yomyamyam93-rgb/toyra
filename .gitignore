@@ -45,3 +45,7 @@ modeling/preview/
 # 옛 장난감 펫 54개 (54MB) — 보기용. 쓸 것이 정해지면 그때 올린다
 Assets/Game/Resources/toys/
 
+
+# 확인용 스크린샷 — 올리지 않는다 (유니티가 만들 때마다 새로 생긴다)
+Assets/Screenshots/
+Assets/Screenshots.meta

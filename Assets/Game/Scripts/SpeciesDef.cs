@@ -13,7 +13,7 @@ public class SpeciesDef
     public enum 활동 { 언제나, 낮, 밤 }
 
     [Header("이름")]
-    public string 이름 = "늑구";
+    public string 이름 = "늑대";
 
     [Header("몸")]
     [Tooltip("★모델 — 비우면 색칠한 상자로 나온다. 넣으면 그게 나온다")]

@@ -317,7 +317,7 @@ public static class GroundPaint
         var px = new Color32[size * size];
 
         // 길 — 캠프에서 뻗어 나가는 갈래. 먼저 좌표를 뽑아 두고 아래에서 거리로 칠한다
-        var 길 = 길만들기(seed);
+        var 길 = 길만들기(seed, 칸종류);
 
         var rnd = new System.Random(seed);
         float o1 = (float)rnd.NextDouble() * 1000f;
@@ -349,18 +349,23 @@ public static class GroundPaint
                 잔디자리[y * size + x] = (byte)톤번호;   // 물·모래·길에서 0 으로 지운다
                 결종류[y * size + x] = 1;                // 잔디결 (물·모래·길에서 바뀐다)
 
-                // ② 물 — 물웅덩이 칸 둘레로 둥글게. 가운데는 깊게
-                if (칸종류 != null && 칸종류(w) == WorldGen.Land.물웅덩이)
+                // ★★★② 물 — **도장으로 안 찍는다** (2026-08-06 사용자 — "호수를 만들어줬는데
+                //   똑같은 사이즈로 여기저기 찍어둔게 많은데").
+                //
+                //   전에는 물웅덩이 「칸」의 한가운데에 반경 36~54m 짜리 **원**을 그렸다.
+                //   그래서 호수가 전부 같은 크기였고, 칸이 붙으면 원 두 개가 겹친 눈사람이 됐다.
+                //
+                //   ★마인크래프트는 물을 안 찍는다 — `noise` 단계에서 **지형이 해수면보다
+                //     낮으면 그게 곧 물**이다. 그래서 웅덩이부터 바다까지 크기가 저절로 다 다르고,
+                //     두 번 같은 모양이 안 나오며, 칸 경계를 넘어 자연스럽게 이어진다.
+                //   → 우리도 같은 방식으로 간다. `절차.물기` 하나가 온 세계의 물을 정한다.
+                float 물기 = WorldGen.물기(w.x, w.z);
+                if (물기 > 0f)
                 {
-                    var 중심 = 칸중심(w);
-                    float d = new Vector2(w.x - 중심.x, w.z - 중심.z).magnitude;
-                    // 물가도 매끈한 원이면 계단으로 보인다 — 두 겹 노이즈로 들쭉날쭉하게
-                    float r = 36f + Mathf.PerlinNoise(w.x * 0.02f + o2, w.z * 0.02f + o2) * 18f
-                                  + (Mathf.PerlinNoise(w.x * 0.11f + o2, w.z * 0.11f + o2) - 0.5f) * 7f;
                     // 물엔 결을 안 얹는다 (0) — 결이 있으면 물로 안 보인다
-                    if (d < r * 0.72f) { c = 깊은물; 잔디자리[y * size + x] = 0; 결종류[y * size + x] = 0; }
-                    else if (d < r) { c = 물; 잔디자리[y * size + x] = 0; 결종류[y * size + x] = 0; }
-                    else if (d < r * 1.12f) { c = 모래; 잔디자리[y * size + x] = 0; 결종류[y * size + x] = 2; }
+                    if (물기 > 0.55f) { c = 깊은물; 잔디자리[y * size + x] = 0; 결종류[y * size + x] = 0; }
+                    else if (물기 > 0.18f) { c = 물; 잔디자리[y * size + x] = 0; 결종류[y * size + x] = 0; }
+                    else { c = 모래; 잔디자리[y * size + x] = 0; 결종류[y * size + x] = 2; }   // 물가 모래
                 }
 
                 px[y * size + x] = c;
@@ -396,44 +401,196 @@ public static class GroundPaint
         return WorldGrid.TileCenter(gx, gz);
     }
 
-    // ── 길: 캠프에서 사방으로 뻗는 갈래. 점 목록으로 들고 있다가 거리로 칠한다
-    static Vector2[][] 길만들기(int seed)
+    /// 길 하나 — 점들과 **밟힌 정도**(폭을 정한다)
+    public struct 길줄 { public Vector2[] 점; public float 밟힘; }
+
+    // ───────────────────────────────── 길
+    //
+    // ★★★**길은 이유가 있어야 난다** (2026-08-06 사용자 — "지금 우리 길이 맘에안들어서,
+    //   다양하지가않고 계속 똑같길래 뭔 기준이 없는거같아서, 그렇다고 전부 길로 이으면안돼겠지만").
+    //
+    //   전에는 **캠프에서 사방으로 다섯 갈래**를 뻗었다. 각도만 조금 흔들 뿐이라
+    //   씨앗을 바꿔도 늘 같은 별 모양이었고, **왜 그리로 길이 났는지** 설명이 없었다.
+    //   ☆헌법 9-0: "모든 결과에는 인과와 행위가 있어야 한다." 길도 마찬가지다 —
+    //     원시시대의 길은 **사람과 짐승이 자주 다녀서 밟혀 생긴 자국**이다.
+    //
+    //   → 그래서 이제 길은 **「갈 이유가 있는 곳」끼리** 잇는다:
+    //       집 · 폐허(제작법) · 둥지(알) · 바위지대(돌·굴) · 물가(목마름)
+    //
+    //   ★그물처럼 다 잇지 않는다. **최소 신장 트리**로 잇는다 — 각 자리로 가는 길이
+    //     딱 하나씩만 생기는 가장 짧은 그물이다. 게다가:
+    //       ①너무 먼 것은 아예 안 잇는다  → **길이 없는 오지**가 생긴다
+    //       ②끝자락 몇 개는 일부러 끊는다 → 발길이 뜸한 곳이 생긴다
+    //     둘 다 「전부 길로 이으면 안 된다」는 말에 대한 답이다.
+    //
+    //   ★폭은 **밟힘**에서 나온다 — 그 길로 몇 군데를 지나가느냐. 집 가까운 줄기는 넓고
+    //     끝자락은 좁다. 이유가 폭에까지 드러난다.
+    static 길줄[] 길만들기(int seed, System.Func<Vector3, WorldGen.Land> 칸종류)
     {
         var rnd = new System.Random(seed ^ 0x51ed);
-        int 갈래 = 5;
-        var 결과 = new Vector2[갈래][];
-        var c = WorldGrid.Center;
+        var 집 = WorldGrid.Center;
 
-        for (int k = 0; k < 갈래; k++)
+        // ── ① 갈 이유가 있는 자리를 모은다 (집이 0번)
+        var 점 = new System.Collections.Generic.List<Vector2> { new Vector2(집.x, 집.z) };
+        int n = WorldGrid.N;
+        for (int x = 0; x < n; x++)
+            for (int z = 0; z < n; z++)
+            {
+                var c = WorldGrid.TileCenter(x, z);
+                if (Vector2.Distance(new Vector2(c.x, c.z), new Vector2(집.x, 집.z)) < 40f) continue;
+
+                bool 갈만한가 = false;
+                if (칸종류 != null)
+                {
+                    var k = 칸종류(c);
+                    갈만한가 = k == WorldGen.Land.폐허 || k == WorldGen.Land.둥지 || k == WorldGen.Land.바위지대;
+                }
+                // 물가 — 목마름이 랜드마크를 만든다 (기획 5-5)
+                if (!갈만한가 && WorldGen.물기(c.x, c.z) > 0.18f) 갈만한가 = true;
+                if (!갈만한가) continue;
+
+                // 칸 한가운데에 딱 찍으면 격자가 보인다 — 흔들어 놓는다
+                var p = new Vector2(c.x + ((float)rnd.NextDouble() - 0.5f) * WorldGrid.Tile * 0.5f,
+                                    c.z + ((float)rnd.NextDouble() - 0.5f) * WorldGrid.Tile * 0.5f);
+                점.Add(마른자리(p));
+            }
+        if (점.Count < 2) return new 길줄[0];
+
+        // ── ② 최소 신장 트리 (프림) — 집에서부터 가까운 것을 하나씩 끌어들인다
+        //
+        // ★★한계를 **칸 크기에 매단다** (2026-08-06). 330m 로 못박았더니 길이 **한 줄도**
+        //   안 났다 — `PickKinds` 가 「집 옆 여덟 칸은 트여 있어야 한다」고 빈들판·숲으로
+        //   두는 바람에, 집에서 제일 가까운 「갈 이유가 있는 곳」이 351m 였기 때문이다.
+        //   ☆숫자를 손으로 박으면 이렇게 다른 규칙과 어긋난다. 칸 크기에서 뽑으면 따라온다.
+        float 최대간선 = WorldGrid.Tile * 2.8f;   // 이보다 멀면 안 잇는다 → 길 없는 오지
+        int m = 점.Count;
+        var 든것 = new bool[m];
+        var 어디서 = new int[m];
+        var 거리 = new float[m];
+        for (int i = 0; i < m; i++) { 거리[i] = float.MaxValue; 어디서[i] = -1; }
+        거리[0] = 0f;
+
+        var 간선 = new System.Collections.Generic.List<(int a, int b)>();
+        for (int 회 = 0; 회 < m; 회++)
         {
-            float 각 = (k / (float)갈래) * Mathf.PI * 2f + (float)rnd.NextDouble() * 0.6f;
-            var dir = new Vector2(Mathf.Cos(각), Mathf.Sin(각));
-            float 길이 = WorldGrid.Size * 0.5f * (0.75f + (float)rnd.NextDouble() * 0.35f);
+            int 다음 = -1; float 제일 = float.MaxValue;
+            for (int i = 0; i < m; i++) if (!든것[i] && 거리[i] < 제일) { 제일 = 거리[i]; 다음 = i; }
+            // ★집에서 나가는 **첫 길만은** 한계를 안 본다 — 집에 길이 하나도 없으면 안 된다
+            if (다음 < 0) break;
+            if (제일 > 최대간선 && 간선.Count > 0) break;   // 남은 건 전부 너무 멀다 → 오지로 남긴다
+            든것[다음] = true;
+            if (어디서[다음] >= 0) 간선.Add((어디서[다음], 다음));
+            for (int i = 0; i < m; i++)
+            {
+                if (든것[i]) continue;
+                float d = Vector2.Distance(점[다음], 점[i]);
+                if (d < 거리[i]) { 거리[i] = d; 어디서[i] = 다음; }
+            }
+        }
 
-            int 점수 = 64;
-            var pts = new Vector2[점수];
-            float o = (float)rnd.NextDouble() * 500f;
+        // ── ③ 밟힘 — 자식이 많은 줄기일수록 넓다
+        var 자식수 = new int[m];
+        for (int i = m - 1; i >= 0; i--) { }
+        foreach (var (a, b) in 간선) { }
+        var 밟힘 = new float[m];
+        for (int i = 0; i < m; i++) 밟힘[i] = 1f;
+        // 잎에서 뿌리로 거슬러 올라가며 더한다 (간선은 부모→자식 순으로 쌓여 있다)
+        for (int i = 간선.Count - 1; i >= 0; i--)
+            밟힘[간선[i].a] += 밟힘[간선[i].b];
 
+        // ── ④ 끝자락 몇 개는 끊는다 — 발길이 뜸한 곳이 있어야 한다
+        var 남길 = new System.Collections.Generic.List<(int a, int b)>();
+        foreach (var (a, b) in 간선)
+        {
+            bool 잎 = 밟힘[b] <= 1.001f;
+            if (잎 && rnd.NextDouble() < 0.35) continue;
+            남길.Add((a, b));
+        }
+
+        Debug.Log($"[길] 갈 이유가 있는 자리 {점.Count}곳 · 이은 길 {남길.Count}줄 · 오지 {점.Count - 1 - 간선.Count}곳");
+
+        // ── ⑤ 실제 선으로 — 굽이치고, 물을 피한다
+        var 결과 = new 길줄[남길.Count];
+        for (int e = 0; e < 남길.Count; e++)
+        {
+            var a = 점[남길[e].a]; var b = 점[남길[e].b];
+            결과[e] = 한줄긋기(a, b, (float)rnd.NextDouble() * 500f, 밟힘[남길[e].b]);
+        }
+        return 결과;
+    }
+
+    /// 두 자리를 잇는 굽이진 길 하나 — 물은 피해서 돌아간다
+    ///
+    /// ★★★**길이 자로 그은 선이면 안 된다** (2026-08-06 사용자 — "길들이 그냥 일자로만
+    ///   쭉쭉 뻗어잇는곳들이 많던데").
+    ///   전에는 펄린 노이즈를 그대로 옆으로 밀었는데, 펄린은 **0.5 언저리에 몰려 있어서**
+    ///   실제 흔들림이 ±0.2 밖에 안 됐다. 실측하니 **350m 가는 동안 옆으로 3~5m** —
+    ///   굽이가 1.01배, 사실상 직선이었다.
+    ///
+    ///   → 고친 것 둘:
+    ///     ①**진폭을 길이에 비례**시킨다 — 300m 길이면 30~50m 는 휘어야 「굽이」로 보인다.
+    ///       짧은 길은 조금, 긴 길은 크게 휜다.
+    ///     ②흔들림을 **사인 세 겹**으로 만든다 — 펄린과 달리 **꽉 찬 범위**를 쓴다.
+    ///       주파수가 배수 관계가 아니라(1 : 2.3 : 4.7) 같은 무늬가 반복되지 않는다.
+    ///   ☆양 끝은 `sin(t·π)` 로 0 이 되어 자리에 **정확히** 닿는다.
+    static 길줄 한줄긋기(Vector2 a, Vector2 b, float o, float 밟힘)
+    {
+        float 길이 = Vector2.Distance(a, b);
+        int 점수 = Mathf.Clamp(Mathf.CeilToInt(길이 / 8f), 8, 140);
+        var pts = new Vector2[점수];
+        var dir = (b - a).normalized;
+        var 옆 = new Vector2(-dir.y, dir.x);
+
+        // 길이에 비례한 진폭 (짧은 길이 과하게 휘면 우스워지므로 위아래를 막는다)
+        float 진폭 = Mathf.Clamp(길이 * 0.17f, 10f, 70f);
+        // 씨앗에서 위상 셋 — 길마다 다른 모양이 나온다
+        float p1 = o * 0.017f, p2 = o * 0.041f + 1.3f, p3 = o * 0.093f + 2.7f;
+        // 큰 굽이의 세기도 길마다 다르다 (어떤 길은 거의 곧다)
+        float 세기 = 0.45f + Mathf.PerlinNoise(o * 0.13f, o * 0.07f) * 1.15f;
+
+        // ★★**굽는 쪽을 물이 적은 쪽으로 고른다** (2026-08-06 — 지도에 길이 호수를
+        //   가로지르는 게 보였다). `마른자리` 는 점 하나를 옆으로 미는 것뿐이라
+        //   **호수 한가운데**에서는 밀어낼 마른 데가 없다. 애초에 **반대쪽으로 휘면** 된다.
+        //   ☆두 방향을 다 그려 보고 물에 잠긴 점이 적은 쪽을 쓴다. 계산은 점 수십 개뿐이라 싸다.
+        System.Func<float, int> 젖은수 = (부호) =>
+        {
+            int 젖음 = 0;
             for (int i = 0; i < 점수; i++)
             {
                 float t = i / (float)(점수 - 1);
-                var 앞 = new Vector2(c.x, c.z) + dir * (길이 * t);
-
-                // ★불규칙하게 — 주파수가 배수 관계가 아닌 세 겹 (1 : 2.3 : 5.7)
-                float s = t * 길이;
-                float wob = Mathf.PerlinNoise(s * 0.010f + o, o) - 0.5f
-                          + (Mathf.PerlinNoise(s * 0.023f + o, o + 7f) - 0.5f) * 0.55f
-                          + (Mathf.PerlinNoise(s * 0.057f + o, o + 19f) - 0.5f) * 0.28f;
-
-                // 진폭 자체도 흔든다 — 어떤 구간은 거의 곧고 어떤 구간은 크게 굽게
-                float amp = 10f + Mathf.PerlinNoise(s * 0.006f + o + 33f, o) * 26f;
-
-                var 옆 = new Vector2(-dir.y, dir.x);
-                pts[i] = 앞 + 옆 * wob * amp;
+                var q = Vector2.Lerp(a, b, t) + 옆 * 굽값(t, p1, p2, p3) * 진폭 * 세기 * 부호;
+                if (WorldGen.물기(q.x, q.y) > 0.18f) 젖음++;
             }
-            결과[k] = pts;
+            return 젖음;
+        };
+        float 쪽 = 젖은수(-1f) < 젖은수(1f) ? -1f : 1f;
+
+        for (int i = 0; i < 점수; i++)
+        {
+            float t = i / (float)(점수 - 1);
+            pts[i] = 마른자리(Vector2.Lerp(a, b, t) + 옆 * 굽값(t, p1, p2, p3) * 진폭 * 세기 * 쪽);
         }
-        return 결과;
+        return new 길줄 { 점 = pts, 밟힘 = 밟힘 };
+    }
+
+    /// 굽이 모양 — 사인 세 겹(1 : 2.3 : 4.7). 양 끝은 0 이라 자리에 정확히 닿는다
+    static float 굽값(float t, float p1, float p2, float p3)
+        => (Mathf.Sin(t * Mathf.PI * 1.0f + p1) * 1.00f
+          + Mathf.Sin(t * Mathf.PI * 2.3f + p2) * 0.48f
+          + Mathf.Sin(t * Mathf.PI * 4.7f + p3) * 0.20f) * Mathf.Sin(t * Mathf.PI);
+
+    /// 물이면 옆으로 밀어 마른 자리를 찾는다 — 길이 호수를 가로지르면 안 된다
+    static Vector2 마른자리(Vector2 p)
+    {
+        if (WorldGen.물기(p.x, p.y) <= 0.18f) return p;
+        for (float r = 12f; r <= 180f; r += 12f)         // 큰 호수도 돌아 나갈 만큼 멀리 찾는다
+            for (int k = 0; k < 8; k++)
+            {
+                float a = k * Mathf.PI * 0.25f;
+                var q = p + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * r;
+                if (WorldGen.물기(q.x, q.y) <= 0.18f) return q;
+            }
+        return p;                                  // 온통 물이면 그냥 지난다 (여울)
     }
 
     /// ★길을 **찍어서** 그린다 — 길을 따라 걸으며 그 자리에 동그라미를 찍는다.
@@ -442,10 +599,16 @@ public static class GroundPaint
     ///   전에는 **픽셀마다** 모든 길 조각과의 거리를 쟀다. 400만 픽셀 × 조각 315개 =
     ///   **십억 번**이 넘는 계산이라, 켤 때 몇 초씩 멈췄다.
     ///   찍는 방식은 길 길이에만 비례한다 — 수천 번이면 끝난다. **수백 배 빠르다.**
-    static void 길찍기(Color32[] px, int size, float m당, Vector2[][] 길, float o)
+    static void 길찍기(Color32[] px, int size, float m당, 길줄[] 길, float o)
     {
-        foreach (var pts in 길)
+        foreach (var 줄 in 길)
         {
+            var pts = 줄.점;
+            // ★폭은 **밟힘**에서 나온다 — 집 가까운 줄기는 넓고 끝자락은 좁다.
+            //   로그로 눌러야 한두 곳 차이로 폭이 튀지 않는다.
+            // ★대비를 키운다 (2026-08-06 사용자 "길 두께도 다 똑같고").
+            //   전에는 3.8~7.0 이라 눈으로 안 갈렸다. 이제 **2.2(끝자락) ~ 8.5(큰 줄기)**.
+            float 바탕폭 = Mathf.Clamp(1.5f + Mathf.Log(1f + 줄.밟힘) * 2.3f, 2.2f, 8.5f);
             for (int i = 0; i < pts.Length - 1; i++)
             {
                 var a = pts[i];
@@ -458,9 +621,16 @@ public static class GroundPaint
                     var p = Vector2.Lerp(a, b, s / (float)걸음);
 
                     // 폭을 자리마다 흔든다 — 매끈한 띠는 텍셀 격자를 따라 계단으로 보인다
-                    float 흔들 = (Mathf.PerlinNoise(p.x * 0.09f + o, p.y * 0.09f + o) - 0.5f) * 2.6f
-                               + (Mathf.PerlinNoise(p.x * 0.31f + o, p.y * 0.31f + o) - 0.5f) * 1.1f;
-                    float 폭 = 3.4f + 흔들;
+                    float 흔들 = (Mathf.PerlinNoise(p.x * 0.09f + o, p.y * 0.09f + o) - 0.5f) * 2.0f
+                               + (Mathf.PerlinNoise(p.x * 0.31f + o, p.y * 0.31f + o) - 0.5f) * 0.9f;
+
+                    // ★★길은 **중간중간 희미해진다** — 원시시대의 길은 끝까지 또렷하지 않다.
+                    //   낮은 주파수 노이즈가 얕은 구간을 만들어, 같은 길인데도 구간마다 다르게 보인다.
+                    float 진함 = Mathf.PerlinNoise(p.x * 0.004f + o + 61f, p.y * 0.004f + o + 61f);
+                    if (진함 < 0.22f) continue;                       // 여기는 풀에 덮여 길이 끊겼다
+                    // ★희미해지는 몫을 줄였다 — 너무 크면 「굵은 길/가는 길」 차이를 덮어 버린다
+                    float 폭 = (바탕폭 + 흔들) * Mathf.Lerp(0.75f, 1f, Mathf.InverseLerp(0.22f, 0.5f, 진함));
+                    if (폭 < 1.0f) continue;
                     동그라미(px, size, m당, p, 폭);
                 }
             }

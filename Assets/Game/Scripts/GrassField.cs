@@ -91,8 +91,21 @@ public class GrassField : MonoBehaviour
     Mesh 판;
     float yaw = 45f;
 
-    List<Matrix4x4>[] 그릴것;
+    List<Matrix4x4>[] 그릴것;      // 지금 그리고 있는 것
+    List<Matrix4x4>[] 뒷것;        // 뒤에서 몇 프레임에 걸쳐 짓는 것
     Vector2Int 지난칸 = new Vector2Int(int.MinValue, int.MinValue);
+
+    // ★★★**한 프레임에 다 짓지 않는다** (2026-08-06 사용자 "이동할때마다 조금씩 끊기는데").
+    //   반경 70m·간격 0.5m 면 한 번에 약 **10만 칸**을 훑는다. 실측으로 펄린 6ms +
+    //   해시 1ms + 땅 찍기·행렬 만들기까지 합치면 **한 프레임에 20ms 넘게** 몰린다.
+    //   60프레임의 예산이 16ms 니까 그 프레임이 통째로 늦고, 그게 걸을 때마다 툭 끊기는 정체다.
+    //   ☆무엇을 줄여도 「한 번에 몰아서」인 한 끊긴다 — 계산을 **여러 프레임에 나눈다.**
+    //   ☆다 지을 때까지는 **옛 목록을 계속 그린다.** `여유` 가 그 사이 걸어 나간 몫을 덮는다.
+    [Tooltip("한 프레임에 몇 줄씩 짓나 — 작을수록 안 끊기고 그만큼 늦게 채워진다")]
+    [Range(1, 64)] public int 한프레임줄 = 8;
+
+    bool 짓는중; int 짓는줄; Vector3 짓는p;
+    int 짓는cx, 짓는cz, 짓는r; float 짓는r2; Quaternion 짓는rot;
 
     void Start()
     {
@@ -149,6 +162,7 @@ public class GrassField : MonoBehaviour
 
         재질들 = new Material[그림.Length];
         그릴것 = new List<Matrix4x4>[그림.Length];
+        뒷것 = new List<Matrix4x4>[그림.Length];
         비율 = new float[그림.Length];
 
         흰그림들 = new Texture2D[그림.Length];
@@ -158,6 +172,7 @@ public class GrassField : MonoBehaviour
             var 흰그림 = 흰색으로(그림[i]);          // ★색은 100% 땅이 정한다
             흰그림들[i] = 흰그림;
             그릴것[i] = new List<Matrix4x4>();
+            뒷것[i] = new List<Matrix4x4>();
 
             var m = new Material(sh) { name = "잔디" + i };
             m.SetTexture("_BaseMap", 흰그림);
@@ -231,66 +246,119 @@ public class GrassField : MonoBehaviour
             }
         }
 
-        // 한 칸이라도 움직였을 때만 목록을 다시 뽑는다 (그 외엔 그리기만)
-        if (칸 != 지난칸) { 지난칸 = 칸; 목록뽑기(p); }
+        // 한 칸이라도 움직였을 때만 다시 짓기 시작한다 (짓는 중이면 그게 끝나고 나서)
+        if (칸 != 지난칸 && !짓는중) { 지난칸 = 칸; 짓기시작(p); }
+        if (짓는중) 조금짓기();
 
         그리기();
     }
 
-    void 목록뽑기(Vector3 p)
+    /// 새 목록을 **뒤에서** 짓기 시작한다 — 앞의 것은 계속 그린다
+    void 짓기시작(Vector3 p)
+    {
+        for (int i = 0; i < 뒷것.Length; i++) 뒷것[i].Clear();
+
+        float 깔반경 = 반경 + Mathf.Max(여유, 다시뽑기칸);
+        짓는r = Mathf.CeilToInt(깔반경 / 간격);
+        짓는r2 = 깔반경 * 깔반경;
+        짓는cx = Mathf.FloorToInt(p.x / 간격);
+        짓는cz = Mathf.FloorToInt(p.z / 간격);
+        짓는rot = Quaternion.Euler(0f, yaw, 0f);
+        짓는p = p;
+        짓는줄 = -짓는r;
+        짓는중 = true;
+
+        // ★맨 처음 한 번은 통째로 짓는다 — 안 그러면 시작하자마자 땅이 민둥산이다
+        bool 비었다 = true;
+        for (int i = 0; i < 그릴것.Length; i++) if (그릴것[i].Count > 0) { 비었다 = false; break; }
+        if (비었다) while (짓는중) 조금짓기(int.MaxValue);
+    }
+
+    void 조금짓기(int 줄수 = -1)
+    {
+        if (줄수 < 0) 줄수 = Mathf.Max(1, 한프레임줄);
+        int 끝 = (줄수 == int.MaxValue) ? 짓는r : Mathf.Min(짓는r, 짓는줄 + 줄수 - 1);
+        for (; 짓는줄 <= 끝; 짓는줄++) 한줄뽑기(짓는cx + 짓는줄);
+
+        if (짓는줄 > 짓는r)
+        {
+            // 다 지었다 — 앞뒤를 맞바꾼다 (복사하지 않는다)
+            var t = 그릴것; 그릴것 = 뒷것; 뒷것 = t;
+            짓는중 = false;
+        }
+    }
+
+    /// 세로 한 줄(gx 하나)을 훑어 `뒷것` 에 채운다.
+    ///
+    /// ★★고친 것 둘 (2026-08-06):
+    ///   ①`Random.InitState` 대신 **칸 좌표에서 바로 뽑는 해시** — 난수기를 안 건드려서 싸다
+    ///   ②**제일 싼 검사를 앞으로** — 덤불 노이즈로 먼저 거르면 대부분의 칸이 거기서 끝나고,
+    ///     뒤의 땅 그림 찍기·행렬 만들기까지 안 간다
+    ///   ☆값(자리·밀도·뭉침)의 뜻은 그대로다. **무엇이 나는지가 아니라 어떻게 뽑는지**만 바꿨다.
+    void 한줄뽑기(int gx)
     {
         int 그림수 = 재질들.Length;
-        for (int i = 0; i < 그림수; i++)
-            그릴것[i].Clear();
-
-        // ★반경에 여유를 더해 깐다 — 다시 뽑는 사이에 걸어 나간 만큼을 미리 채워 둔다.
-        //   이게 없으면 「다시뽑기칸」을 키운 만큼 화면 가장자리에서 잔디가 사라진다.
-        float 깔반경 = 반경 + Mathf.Max(여유, 다시뽑기칸);
-        int r = Mathf.CeilToInt(깔반경 / 간격);
-        int cx = Mathf.FloorToInt(p.x / 간격), cz = Mathf.FloorToInt(p.z / 간격);
-        var rot = Quaternion.Euler(0f, yaw, 0f);
+        var p = 짓는p;
+        var rot = 짓는rot;
         var 집 = WorldGrid.Center;
-        float r2 = 깔반경 * 깔반경;
+        float r2 = 짓는r2;
+        int cz = 짓는cz, r = 짓는r;
 
-        var st = Random.state;
-        for (int gx = cx - r; gx <= cx + r; gx++)
+        float 문턱 = 1f - 뭉치비율;
+        bool 뭉침씀 = 뭉치크기 > 0.01f && 뭉치비율 < 0.999f;
+        float 집r2 = 9f * 9f;
+
+        {
             for (int gz = cz - r; gz <= cz + r; gz++)
             {
-                float dx = (gx + 0.5f) * 간격 - p.x, dz = (gz + 0.5f) * 간격 - p.z;
+                float 칸x = (gx + 0.5f) * 간격, 칸z = (gz + 0.5f) * 간격;
+                float dx = 칸x - p.x, dz = 칸z - p.z;
                 if (dx * dx + dz * dz > r2) continue;
 
-                Random.InitState(WorldGrid.TileSeed(0x9e55, gx, gz));
-                if (Random.value > 밀도) continue;
-
-                var at = new Vector3((gx + Random.value) * 간격, 띄우기, (gz + Random.value) * 간격);
-
-                // ★덤불 자리인가 — 낮은 주파수 노이즈가 높은 곳에만 난다.
-                //   가장자리로 갈수록 성글어져서 덤불의 경계가 선으로 안 보인다.
-                if (뭉치크기 > 0.01f && 뭉치비율 < 0.999f)
+                // ① 덤불 판정 — 제일 싸고 제일 많이 걸러 낸다 (뭉치비율 0.25 면 4분의 3이 여기서 끝)
+                float 성글 = 1f;
+                if (뭉침씀)
                 {
-                    float n = Mathf.PerlinNoise(at.x / 뭉치크기 + 137.1f, at.z / 뭉치크기 + 71.3f);
-                    float 문턱 = 1f - 뭉치비율;
+                    float n = Mathf.PerlinNoise(칸x / 뭉치크기 + 137.1f, 칸z / 뭉치크기 + 71.3f);
                     if (n < 문턱) continue;
-                    if (Random.value > Mathf.InverseLerp(문턱, 1f, n)) continue;
+                    성글 = Mathf.InverseLerp(문턱, 1f, n);
                 }
 
-                // ★발밑 땅의 톤을 그대로 따른다 — 잔디가 아니면 아예 안 난다
-                int 톤 = GroundPaint.톤(at);
-                if (톤 <= 0) continue;
-                if ((new Vector2(at.x - 집.x, at.z - 집.z)).sqrMagnitude < 9f * 9f) continue;
+                // ② 밀도
+                if (해시(gx, gz, 1) > 밀도) continue;
+                if (뭉침씀 && 해시(gx, gz, 2) > 성글) continue;
 
-                // ★색은 셰이더가 발밑 땅을 찍어서 정한다 — 여기서 분류할 게 없다
+                var at = new Vector3((gx + 해시(gx, gz, 3)) * 간격, 띄우기, (gz + 해시(gx, gz, 4)) * 간격);
+
+                // ③ 발밑 땅의 톤 — 잔디가 아니면 아예 안 난다 (텍스처를 찍으므로 제일 비싸다)
+                if (GroundPaint.톤(at) <= 0) continue;
+                float hx = at.x - 집.x, hz = at.z - 집.z;
+                if (hx * hx + hz * hz < 집r2) continue;
+
                 int 몇 = Mathf.Max(1, 칸당);
                 for (int k = 0; k < 몇; k++)
                 {
                     var 자리 = k == 0 ? at
-                             : new Vector3((gx + Random.value) * 간격, 띄우기, (gz + Random.value) * 간격);
-                    int i = Random.Range(0, 그림수);
-                    float h = Random.Range(최소키, 최대키);
-                    그릴것[i].Add(Matrix4x4.TRS(자리, rot, new Vector3(h * 비율[i], h, 1f)));
+                             : new Vector3((gx + 해시(gx, gz, 10 + k * 3)) * 간격, 띄우기,
+                                           (gz + 해시(gx, gz, 11 + k * 3)) * 간격);
+                    int i = (int)(해시(gx, gz, 12 + k * 3) * 그림수) % 그림수;
+                    float h = Mathf.Lerp(최소키, 최대키, 해시(gx, gz, 200 + k));
+                    뒷것[i].Add(Matrix4x4.TRS(자리, rot, new Vector3(h * 비율[i], h, 1f)));
                 }
             }
-        Random.state = st;
+        }
+    }
+
+    /// 칸 좌표에서 **바로** 0~1 난수를 뽑는다 — 난수기를 건드리지 않으므로 백만 번 불러도 싸다.
+    /// ★같은 칸·같은 갈래면 언제나 같은 값이다. 다시 와도 같은 자리에 같은 풀이 있다.
+    static float 해시(int gx, int gz, int 갈래)
+    {
+        unchecked
+        {
+            uint h = (uint)(gx * 73856093) ^ (uint)(gz * 19349663) ^ (uint)(갈래 * 83492791);
+            h ^= h >> 13; h *= 0x85ebca6b; h ^= h >> 16; h *= 0xc2b2ae35; h ^= h >> 15;
+            return (h & 0xFFFFFF) * (1f / 0x1000000);
+        }
     }
 
     static readonly Matrix4x4[] 버퍼 = new Matrix4x4[묶음];
