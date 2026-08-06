@@ -104,11 +104,15 @@ public class Wildlife : MonoBehaviour
         var hero = Hero.Me;
         if (hero == null) return;
 
-        for (int i = Critter.All.Count - 1; i >= 0; i--)
+        // ★★멀어진 놈 치우기도 **한 프레임에 몰아서 하지 않는다** (2026-08-06).
+        //   뼈 있는 몸을 여러 마리 한꺼번에 `Destroy` 하면 그 프레임이 통째로 튄다.
+        int 지운수 = 0;
+        for (int i = Critter.All.Count - 1; i >= 0 && 지운수 < 한프레임치우기; i--)
         {
             var c = Critter.All[i];
             if (c == null || c.side != Critter.Side.야생) continue;
-            if (Flat(c.transform.position, hero.transform.position) > 지우는거리) Destroy(c.gameObject);
+            if (Flat(c.transform.position, hero.transform.position) > 지우는거리)
+            { Destroy(c.gameObject); 지운수++; }
         }
 
         cd -= Time.deltaTime;
@@ -119,16 +123,98 @@ public class Wildlife : MonoBehaviour
         foreach (var c in Critter.All) if (c != null && c.side == Critter.Side.야생) wild++;
         if (wild >= 목표마릿수) return;
 
-        무리생성(hero.transform.position);
+        // 많이 모자라면(시작 직후·긴 이동 뒤) 빨리 채운다 — 그래도 한 틱에 한 마리다
+        if (wild < 목표마릿수 / 2) cd = 채우는간격 * 0.2f;
+
+        홀로생성(hero.transform.position);
     }
 
-    void 무리생성(Vector3 heroPos)
+    [Tooltip("한 프레임에 몇 마리까지 치우나")]
+    [Range(1, 10)] public int 한프레임치우기 = 2;
+
+    /// ★★★**무리 스폰을 걷어냈다 — 전부 홀로 나온다** (2026-08-07 사용자 "팻스폰 싹 지우고
+    ///   다시 만들어, 아크 스폰방식으로. 특정 팻 지정하기 전까지 무리 넣지 마").
+    ///
+    ///   전에는 `무리최소~최대` 마리가 한 자리에 뭉쳐 나와서 **어딜 가나 덩어리**였다.
+    ///   아크의 구조는 「지역 테이블에서 종을 뽑아 → 그 자리에 소수를 놓는다」이고,
+    ///   우리는 이미 지역 테이블(`종고르기` 가 칸 종류·거리로 고른다)을 갖고 있다.
+    ///   빠져 있던 건 **구성**이다 — 지금은 전 종 1마리 고정.
+    ///
+    ///   ☆무리를 되살릴 자리: 종을 지정받으면 그 종만 `무리최소~최대` 를 쓰게 한다.
+    ///     `Pack` 클래스는 그날을 위해 남겨 둔다 (은퇴는 삭제가 아니라 스위치).
+    ///   ☆한 틱에 한 마리라 스폰 스파이크도 구조적으로 사라졌다 (전엔 무리 통째 = 71ms).
+    // ★★★**rig 로스터 전체를 쓴다** (2026-08-07 사용자 "리깅 넣은 모델링 팻들을 왜 안 쓰냐").
+    //   전에는 종당 변형 1개(늑대_1 하나)만 물려서 어딜 가나 같은 몸이었다.
+    //   기본 종에서 뽑힌 뒤 여기서 **모델 변형·희귀종으로 갈라진다** — 키·체력·피해는
+    //   키 비례로 따라간다. 키 숫자는 F1(동작진열) 표의 값 그대로다.
+    static readonly (string 기본종, string 모델, float 키, float 확률, string 이름)[] 변형표 =
     {
+        // 다람쥐 계열
+        ("다람쥐", "다람쥐_",     1.62f, 0.90f, "다람쥐"),
+        ("다람쥐", "검치다람쥐",  1.98f, 0.10f, "검치다람쥐"),
+        // 늑대 계열
+        ("늑대",   "늑대_",       2.04f, 0.88f, "늑대"),
+        ("늑대",   "다이어울프",  2.28f, 0.12f, "다이어울프"),
+        // 사슴 계열 — 초식 대형들이 여기서 갈라진다
+        ("사슴",   "사슴_",       3.12f, 0.55f, "사슴"),
+        ("사슴",   "큰뿔사슴",    3.60f, 0.10f, "큰뿔사슴"),
+        ("사슴",   "트리케_",     3.40f, 0.20f, "트리케"),
+        ("사슴",   "스테고_",     3.60f, 0.15f, "스테고"),
+        // 랩터 계열
+        ("랩터",   "랩터_",       2.60f, 0.75f, "랩터"),
+        ("랩터",   "테러버드_",   2.40f, 0.25f, "테러버드"),
+        // 티라노 계열
+        ("티라노", "티라노_",     4.80f, 1.00f, "티라노"),
+    };
+
+    /// 앞머리가 `_` 로 끝나면 번호 변형이 있다 — rig 폴더에서 있는 번호를 세어 무작위로 뽑는다
+    static readonly System.Collections.Generic.Dictionary<string, GameObject[]> 변형캐시 =
+        new System.Collections.Generic.Dictionary<string, GameObject[]>();
+
+    static GameObject 모델뽑기(string 앞머리)
+    {
+        if (!변형캐시.TryGetValue(앞머리, out var 들))
+        {
+            var 목록 = new System.Collections.Generic.List<GameObject>();
+            if (앞머리.EndsWith("_"))
+                for (int n = 1; n <= 9; n++)
+                {
+                    var g = Resources.Load<GameObject>("rig/" + 앞머리 + n);
+                    if (g != null) 목록.Add(g);
+                }
+            else
+            {
+                var g = Resources.Load<GameObject>("rig/" + 앞머리);
+                if (g != null) 목록.Add(g);
+            }
+            변형캐시[앞머리] = 들 = 목록.ToArray();
+        }
+        return 들.Length > 0 ? 들[Random.Range(0, 들.Length)] : null;
+    }
+
+    [Tooltip("스폰마다 콘솔에 무엇을 넣었는지 찍는다 — 모델이 잘못 들어가면 여기서 바로 보인다")]
+    public bool 스폰로그 = true;
+
+    void 홀로생성(Vector3 heroPos)
+    {
+        // ★★**화면 밖에서 생긴다** (2026-08-07 사용자 "화면 안에서 생성되는 게 보이지 않게").
+        //   줌을 60m 까지 풀어서 옛 상수(45~85m)가 화면 안에 들어와 버렸다 —
+        //   상수 대신 **지금 화면 반경에서 파생**시킨다 (「상수 대신 실측에서 파생」).
+        float 근 = 최소거리, 원 = 최대거리;
+        var cam = Camera.main;
+        if (cam != null && cam.orthographic)
+        {
+            float h = cam.orthographicSize, w = h * cam.aspect;
+            float 화면반경 = Mathf.Sqrt(h * h + w * w);         // 화면 대각선 절반
+            근 = Mathf.Max(최소거리, 화면반경 * 1.12f);
+            원 = 근 + 45f;
+        }
+
         SpeciesDef s = null; Vector3 at = heroPos;
         for (int tries = 0; tries < 8 && s == null; tries++)
         {
             float a = Random.value * Mathf.PI * 2f;
-            float r = Random.Range(최소거리, 최대거리);
+            float r = Random.Range(근, 원);
             at = heroPos + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * r;
             at.x = Mathf.Clamp(at.x, 20f, WorldGrid.Size - 20f);
             at.z = Mathf.Clamp(at.z, 20f, WorldGrid.Size - 20f);
@@ -136,22 +222,31 @@ public class Wildlife : MonoBehaviour
         }
         if (s == null) return;
 
-        var pack = new Pack(s, at);
-        int n = Random.Range(s.무리최소, s.무리최대 + 1);
-        int 새끼수 = s.번식 == SpeciesDef.번식식.태생
-                   ? Mathf.FloorToInt(n * s.새끼비율) : 0;
-        pack.처음마릿수 = n;
-
-        for (int i = 0; i < n; i++)
+        // 변형으로 갈라진다 — 원본 정의는 안 건드린다 (복제)
+        float 룰렛 = Random.value, 누적 = 0f;
+        foreach (var (기본, 앞머리, 키, 확률, 이름) in 변형표)
         {
-            var p = at + new Vector3(Random.Range(-6f, 6f), 0f, Random.Range(-6f, 6f));
-            bool 새끼 = i < 새끼수;
-            // ★새끼는 무리 한가운데 — 어미들이 둘러싼 안쪽이라 골라 때리기 어렵다
-            if (새끼) p = at + new Vector3(Random.Range(-2f, 2f), 0f, Random.Range(-2f, 2f));
-            var c = Make(새끼 ? s.새끼로() : s, p, Critter.Side.야생, null);
-            c.새끼 = 새끼;
-            pack.들어옴(c);
+            if (기본 != s.이름) continue;
+            누적 += 확률;
+            if (룰렛 > 누적) continue;
+
+            var 모델 = 모델뽑기(앞머리);
+            if (모델 != null)
+            {
+                var d = s.복제();
+                float 배 = 키 / Mathf.Max(0.01f, d.키);
+                d.모델 = 모델; d.이름 = 이름;
+                d.키 = 키; d.반지름 *= 배; d.사거리 *= 배;
+                d.체력 *= 배; d.피해 *= 배;
+                s = d;
+            }
+            break;
         }
+
+        var c = Make(s, at, Critter.Side.야생, null);   // 무리 없음 — 한 마리가 전부다
+        if (스폰로그)
+            Debug.Log(string.Format("[야생] {0} ← 모델 {1} · 키 {2:F2}m · 자리 {3:F0},{4:F0} (화면반경 밖 {5:F0}m)",
+                s.이름, s.모델 != null ? s.모델.name : "★상자(모델없음)", s.키, at.x, at.z, 근));
     }
 
     /// 그 자리·그 시각에 무엇이 나오나
@@ -247,12 +342,39 @@ public class Wildlife : MonoBehaviour
 
         var b = rs[0].bounds;
         foreach (var r in rs) b.Encapsulate(r.bounds);
-        if (b.size.y > 0.0001f) g.transform.localScale = Vector3.one * (s.키 / b.size.y);
+        float k = 1f;
+        if (b.size.y > 0.0001f) { k = s.키 / b.size.y; g.transform.localScale = Vector3.one * k; }
 
-        // 크기를 바꿨으니 다시 재서 발을 땅에 붙인다
-        b = rs[0].bounds;
-        foreach (var r in rs) b.Encapsulate(r.bounds);
-        g.transform.position += Vector3.up * (parent.position.y - b.min.y);
+        // ★★크기를 바꾼 「직후」에 bounds 를 다시 읽으면 안 된다 (2026-08-07 —
+        //   "다람쥐가 공중에 떠 있고"). `SkinnedMeshRenderer.bounds` 는 스키닝이 한 번
+        //   돌아야 갱신되는데 그건 **다음 프레임**이다 — 낡은 값으로 발을 붙이니 떴다.
+        //   → 다시 재지 말고 **수학으로 구한다**: 크기를 k배 하면 밑면도 원점 기준 k배다.
+        float 밑 = g.transform.position.y + (b.min.y - g.transform.position.y) * k;
+        g.transform.position += Vector3.up * (parent.position.y - 밑);
+
+        걷기물리기(g, s);
+    }
+
+    /// ★★**리깅 모델에 걷기 애니메이션을 물린다** (2026-08-07 사용자 "팻 리깅 다 쳐넣고
+    ///   하나도 적용을 안 하네").
+    ///
+    ///   `Resources/rig/` 의 모델에는 짝이 되는 컨트롤러가 **이미 다 들어 있다**
+    ///   (`걷기_늑대_1.controller` 처럼 이름이 짝이다). 그런데 아무도 물려 주지 않아서
+    ///   모델만 서 있는 채로 미끄러졌다. 여기서 이름으로 찾아 붙인다.
+    ///
+    /// ★`AlwaysAnimate` 로 둔다 — 아이소 화면에서는 몸이 화면 밖으로 조금 나가도
+    ///   그림자·실루엣이 남으므로, 컬링되어 자세가 굳으면 눈에 띈다.
+    static void 걷기물리기(GameObject g, SpeciesDef s)
+    {
+        if (s.모델 == null) return;
+        var ctrl = Resources.Load<RuntimeAnimatorController>("rig/걷기_" + s.모델.name);
+        if (ctrl == null) return;                       // 짝이 없으면 그냥 선 모델로 둔다
+
+        var an = g.GetComponent<Animator>();
+        if (an == null) an = g.AddComponent<Animator>();
+        an.runtimeAnimatorController = ctrl;
+        an.applyRootMotion = false;                    // 이동은 `Critter.걷기` 가 한다
+        an.cullingMode = AnimatorCullingMode.AlwaysAnimate;
     }
 
     /// 모델이 없을 때 — 색칠한 상자 (앞에 머리를 붙여 방향이 읽히게)

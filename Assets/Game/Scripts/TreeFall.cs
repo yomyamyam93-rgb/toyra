@@ -38,20 +38,25 @@ public class TreeFall : MonoBehaviour
         foreach (Transform c in transform) if (c.name.Contains("잎")) { 잎 = c; break; }
     }
 
-    void Update()
+    // ★★★**`Update` 를 없앴다** (2026-08-06 — `Harvest` 와 같은 이유).
+    //   나무 21,946그루 × `if (!쓰러지는중) return;` = 아무 일도 안 하면서 매 프레임
+    //   2만 2천 번. 쓰러지는 나무는 **한 번에 한 그루**이므로 그때만 도는 게 맞다.
+    System.Collections.IEnumerator 넘어가기()
     {
-        if (!쓰러지는중) return;
+        while (true)
+        {
+            float 이전 = Mathf.Clamp01(t / 쓰러지는시간);
+            t += Time.deltaTime;
+            float 지금 = Mathf.Clamp01(t / 쓰러지는시간);
 
-        float 이전 = Mathf.Clamp01(t / 쓰러지는시간);
-        t += Time.deltaTime;
-        float 지금 = Mathf.Clamp01(t / 쓰러지는시간);
+            // 처음엔 천천히 기울다 끝에서 확 넘어간다 (실제로 그렇게 쓰러진다)
+            float 각이전 = 92f * 이전 * 이전;
+            float 각지금 = 92f * 지금 * 지금;
+            transform.RotateAround(밑동, 축, 각지금 - 각이전);
 
-        // 처음엔 천천히 기울다 끝에서 확 넘어간다 (실제로 그렇게 쓰러진다)
-        float 각이전 = 92f * 이전 * 이전;
-        float 각지금 = 92f * 지금 * 지금;
-        transform.RotateAround(밑동, 축, 각지금 - 각이전);
-
-        if (지금 < 1f) return;
+            if (지금 >= 1f) break;
+            yield return null;
+        }
         통나무되기();
     }
 

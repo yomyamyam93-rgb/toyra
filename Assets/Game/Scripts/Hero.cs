@@ -42,7 +42,22 @@ public class Hero : MonoBehaviour, IHittable
     [Tooltip("기본 — 빠릿하게 걷는 속도")] public float walk = 2.6f;
     [Tooltip("Shift — 달리기. 지구력을 쓴다")] public float run = 6f;
     [Tooltip("Ctrl — 살금살금")] public float sneak = 1.4f;
-    [Tooltip("클수록 즉시 최고 속도에 붙는다")] public float accel = 18f;
+    // ★★★**가속과 감속을 갈랐다** (2026-08-06 사용자 "캐릭터 움직임이 살짝 딜레이되면서
+    //   밀리는 느낌... 즉각적으로 반응 좀 하게").
+    //   전에는 둘이 같은 `accel = 18` 이었다. 걷기 2.6m/s 에 붙는 데 0.14초, 달리기
+    //   6m/s 에는 0.33초 — 그리고 **뗐을 때도 같은 시간만큼 미끄러진다.** 그 미끄러짐이
+    //   "밀리는 느낌" 의 정체다.
+    //   ☆손맛의 요령: **가속은 빠르게, 감속은 더 빠르게.** 서는 게 늦으면 조작이 무겁게
+    //     느껴지고, 서는 게 빠르면 같은 속도인데도 즉각적으로 읽힌다.
+    [Tooltip("클수록 즉시 최고 속도에 붙는다")] public float accel = 55f;
+    [Tooltip("발을 뗐을 때 멈추는 빠르기 — 가속보다 커야 안 미끄러진다")] public float 감속 = 90f;
+    [Tooltip("방향을 꺾을 때 속도가 돌아가는 빠르기 (도/초) — 클수록 즉시 꺾인다")]
+    [Range(360f, 3600f)] public float 방향전환 = 2400f;
+    [Tooltip("달릴 때 **몸이 도는** 빠르기 (도/초) — 작을수록 크게 돌며 꺾는다")]
+    [Range(180f, 1440f)] public float 회전속도 = 620f;
+
+    /// 달리는 동안의 시선 각도 — 목표로 서서히 돌아간다 (뚝 끊기지 않게)
+    float 달릴각; bool 달릴각있음;
 
     [Header("몸")]
     [Tooltip("키 (m)")] public float height = 1.8f;
@@ -52,7 +67,12 @@ public class Hero : MonoBehaviour, IHittable
     [Tooltip("최대 지구력 (초 단위로 생각하면 편하다)")] public float maxStamina = 100f;
     [Tooltip("달릴 때 1초에 쓰는 양")] public float runCost = 12f;
     [Tooltip("걷거나 설 때 1초에 차는 양")] public float regen = 9f;
+    [Tooltip("숨이 다 찼을 때, 지구력이 이 비율만큼 차기 전에는 다시 못 뛴다")]
+    [Range(0.05f, 0.6f)] public float 숨돌리기 = 0.25f;
     [HideInInspector] public float stamina = 100f;
+
+    /// 숨이 다 차서 쉬는 중인가 — `숨돌리기` 만큼 찰 때까지 달리기가 안 걸린다
+    bool 지쳤다;
 
     /// 지금 보고 있는 방향 (마우스 쪽, 수평)
     public Vector3 LookDir { get; private set; } = Vector3.forward;
@@ -94,7 +114,20 @@ public class Hero : MonoBehaviour, IHittable
 
         // ── 속도 — 지구력이 바닥나면 못 뛴다
         if (묶임) mv = Vector2.zero;                  // 의자에 앉아 있는 동안은 발이 안 나간다
-        Running = wantRun && mv.sqrMagnitude > 0.01f && stamina > 1f;
+        // ★★★**숨이 차면 한 번 쉬어야 다시 뛴다** (2026-08-06 사용자 "스태미너 없을 때
+        //   달리기 누르고 있으니까 부들부들 떨리는 버그").
+        //
+        //   전에는 조건이 `stamina > 1f` 하나였다. 0 이 되면 걷기로 떨어지고, 회복이 1 을
+        //   넘는 **그 프레임에 다시 달리기**가 되고, 곧바로 소모돼 1 밑으로 — 매 프레임
+        //   달리기↔걷기가 뒤집혔다. 그런데 이 둘은 **시선 기준이 다르다**(달리면 가는 쪽,
+        //   걸으면 마우스 쪽) → 몸이 좌우로 오가며 부들부들 떨렸다. 애니메이션도 같이 튄다.
+        //
+        //   → 문턱을 둘로 벌린다: **0 이 되면 지친 것**이고, **`숨돌리기` 만큼 찰 때까지는
+        //     못 뛴다.** 뒤집힘이 구조적으로 불가능해지고, "숨이 차서 못 뛴다" 로도 읽힌다.
+        if (stamina <= 0.5f) 지쳤다 = true;
+        else if (지쳤다 && stamina >= maxStamina * 숨돌리기) 지쳤다 = false;
+
+        Running = wantRun && mv.sqrMagnitude > 0.01f && !지쳤다;
         Sneaking = wantSneak && !Running;             // 뛰면서 웅크릴 수는 없다
         float spd = Running ? run : (wantSneak ? sneak : walk);
 
@@ -104,7 +137,20 @@ public class Hero : MonoBehaviour, IHittable
         //   (걷기는 그대로 마우스 기준 — 보면서 물러나는 게 전투의 뼈대다)
         var 갈방향 = Quaternion.Euler(0f, cam != null ? cam.yaw : 45f, 0f)
                    * new Vector3(mv.x, 0f, mv.y);
-        if (Running && 갈방향.sqrMagnitude > 0.01f) LookDir = 갈방향.normalized;
+        // ★★★**달릴 때는 방향을 돌려서 바꾼다** (2026-08-06 사용자 "뚝 방향이 바뀌니까
+        //   어색한데 회전을 좀 넣어주면 안 돼?").
+        //   전에는 누른 방향을 그 프레임에 그대로 시선으로 박았다. 시선은 16칸으로 끊기니까
+        //   (`FaceQuantized`) 위→왼쪽이면 **90°가 한 프레임에** 넘어가 뚝 끊겨 보였다.
+        //   → 목표 각도로 **정해진 속도로 돌린다.** 16칸 계단을 차례로 밟고 지나가므로
+        //     끊김이 「도는 동작」으로 읽힌다. 걷기는 그대로 마우스 기준이라 안 건드린다.
+        if (Running && 갈방향.sqrMagnitude > 0.01f)
+        {
+            float 목표 = Mathf.Atan2(갈방향.x, 갈방향.z) * Mathf.Rad2Deg;
+            if (!달릴각있음) { 달릴각 = 목표; 달릴각있음 = true; }
+            달릴각 = Mathf.MoveTowardsAngle(달릴각, 목표, 회전속도 * Time.deltaTime);
+            LookDir = Quaternion.Euler(0f, 달릴각, 0f) * Vector3.forward;
+        }
+        else 달릴각있음 = false;
 
         // 사람도 16칸으로 본다 (`Critter.Face` 와 같은 규칙 — 버티기 포함)
         FaceQuantized(LookDir);
@@ -120,7 +166,21 @@ public class Hero : MonoBehaviour, IHittable
         if (want.sqrMagnitude > 1f) want.Normalize();
         want *= spd;
 
-        vel = Vector3.MoveTowards(vel, want, accel * Time.deltaTime);
+        // ★★★**방향은 돌리고, 크기만 가속으로 붙인다** (2026-08-06 사용자 "방향전환할 때
+        //   살짝 밀리면서 미끄러지는 것 좀 아주 최소화해줘").
+        //
+        //   `MoveTowards` 만 쓰면 속도가 **직선으로** 목표를 향한다. 그래서 오른쪽으로 뛰다
+        //   왼쪽을 누르면 속도가 **0 을 지나가야** 하고, 그 사이 몸은 원래 방향으로 계속
+        //   미끄러진다. 값을 아무리 올려도 「지나가는 구간」은 안 없어진다.
+        //   → 먼저 **속도 벡터를 목표 방향으로 회전**시킨다(크기는 그대로). 그러면 꺾을 때
+        //     느려지지 않고 **바로 그쪽으로 간다.** 크기 변화만 가속·감속이 맡는다.
+        if (want.sqrMagnitude > 0.0001f && vel.sqrMagnitude > 0.0001f)
+            vel = Vector3.RotateTowards(vel, want,
+                                        Mathf.Deg2Rad * 방향전환 * Time.deltaTime, 0f);
+
+        // 가려는 쪽이 없으면(발을 뗐으면) 감속 쪽 값으로 — 미끄러짐이 여기서 사라진다
+        float 붙는속 = want.sqrMagnitude > 0.0001f ? accel : Mathf.Max(accel, 감속);
+        vel = Vector3.MoveTowards(vel, want, 붙는속 * Time.deltaTime);
 
         var pos = transform.position + vel * Time.deltaTime;
         pos = Blocker.Resolve(pos, radius);

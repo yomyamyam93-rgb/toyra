@@ -25,8 +25,11 @@ public class IsoCam : MonoBehaviour
 
     [Header("줌 (휠)")]
     [Tooltip("화면 세로 절반 (m). 14 면 세로 28m 가 보인다")] public float size = 14f;
-    public float minSize = 6f, maxSize = 26f;
-    public float zoomStep = 1.4f;
+    public float minSize = 4f, maxSize = 60f;      // ★픽셀 제거로 줌 폭을 넓혔다
+    public float zoomStep = 1.4f;                  // (은퇴 — 아래 `줌비율` 이 쓰인다)
+    [Tooltip("휠 한 칸에 몇 % 씩 — 0.10 이면 10% 씩 부드럽게")]
+    [Range(0.02f, 0.3f)] public float 줌비율 = 0.10f;
+    [Tooltip("클수록 목표 줌에 빨리 붙는다")] [Range(3f, 25f)] public float 줌따라붙기 = 12f;
 
     [Tooltip("지금 줌·속도를 화면에 띄운다 (숫자를 정하는 동안만)")]
     public bool 값보기 = true;
@@ -106,8 +109,12 @@ public class IsoCam : MonoBehaviour
 #else
             float sc = Input.GetAxis("Mouse ScrollWheel") * 100f;
 #endif
-            if (Mathf.Abs(sc) > 0.01f) sizeT = Mathf.Clamp(sizeT - Mathf.Sign(sc) * zoomStep, minSize, maxSize);
-            size = Mathf.Lerp(size, sizeT, 1f - Mathf.Exp(-10f * Time.deltaTime));
+            // ★★**줌을 곱셈으로 바꿨다** (2026-08-07 사용자 "카메라도 좀 부드럽게 확대축소되게").
+            //   더하기(±1.4m)면 가까이서는 한 칸이 확 뛰고 멀리서는 거의 안 움직인다 —
+            //   같은 휠 한 칸인데 체감이 완전히 다르다. **비율**로 하면 어느 배율에서나 고르다.
+            if (Mathf.Abs(sc) > 0.01f)
+                sizeT = Mathf.Clamp(sizeT * (sc > 0f ? 1f - 줌비율 : 1f + 줌비율), minSize, maxSize);
+            size = Mathf.Lerp(size, sizeT, 1f - Mathf.Exp(-줌따라붙기 * Time.deltaTime));
             cam.orthographicSize = size;
         }
         else size = cam.orthographicSize;

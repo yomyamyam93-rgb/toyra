@@ -1,0 +1,30 @@
+using UnityEngine;
+
+/// ★★도메인 리로드를 껐기 때문에 필요한 파일이다 (2026-08-06).
+///
+/// Project Settings ▸ Editor ▸ Enter Play Mode Settings 에서 **Reload Domain 을 껐다.**
+/// 플레이 버튼을 누를 때 스크립트 도메인을 다시 안 올리므로 **몇 초 걸리던 진입이 즉시**가
+/// 되지만, 대가가 하나 있다: **정적 변수가 초기화되지 않는다.** 지난 판의 값이 그대로 남는다.
+///
+/// 그래서 「지난 판의 흔적이 남으면 안 되는 것」만 여기서 손으로 지운다.
+/// `SubsystemRegistration` 은 **씬이 올라오기 전**에 불리므로 어떤 `Awake` 보다도 앞선다.
+///
+/// ★여기에 아무거나 넣지 말 것. 다시 지을 때 어차피 새로 만들어지는 것(땅 그림·땅 사진
+///   배열 따위)은 오히려 **재사용이 이득**이다. 넣어야 하는 것은 딱 두 종류다:
+///     ①씬 오브젝트를 가리키는 정적 목록 — 지난 판의 **죽은 참조**가 남는다
+///     ②판마다 새로 쌓아야 하는 누적 자료 — 안 지우면 **두 배로 쌓인다**
+static class 플레이초기화
+{
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void 지우기()
+    {
+        // ① 장애물 격자 — 안 지우면 지난 판 나무 자리에 **보이지 않는 벽**이 남는다
+        Blocker.Clear();
+
+        // ② 살아있는 것 목록 — 지난 판에서 파괴된 것들이 죽은 참조로 남는다
+        Critter.All.Clear();
+
+        // ③ 마지막으로 캔 자원 알림 — 판이 바뀌었는데 옛 알림이 떠 있으면 이상하다
+        Stock.RecentAt = -99f;
+    }
+}

@@ -68,12 +68,24 @@ public class HeroAttack : MonoBehaviour
     [Tooltip("팔 방향에서 더 기울이는 각도 (°) — x 를 음수로 주면 끝이 위로 선다")]
     public Vector3 기울임 = new Vector3(-25f, 0f, 0f);
 
+    // ★★**모델을 끼울 수 있게 한다** (2026-08-06 사용자 "모델링에 붙은 무기나 장비 위치
+    //   조절 좀 가능하게 해줄래?"). 전에는 무기가 **회색 상자 고정**이라, 모델을 넣어도
+    //   `localScale = (굵기,굵기,길이)` 가 그 모델을 납작하게 눌러 버렸다.
+    //   ☆구조: **겉(`무기`)은 코드가** 손에 맞춰 놓고, **안쪽 모델만 오프셋으로** 맞춘다.
+    //     소유가 갈려 있어야 둘이 안 싸운다 (CLAUDE.md 「소유권」).
+    //   ☆값은 **플레이 중에 만져도 즉시 보인다** — 매 프레임 다시 얹는다.
+    [Header("무기 모델 (비우면 회색 상자)")]
+    [Tooltip("손에 들 모델 — 넣으면 상자 대신 이게 나온다")] public GameObject 무기모델;
+    [Tooltip("모델만 더 밀어 넣기 (m) — 손 안으로 당길 때")] public Vector3 모델위치;
+    [Tooltip("모델만 더 돌리기 (°) — 칼날 방향 맞출 때")] public Vector3 모델회전;
+    [Tooltip("모델 크기 배수")] public float 모델크기 = 1f;
+
     [Header("느낌")]
     [Tooltip("맞히는 순간 아주 짧게 멈춘다 (초) — 0 이면 안 씀")] public float 히트스톱 = 0.045f;
 
     Hero hero;
     HeroHold 드는자세;
-    Transform 무기, 몸, 손뼈, 팔뚝뼈;
+    Transform 무기, 몸, 손뼈, 팔뚝뼈, 모델인스턴스;
     float 스윙yaw, 스윙pitch;
     State state = State.쉼;
     float t, cd, 밀기cd, sweptFrom;
@@ -100,6 +112,43 @@ public class HeroAttack : MonoBehaviour
         var g = Grey.Box(transform, Vector3.zero, new Vector3(굵기, 굵기, 길이),
                          new Color(0.62f, 0.5f, 0.35f), "무기");
         무기 = g.transform;
+    }
+
+    /// 무기 모델 손질 — 모델이 꽂혀 있으면 상자를 감추고 모델을 얹는다.
+    /// ★매 프레임 부른다. 인스펙터 값을 만지면 **플레이 중에도 즉시** 보이게 하려는 것이고,
+    ///   비용은 트랜스폼 세 줄이라 사실상 0 이다.
+    void 모델손질()
+    {
+        if (무기 == null) return;
+
+        if (무기모델 == null)
+        {
+            if (모델인스턴스 != null) { Destroy(모델인스턴스.gameObject); 모델인스턴스 = null; }
+            var mr0 = 무기.GetComponent<MeshRenderer>();
+            if (mr0 != null && !mr0.enabled) mr0.enabled = true;      // 상자를 되살린다
+            return;
+        }
+
+        if (모델인스턴스 == null || 모델인스턴스.gameObject == null)
+        {
+            var inst = Instantiate(무기모델, 무기);
+            inst.name = "무기모델";
+            모델인스턴스 = inst.transform;
+            // ★상자는 **지우지 않고 감춘다** — 길이·굵기가 판정(`쓸고 지나간 각도`)의 기준이다
+            var mr = 무기.GetComponent<MeshRenderer>();
+            if (mr != null) mr.enabled = false;
+        }
+
+        // 겉(무기)이 손에 맞춰 놓이고, 안쪽 모델은 여기서만 움직인다.
+        // ★겉의 크기가 (굵기,굵기,길이)로 눌려 있으므로 그걸 되돌려 곱한다 —
+        //   안 그러면 모델이 납작해진다 (그게 옛 버그였다).
+        모델인스턴스.localPosition = new Vector3(모델위치.x / Mathf.Max(1e-4f, 굵기),
+                                             모델위치.y / Mathf.Max(1e-4f, 굵기),
+                                             모델위치.z / Mathf.Max(1e-4f, 길이));
+        모델인스턴스.localRotation = Quaternion.Euler(모델회전);
+        모델인스턴스.localScale = new Vector3(모델크기 / Mathf.Max(1e-4f, 굵기),
+                                          모델크기 / Mathf.Max(1e-4f, 굵기),
+                                          모델크기 / Mathf.Max(1e-4f, 길이));
     }
 
     /// 이름에 낱말이 든 **오른쪽** 뼈를 찾는다 (없으면 null)
@@ -142,6 +191,7 @@ public class HeroAttack : MonoBehaviour
                              : transform.TransformPoint(new Vector3(0.3f, 1.15f, 0.15f));
         무기.SetPositionAndRotation(손 + 회전 * 쥔자리, 회전);
         무기.localScale = new Vector3(굵기, 굵기, 길이);
+        모델손질();          // 모델이 꽂혀 있으면 그 안쪽 자리를 맞춘다 (플레이 중 조절 가능)
     }
 
     void Update()

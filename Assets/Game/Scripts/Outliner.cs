@@ -24,6 +24,13 @@ public class Outliner : MonoBehaviour
 
     [Tooltip("몇 초마다 새로 생긴 것을 훑나 (0 이면 처음 한 번만)")]
     public float 다시훑기 = 1.5f;
+    [Tooltip("자식 수가 안 바뀌어도 이만큼마다 한 번은 훑는다 (깊은 데 조용히 생긴 것 줍기)")]
+    public float 강제훑기 = 120f;   // ★실측: 강제 훑기 한 번이 100ms 다 — 드물어야 한다
+
+    int 지난자식수 = -1;
+    float 강제cd;
+
+    // 판별은 `씬바뀜` 이 맡는다 (`Matte` 도 같은 것을 쓴다 — 한 벌만 둔다)
     // ★★**부풀리기와 두께는 따로 논다** (2026-08-05 사용자 확정 — "부풀리기 0 까지
     //   할 수 있게 다시 해주고, 두께만 따로 지정 가능한 걸 넣어줘야지").
     //
@@ -51,10 +58,19 @@ public class Outliner : MonoBehaviour
 
     /// 실루엣을 밖으로 미는 거리 (m) — **부풀리기 픽셀 수를 그대로** 미터로 바꾼 값.
     /// ★두께(`PixelScreen.외곽선두께`)와는 독립이다. 맞추고 어긋내는 건 눈으로 고른다.
+    // ★★★**찾은 것은 기억한다** (2026-08-06 실측 — 상시 렉의 97% 가 여기였다).
+    //
+    //   `밀거리()` 는 매 프레임 불리는데 그 안에서 `FindFirstObjectByType<PixelScreen>()` 를
+    //   했다. 숲에 나무가 2만 그루인 씬에서 그 한 줄이 **19.8ms** 다 —
+    //   실측: `Outliner` 를 끄면 `BehaviourUpdate` 가 **20.51ms → 0.70ms**.
+    //   ☆`FindObjectsByType`·`FindFirstObjectByType` 는 **씬 전체를 뒤진다.** 매 프레임
+    //     부르는 자리에 두면 오브젝트 수만큼 느려진다. 한 번 찾고 기억하는 게 규칙이다.
+    PixelScreen 픽셀;
+
     float 밀거리()
     {
-        var ps = FindFirstObjectByType<PixelScreen>();
-        float 한픽셀 = ps != null && ps.유효픽셀당미터 > 0.01f ? 1f / ps.유효픽셀당미터 : 0.08f;
+        if (픽셀 == null) 픽셀 = FindFirstObjectByType<PixelScreen>();
+        float 한픽셀 = 픽셀 != null && 픽셀.유효픽셀당미터 > 0.01f ? 1f / 픽셀.유효픽셀당미터 : 0.08f;
         return 한픽셀 * 부풀리기;
     }
 
@@ -75,11 +91,13 @@ public class Outliner : MonoBehaviour
     ///   ☆게다가 복사본은 원본과 따로 굳어 있어서 「각각 따로 움직이는」 것처럼 보인다.
     ///
     ///   → 남의 스위치에 기대지 않는다. **복사본을 만드는 쪽이 스스로 가린다.**
+    Camera 본카메라;
+
     void 층가리기()
     {
-        var cam = Camera.main;
-        if (cam == null) return;
-        cam.cullingMask &= ~((1 << 층) | (1 << 잔디층));
+        if (본카메라 == null) 본카메라 = Camera.main;      // 매 프레임 태그로 찾지 않는다
+        if (본카메라 == null) return;
+        본카메라.cullingMask &= ~((1 << 층) | (1 << 잔디층));
     }
 
     void Update()
@@ -96,6 +114,31 @@ public class Outliner : MonoBehaviour
         cd -= Time.deltaTime;
         if (cd > 0f) return;
         cd = 다시훑기;
+
+        // ★★★**새로 생긴 게 없으면 훑지 않는다** (2026-08-06 실측 — 주기적 끊김의 정체).
+        //
+        //   숲에 나무가 2만 그루라 씬의 `MeshRenderer` 가 **73,357개**다. 훑기는
+        //   `FindObjectsByType` 로 그 전부를 뒤지는데 — **이미 다 처리해서 할 일이 하나도
+        //   없는데도** 찾기 18ms + 이름 비교 31ms 로 한 프레임이 **112ms** 튀었다.
+        //   1.5초마다 그게 왔다. "한 번씩 뚝뚝 끊긴다" 가 이것이다.
+        //
+        //   ☆값이 싼 판별법: **뿌리들의 자식 수 합**. 무엇이 새로 생기면 어딘가의 자식이
+        //     되므로 이 숫자가 바뀐다. `childCount` 는 O(1) 이라 깊이 1만 세면 거의 공짜다.
+        //     (실루엣 복사본은 렌더러의 **자식**이라 이 숫자를 안 흔든다 — 헛걸음이 없다)
+        //   ☆깊은 곳에 조용히 생기는 것(손에 든 물건 따위)은 **가끔 강제로 훑어** 줍는다.
+        //   ★★★**뼈 있는 몸(캐릭터·펫)은 이 문에 걸지 않는다** (2026-08-06 사용자
+        //     "캐릭터 아웃라인 사라졌음"). 캐릭터 모델은 리그 **깊은 곳에** 나중에 붙어서
+        //     자식 수 판별에 안 걸리고, 그러면 20초(`강제훑기`)가 지나야 선이 붙었다.
+        //     ☆다행히 `SkinnedMeshRenderer` 찾기는 **실측 0.0ms** 다 (씬에 몇 개뿐) —
+        //       비싼 건 7만 개짜리 `MeshRenderer` 쪽뿐이다. 그래서 **둘을 갈랐다**:
+        //       뼈 있는 몸은 늘 훑고, 정적인 몸은 문이 열릴 때만 훑는다.
+        훑기_뼈();
+
+        강제cd -= 다시훑기;
+        int 셈 = 씬바뀜.자식수합();
+        if (셈 == 지난자식수 && 강제cd > 0f) return;
+        지난자식수 = 셈;
+        if (강제cd <= 0f) 강제cd = 강제훑기;
         훑기();
     }
 
@@ -123,7 +166,8 @@ public class Outliner : MonoBehaviour
             if (처리됨.Contains(id)) continue;
             처리됨.Add(id);
 
-            if (r.gameObject.name == 이름) continue;
+            // ★이름(문자열) 비교는 7만 개에서 31ms 다 — 층(정수) 비교로 바꿨다
+            if (r.gameObject.layer == 층) continue;
             if (건너뜀(r.transform)) continue;
 
             var mf = r.GetComponent<MeshFilter>();
@@ -140,9 +184,26 @@ public class Outliner : MonoBehaviour
             만든수++;
         }
 
-        // ★뼈대 있는 몸(캐릭터)도 테두리를 두른다 (2026-08-04 사용자 "캐릭터에는 외곽선이
-        //   없음"). 전에는 `MeshRenderer` 만 훑어서 캐릭터가 통째로 빠져 있었다.
-        //   같은 메시·같은 뼈를 쓰는 복사본을 만들면 **동작까지 그대로 따라온다.**
+        훑기_뼈();
+    }
+
+    /// ★뼈대 있는 몸(캐릭터·펫)만 훑는다 — **씬에 몇 개뿐이라 값이 공짜다**(실측 0.0ms).
+    ///   그래서 「새로 생긴 게 없으면 건너뛰기」 문을 **안 거친다.** 캐릭터 모델은 리그
+    ///   깊은 곳에 나중에 붙어서 그 문에 안 걸리고, 걸리길 기다리면 선이 늦게 붙는다.
+    ///
+    /// ★2026-08-04 사용자 "캐릭터에는 외곽선이 없음" — 전에는 `MeshRenderer` 만 훑어서
+    ///   캐릭터가 통째로 빠져 있었다. 같은 메시·같은 뼈를 쓰는 복사본이면 **동작까지 따라온다.**
+    public void 훑기_뼈()
+    {
+        if (mat == null)
+        {
+            var sh = Shader.Find("Toyra/Outline");
+            if (sh == null) { Debug.LogError("[실루엣] Outline.shader 를 못 찾았다"); enabled = false; return; }
+            mat = new Material(sh) { name = "실루엣" };
+            mat.SetFloat("_Expand", 밀거리());
+        }
+
+        int 만든수 = 0;
         foreach (var r in FindObjectsByType<SkinnedMeshRenderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
         {
             if (만든수 >= 한번에) break;
@@ -150,7 +211,8 @@ public class Outliner : MonoBehaviour
             if (처리됨.Contains(id)) continue;
             처리됨.Add(id);
 
-            if (r.gameObject.name == 이름) continue;
+            // ★이름(문자열) 비교는 7만 개에서 31ms 다 — 층(정수) 비교로 바꿨다
+            if (r.gameObject.layer == 층) continue;
             if (건너뜀(r.transform)) continue;
             if (r.sharedMesh == null) continue;
 

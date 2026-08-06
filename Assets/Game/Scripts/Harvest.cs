@@ -19,12 +19,25 @@ public class Harvest : MonoBehaviour
     void OnEnable() { All.Add(this); baseScale = transform.localScale; }
     void OnDisable() { All.Remove(this); }
 
-    void Update()
+    // ★★★**`Update` 를 없앴다** (2026-08-06 실측 — 이게 렉의 정체였다).
+    //
+    //   숲에 나무가 **21,946그루**고 그루마다 `Harvest` 가 하나 붙는다. 이 `Update` 는
+    //   `if (shake <= 0f) return;` 로 **평소엔 아무 일도 안 했는데도**, 유니티가 매 프레임
+    //   2만 2천 번 부르는 값만으로 `BehaviourUpdate` 가 **38.9ms** 였다 (전체 47.4ms 의 82%).
+    //   ☆비싼 건 몸통이 아니라 **부르는 것 자체**다. 아무것도 안 하는 `Update` 도 2만 개면 렉이다.
+    //
+    //   → 흔들림은 **팰 때만** 도는 코루틴으로 옮겼다. 컴포넌트를 끄는 수는 못 쓴다 —
+    //     `OnEnable` 에서 `All` 에 등록하므로 끄면 캐기 자체가 안 된다.
+    System.Collections.IEnumerator 흔들기()
     {
-        if (shake <= 0f) return;
-        shake = Mathf.Max(0f, shake - Time.deltaTime * 5f);
-        float k = 1f + shake * 0.12f;
-        transform.localScale = new Vector3(baseScale.x / k, baseScale.y * k, baseScale.z / k);
+        while (shake > 0f)
+        {
+            shake = Mathf.Max(0f, shake - Time.deltaTime * 5f);
+            float k = 1f + shake * 0.12f;
+            transform.localScale = new Vector3(baseScale.x / k, baseScale.y * k, baseScale.z / k);
+            yield return null;
+        }
+        transform.localScale = baseScale;
     }
 
     [Tooltip("다 캐면 이 자리의 장애물도 지운다 (안 지우면 보이지 않는 벽이 남는다)")]
@@ -39,7 +52,9 @@ public class Harvest : MonoBehaviour
         // perHit 이 0 이면 아무것도 안 나온다 — 선 나무를 패는 단계가 그렇다.
         // 나무는 **통나무가 된 뒤에** 나온다 (인과와 행위)
         if (perHit > 0) Stock.Add(kind, perHit);
+        bool 흔들던중 = shake > 0f;
         shake = 1f;
+        if (!흔들던중) StartCoroutine(흔들기());     // 이미 돌고 있으면 새로 안 띄운다
         if (--hits > 0) return;
 
         if (쓰러짐 != null) { 쓰러짐.시작(방향); Destroy(this); return; }

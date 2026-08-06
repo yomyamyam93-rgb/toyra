@@ -12,6 +12,9 @@ public class SpeciesDef
     public enum 번식식 { 알, 태생 }
     public enum 활동 { 언제나, 낮, 밤 }
 
+    /// 얕은 복사 — 변형 개체(다이어울프 같은)를 만들 때 원본 정의를 안 건드리려고 쓴다
+    public SpeciesDef 복제() => (SpeciesDef)MemberwiseClone();
+
     [Header("이름")]
     public string 이름 = "늑대";
 

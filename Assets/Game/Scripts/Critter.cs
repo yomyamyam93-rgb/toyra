@@ -60,6 +60,16 @@ public class Critter : MonoBehaviour, IHittable
     /// 다칠수록 겁이 오르는 것 — **꺼 둔다** (2026-08-06 사용자 "개피되면 도망가는것도 빼줘")
     public static bool 다치면도망 = false;
 
+    /// ★★★**도망을 통째로 끈다** (2026-08-07 사용자 "도망가는거 없애달라니까").
+    ///
+    ///   종의 `겁` 을 0 으로 만드는 것만으로는 **안 막힌다.** 두려움이 다른 데서 올라오기
+    ///   때문이다 — `무리.남은비율` 이 떨어지면 +0.5, `동요` 로 +0.25, 새끼는 +0.3.
+    ///   즉 **때려서 무리가 줄면 두려움이 0.62 를 넘어** 달아났다. 잡으려고 몰아붙이는 것이
+    ///   곧 도망 조건이었으니, 데이터로는 절대 못 끈다.
+    ///   → 여기서 두려움을 0 으로 잠그고 도주 상태로 가는 길을 다 막는다.
+    ///   ☆기능은 남긴다 (은퇴는 삭제가 아니라 스위치) — 되살리려면 이걸 false 로.
+    public static bool 도망끔 = true;
+
     // ★몸집 통행권 (헌법 7번) — 이 반지름보다 큰 몸만 좁은 데를 못 지난다.
     //   작은 놈까지 걸면 다람쥐가 나무 뒤에서 헤매느라 아무 데도 못 간다.
     const float 좁은문턱 = 0.5f;
@@ -205,16 +215,29 @@ public class Critter : MonoBehaviour, IHittable
         // ★★**서 있을 때도 비켜선다** (2026-08-05). `걷기` 안의 밀어내기는 움직일 때만 도는데,
         //   자리에 다 온 펫은 거기서 멈춘다(`걷기` 의 이른 반환). 그 뒤에 주인이 걸어 들어오면
         //   **파묻힌 채 그대로** 있었다 — 겹침이 안 풀리던 나머지 반쪽이 이것이다.
-        비켜서기();
+        // ★구간 표시 — 야생이 무거운 몫을 **짐작 말고 재기** 위한 것.
+        //   `BeginSample` 은 릴리스 빌드에서 저절로 빠지므로 두고 가도 값이 안 든다.
+        using (new 잼("Critter.비켜서기")) 비켜서기();
 
         atkCd -= dt; stateT += dt;
 
         findCd -= dt;
-        if (findCd <= 0f) { findCd = 0.4f; target = 표적찾기(); }
+        if (findCd <= 0f)
+        {
+            findCd = 0.4f;
+            using (new 잼("Critter.표적찾기")) target = 표적찾기();
+        }
 
-        판단();
-        행동(dt);
-        Squash(dt);
+        using (new 잼("Critter.판단")) 판단();
+        using (new 잼("Critter.행동")) 행동(dt);
+        using (new 잼("Critter.Squash")) Squash(dt);
+    }
+
+    /// 프로파일러 구간을 `using` 한 줄로 여닫는 자
+    struct 잼 : System.IDisposable
+    {
+        public 잼(string 이름) { UnityEngine.Profiling.Profiler.BeginSample(이름); }
+        public void Dispose() { UnityEngine.Profiling.Profiler.EndSample(); }
     }
 
     // ── 어느 상태로 갈까
@@ -271,7 +294,8 @@ public class Critter : MonoBehaviour, IHittable
         else 못가는중 = 0f;
 
         // ★두려움이 임계를 넘으면 달아난다
-        if (적있음 && 두려움 > 0.62f) { 지금상태(상태.도주); return; }
+        // ★도망이 꺼져 있으면 이 길로 아예 안 간다 (`도망끔` 참고)
+        if (!도망끔 && 적있음 && 두려움 > 0.62f) { 지금상태(상태.도주); return; }
 
         switch (지금)
         {
@@ -293,7 +317,7 @@ public class Critter : MonoBehaviour, IHittable
                 // 노려보는 시간 — 겁 많은 종일수록 길다. 이때 플레이어는 물러날 수 있다
                 if (!적있음) { 지금상태(상태.어슬렁); break; }
                 if (stateT > Mathf.Lerp(0.2f, 1.4f, 종.겁))
-                    지금상태(덤빌까(두려움) ? 상태.접근 : 상태.도주);
+                    지금상태((도망끔 || 덤빌까(두려움)) ? 상태.접근 : 상태.도주);
                 break;
 
             case 상태.접근:
@@ -311,6 +335,7 @@ public class Critter : MonoBehaviour, IHittable
     /// ★두려움 — 좀비에겐 없던 값. 이 하나가 동물을 동물답게 만든다
     float 두려움값()
     {
+        if (도망끔) return 0f;          // ★도망 스위치가 꺼져 있으면 아무도 안 무서워한다
         float f = 종.겁;
 
         // ★★★**다쳤다고 도망가지 않는다** (2026-08-06 사용자 — "개피되면 도망가는것도 빼줘").

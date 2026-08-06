@@ -479,28 +479,7 @@ public class WorldGen : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             var p = Scatter(c, spread);
-            if (Swap(나무프리팹, p, true, 0.5f)) continue;
-            float h = Random.Range(9f, 15f);              // 나무 9~15m — 사람의 5~8배
-            float w = Random.Range(4f, 7f);
-            float tr = Random.Range(0.4f, 0.7f);
-            var trunk = Grey.Box(holder, p + Vector3.up * (h * 0.3f), new Vector3(tr, h * 0.6f, tr), C줄기, "나무_줄기");
-            var leaf = Grey.Box(holder, p + Vector3.up * (h * 0.75f), new Vector3(w, h * 0.5f, w), C잎, "나무_잎");
-            leaf.transform.SetParent(trunk.transform, true);   // 줄기를 캐면 잎도 같이 사라진다
-            Blocker.Add(p, tr * 0.7f);                         // 줄기 굵기만 막는다
-
-            // ★선 나무를 패면 자원이 아니라 **쓰러진다.** 나무는 통나무를 패야 나온다
-            var fall = trunk.AddComponent<TreeFall>();
-            fall.통나무값 = Mathf.RoundToInt(4f + h * 0.5f);      // 큰 나무일수록 많이
-            fall.선자리 = p;
-
-            var hv = trunk.AddComponent<Harvest>();
-            hv.kind = Stock.Kind.나무;
-            hv.hits = 4; hv.perHit = 0;        // 선 나무를 팬다고 나무가 나오진 않는다
-            hv.blockAt = p; hv.장애물치우기 = false;
-            hv.쓰러짐 = fall;
-
-            // ★나무가 750그루라 그루당 서너 포기면 2천 개가 넘는다 — 켤 때 그게 곧 렉이다
-            밑동풀(p, tr * 1.6f, Random.Range(0, 3));
+            나무하나(p, Random.Range(9f, 15f));            // 나무 9~15m — 사람의 5~8배
         }
 
         // ★★★**심지** — 숲 안에 **큰 놈이 못 들어오는 덤불**을 몇 군데 박는다 (헌법 7번).
@@ -541,23 +520,8 @@ public class WorldGen : MonoBehaviour
                 if (d > 심지반경 * 0.72f && Random.value < 0.45f) continue;
                 if (!GroundPaint.잔디인가(p)) continue;
 
-                if (Swap(나무프리팹, p, true, 0.45f)) continue;
-                float h = Random.Range(7f, 11f);          // 심지는 어리고 가늘다 — 빛을 다툰다
-                float w = Random.Range(2.6f, 4.2f);
-                float tr = Random.Range(0.35f, 0.5f);
-                var trunk = Grey.Box(holder, p + Vector3.up * (h * 0.3f), new Vector3(tr, h * 0.6f, tr), C줄기, "나무_줄기");
-                var leaf = Grey.Box(holder, p + Vector3.up * (h * 0.75f), new Vector3(w, h * 0.5f, w), C잎, "나무_잎");
-                leaf.transform.SetParent(trunk.transform, true);
-                Blocker.Add(p, tr * 0.7f);
-
-                var fall = trunk.AddComponent<TreeFall>();
-                fall.통나무값 = Mathf.RoundToInt(3f + h * 0.4f);
-                fall.선자리 = p;
-                var hv = trunk.AddComponent<Harvest>();
-                hv.kind = Stock.Kind.나무;
-                hv.hits = 4; hv.perHit = 0;
-                hv.blockAt = p; hv.장애물치우기 = false;
-                hv.쓰러짐 = fall;
+                // 심지는 어리고 가늘다 — 빛을 다툰다
+                나무하나(p, Random.Range(7f, 11f), 심지: true);
             }
     }
 
@@ -568,12 +532,13 @@ public class WorldGen : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             var p = i == 0 ? c : Scatter(c, spread);
-            if (Swap(바위프리팹, p, true, 1.2f)) continue;
+            // 바위지대의 큰 놈은 막고, 작은 놈은 넘어 다닌다 (위 「막는돌지름」과 같은 잣대)
+            if (Swap(바위프리팹, p, true, -1f)) continue;   // 크기가 판정을 정한다
             float w = i == 0 ? Random.Range(3.5f, 5.5f) : Random.Range(1.2f, 2.8f);
             float h = w * Random.Range(0.7f, 1.4f);
             var rock = Grey.Box(holder, p + Vector3.up * (h * 0.42f),
                      new Vector3(w, h, w * Random.Range(0.7f, 1.3f)), C바위, "바위",
-                     w * 0.5f, Random.value * 360f);
+                     w >= 막는돌지름 ? w * 0.5f : 0f, Random.value * 360f);
 
             var hv = rock.AddComponent<Harvest>();
             hv.kind = Stock.Kind.돌; hv.hits = Mathf.RoundToInt(3f + w); hv.perHit = 2; hv.blockAt = p;
@@ -982,11 +947,13 @@ public class WorldGen : MonoBehaviour
                     if (!GroundPaint.잔디인가(at)) continue;
                     // 빽빽한 곳은 어리고 성긴 곳은 굵다 — 서로 빛을 다투는 숲의 모습
                     float h = Random.Range(7f, 13f) * Mathf.Lerp(1.1f, 0.85f, 숲);
-                    if (Swap(나무프리팹, at, true, 0.5f)) continue;
                     나무하나(at, h);
                 }
             }
     }
+
+    [Tooltip("이 지름(m)보다 작은 돌은 안 막는다 — 넘어 다닌다")]
+    [Range(0f, 4f)] public float 막는돌지름 = 1.6f;
 
     void 돌뿌리기(Vector3 중심, float 반, float 배)
     {
@@ -1012,48 +979,121 @@ public class WorldGen : MonoBehaviour
                     var at = 칸중심 + new Vector3(Random.value - 0.5f, 0f, Random.value - 0.5f) * 격자 * 0.95f;
                     if (Mathf.Abs(at.x - 중심.x) > 반 || Mathf.Abs(at.z - 중심.z) > 반) continue;
                     if (!GroundPaint.잔디인가(at)) continue;
-                    if (Swap(바위프리팹, at, true, 1.2f)) continue;
+                    // ★★**작은 돌은 안 막는다** (2026-08-06 사용자 "작은 돌들은 그냥
+                    //   지나가지던가 해야 하는데 전부 막혀서 힘들어").
+                    //   벌판에 흩뿌린 돌멩이는 0.5~1.8m — 사람이 넘어 다닐 크기인데
+                    //   그루마다 장애물을 깔아서 **들판이 온통 지뢰밭**이었다.
+                    //   ☆무엇을 막을지는 **그림 크기가 정한다** (「그림 = 판정」).
+                    if (Swap(바위프리팹, at, true, -1f)) continue;  // 큰 놈은 막고 작은 놈은 넘어간다
                     float w = Random.Range(0.5f, 1.8f);
                     float h = w * Random.Range(0.5f, 1.0f);
                     Grey.Box(holder, at + Vector3.up * (h * 0.4f),
                              new Vector3(w, h, w * Random.Range(0.7f, 1.3f)), C바위, "돌멩이",
-                             w * 0.4f, Random.value * 360f);
+                             w >= 막는돌지름 ? w * 0.4f : 0f, Random.value * 360f);
                 }
             }
     }
 
     /// 나무 한 그루 (줄기 + 잎 + 밑동풀 + 벌목)
-    void 나무하나(Vector3 p, float h)
+    /// ★★나무는 **여기 하나로만** 선다 (2026-08-06). 전에는 심는 자리마다
+    ///   `Swap(나무프리팹…)` 을 먼저 부르고 실패하면 회색 상자를 쌓았는데, 그 경로로 선
+    ///   프리팹 나무에는 **`TreeFall`·`Harvest` 가 안 붙어서 팰 수가 없었다.**
+    ///   문이 하나면 무엇으로 서든 벨 수 있고 길도 막는다.
+    void 나무하나(Vector3 p, float h, bool 심지 = false)
     {
-        float w = h * Random.Range(0.42f, 0.55f);
         float tr = h * Random.Range(0.04f, 0.06f);
+        var 뿌리 = 나무프리팹세우기(p, h);
 
-        var trunk = Grey.Box(holder, p + Vector3.up * (h * 0.3f), new Vector3(tr, h * 0.6f, tr), C줄기, "나무_줄기");
-        var leaf = Grey.Box(holder, p + Vector3.up * (h * 0.75f), new Vector3(w, h * 0.5f, w), C잎, "나무_잎");
-        leaf.transform.SetParent(trunk.transform, true);
-        Blocker.Add(p, tr * 0.7f);
+        if (뿌리 == null)
+        {
+            float w = h * Random.Range(0.42f, 0.55f);
+            var trunk = Grey.Box(holder, p + Vector3.up * (h * 0.3f), new Vector3(tr, h * 0.6f, tr), C줄기, "나무_줄기");
+            var leaf = Grey.Box(holder, p + Vector3.up * (h * 0.75f), new Vector3(w, h * 0.5f, w), C잎, "나무_잎");
+            leaf.transform.SetParent(trunk.transform, true);   // 줄기를 캐면 잎도 같이 사라진다
+            뿌리 = trunk;
+        }
 
-        var fall = trunk.AddComponent<TreeFall>();
-        fall.통나무값 = Mathf.RoundToInt(4f + h * 0.5f);
+        Blocker.Add(p, tr * 0.7f);                             // 줄기 굵기만 막는다
+
+        // ★선 나무를 패면 자원이 아니라 **쓰러진다.** 나무는 통나무를 패야 나온다
+        var fall = 뿌리.AddComponent<TreeFall>();
+        fall.통나무값 = 심지 ? Mathf.RoundToInt(3f + h * 0.4f) : Mathf.RoundToInt(4f + h * 0.5f);
         fall.선자리 = p;
 
-        var hv = trunk.AddComponent<Harvest>();
+        var hv = 뿌리.AddComponent<Harvest>();
         hv.kind = Stock.Kind.나무;
-        hv.hits = 4; hv.perHit = 0;
+        hv.hits = 4; hv.perHit = 0;        // 선 나무를 팬다고 나무가 나오진 않는다
         hv.blockAt = p; hv.장애물치우기 = false;
         hv.쓰러짐 = fall;
 
-        밑동풀(p, tr * 1.6f, Random.Range(0, 3));
+        // ★나무가 750그루라 그루당 서너 포기면 2천 개가 넘는다 — 켤 때 그게 곧 렉이다
+        if (!심지) 밑동풀(p, tr * 1.6f, Random.Range(0, 3));
+    }
+
+    /// 프리팹 나무를 **요청한 키에 맞춰** 세운다. 프리팹이 없으면 null.
+    /// ★키는 짐작하지 않고 **렌더러 바운즈로 잰다** (모델을 바꿔도 저절로 따라온다).
+    GameObject 나무프리팹세우기(Vector3 p, float h)
+    {
+        if (나무프리팹 == null || 나무프리팹.Length == 0) return null;
+        var pf = 나무프리팹[Random.Range(0, 나무프리팹.Length)];
+        if (pf == null) return null;
+
+        var inst = Instantiate(pf, p, Quaternion.Euler(0f, Random.value * 360f, 0f), holder);
+        환경손질(inst);
+
+        float 원래키 = 모델키(pf);
+        if (원래키 > 0.01f) inst.transform.localScale *= h / 원래키;
+
+        // ★★**밑면을 땅에 맞춘다** (2026-08-07 사용자 "나무가 땅속에 박혀있고").
+        //   받아 온 모델은 원점이 **가운데**인 경우가 많다 (Meshy 계열이 그렇다). 그러면
+        //   자리에 그냥 놓으면 절반이 땅에 박힌다. 크기를 바꾼 **뒤에** 다시 재서 올린다 —
+        //   먼저 재면 배율이 안 반영돼 어긋난다 (`Wildlife.모델몸` 과 같은 수법).
+        var rs = inst.GetComponentsInChildren<Renderer>(true);
+        if (rs.Length > 0)
+        {
+            var b = rs[0].bounds;
+            for (int i = 1; i < rs.Length; i++) b.Encapsulate(rs[i].bounds);
+            inst.transform.position += Vector3.up * (p.y - b.min.y);
+        }
+        return inst;
+    }
+
+    static readonly Dictionary<GameObject, float> 키캐시 = new Dictionary<GameObject, float>();
+
+    /// 프리팹의 실제 키(m) — 한 번만 재고 기억한다
+    static float 모델키(GameObject pf)
+    {
+        if (키캐시.TryGetValue(pf, out float v)) return v;
+        var rs = pf.GetComponentsInChildren<Renderer>(true);
+        float y = 0f;
+        if (rs.Length > 0)
+        {
+            var b = rs[0].bounds;
+            for (int i = 1; i < rs.Length; i++) b.Encapsulate(rs[i].bounds);
+            y = b.size.y;
+        }
+        키캐시[pf] = y;
+        return y;
     }
 
     /// ★물체 밑동에 잔디 덤불 (2026-08-04 참고 그림 — 들판을 고르게 덮는 게 아니라
     ///   바위·나무 **밑동에 모여 있다**). 이것만으로 물체가 땅에 「심긴」 것처럼 보인다.
+    [Header("★풀·관목·꽃 (비우면 상자로 나온다)")]
+    [Tooltip("풀포기·관목 모델")] public GameObject[] 풀프리팹;
+    [Tooltip("꽃 모델 — 풀 사이에 섞인다")] public GameObject[] 꽃프리팹;
+    [Tooltip("밑동에 나는 것 중 꽃이 될 확률")] [Range(0f, 1f)] public float 꽃섞기 = 0.22f;
+
     void 밑동풀(Vector3 c, float 반경, int 수)
     {
         for (int i = 0; i < 수; i++)
         {
             float a = Random.value * Mathf.PI * 2f;
             var p = c + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * 반경 * Random.Range(0.55f, 1.15f);
+
+            // ★모델이 꽂혀 있으면 그것으로 심는다 (꽃을 섞는다). 풀·꽃은 길을 막지 않는다
+            var 셋 = (꽃프리팹 != null && 꽃프리팹.Length > 0 && Random.value < 꽃섞기) ? 꽃프리팹 : 풀프리팹;
+            if (Swap(셋, p, true, 0f)) continue;
+
             float h = Random.Range(0.45f, 0.95f);
             float w = Random.Range(0.35f, 0.7f);
             var col = Random.value < 0.5f ? C밑동풀A : C밑동풀B;
@@ -1072,6 +1112,10 @@ public class WorldGen : MonoBehaviour
         return c + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * radius * Mathf.Sqrt(Random.value);
     }
 
+    /// `blockR` 에 **음수를 주면 모델 크기가 판정을 정한다** — 큰 놈은 막고 작은 놈은 넘어간다.
+    /// ★프리팹은 크기가 제각각인데 고정값(1.2m)을 박고 있었다. 그래서 자잘한 돌까지
+    ///   벌판을 지뢰밭으로 만들었고, 반대로 그냥 0 으로 두면 **커다란 돌도 통과**해 버린다.
+    ///   → 짐작 대신 **렌더러 바운즈를 재서** 정한다 (「그림 = 판정」).
     bool Swap(GameObject[] set, Vector3 pos, bool randomYaw, float blockR)
     {
         if (set == null || set.Length == 0) return false;
@@ -1080,8 +1124,33 @@ public class WorldGen : MonoBehaviour
         var rot = randomYaw ? Quaternion.Euler(0f, Random.value * 360f, 0f) : Quaternion.identity;
         var inst = Instantiate(pf, pos, rot, holder);
         환경손질(inst);
-        if (blockR > 0f) Blocker.Add(pos, blockR);
+
+        float r = blockR;
+        if (blockR < 0f)
+        {
+            float 폭 = 모델폭(pf);
+            r = 폭 >= 막는돌지름 ? 폭 * 0.4f : 0f;
+        }
+        if (r > 0f) Blocker.Add(pos, r);
         return true;
+    }
+
+    static readonly Dictionary<GameObject, float> 폭캐시 = new Dictionary<GameObject, float>();
+
+    /// 프리팹의 실제 가로폭(m) — 한 번만 재고 기억한다
+    static float 모델폭(GameObject pf)
+    {
+        if (폭캐시.TryGetValue(pf, out float v)) return v;
+        var rs = pf.GetComponentsInChildren<Renderer>(true);
+        float w = 0f;
+        if (rs.Length > 0)
+        {
+            var b = rs[0].bounds;
+            for (int i = 1; i < rs.Length; i++) b.Encapsulate(rs[i].bounds);
+            w = Mathf.Max(b.size.x, b.size.z);
+        }
+        폭캐시[pf] = w;
+        return w;
     }
 
     [Header("환경 프리팹 손질")]
