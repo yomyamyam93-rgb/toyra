@@ -246,6 +246,19 @@ public class WorldGen : MonoBehaviour
     public int 땅해상도 = 2048;
     [Tooltip("잔디·흙길·물가를 칠한다. 끄면 민무늬 초록")]
     public bool 땅칠하기 = true;
+    // ★★잔디·흙길·물의 **경계만** 칸 단위로 끊는다 (2026-08-09 사용자 "길과 잔디등등이
+    //   분리되는 기준이 격자형식으로"). 색은 하나도 안 바뀐다 — 칠하는 자리를 칸 가운데로
+    //   스냅할 뿐이다. `격자바닥` 의 `칸` 과 같은 값을 써야 칸이 어긋나지 않는다.
+    [Tooltip("경계를 끊는 칸 크기 (m) — 0 이면 예전처럼 매끄럽게")]
+    public float 격자칸 = 1.4f;
+    [Tooltip("칸마다 밝기가 조금씩 다르게 — 0 이면 균일")] [Range(0f, 0.4f)]
+    public float 칸색흔들 = 0.10f;
+    [Tooltip("넓은 기복의 높이 차 (m) — 어디가 높은 지대인가. 캐릭터·펫도 이 높이를 딛는다")]
+    public float 칸높이폭 = 0.07f;
+    // ★★격자를 눈에 보이게 하는 건 이쪽이다. 기복만 있으면 이웃 칸끼리 높이차가
+    //   **평균 0.6cm** 라 벽이 6mm 여서 아무것도 안 보인다 (2026-08-09 실측).
+    [Tooltip("칸마다 제멋대로 흔드는 폭 (m) — 칸 경계에 벽이 생겨 격자가 보인다")]
+    public float 칸흔들 = 0.045f;
     // ★★★결은 땅 그림에 **굽지 않는다** (2026-08-05 사용자 "여전히 깨지는데, 훨씬 재질이
     //   작게작게 적용돼야하지않을까"). 땅 그림은 1440m 를 2048칸으로 덮어 **한 칸이 0.7m** 고,
     //   격자로 안 보이게 **부드럽게 늘려서** 뽑는다. 그러니 아무리 잘게 그려도 0.7m 가
@@ -337,7 +350,10 @@ public class WorldGen : MonoBehaviour
         var g = GameObject.CreatePrimitive(PrimitiveType.Plane);
         g.name = "땅";
         g.transform.SetParent(holder, true);
-        g.transform.position = new Vector3(WorldGrid.Size * 0.5f, 0f, WorldGrid.Size * 0.5f);
+        // ★판때기를 칸 높이만큼 내린다 — 안 내리면 낮은 칸을 뚫고 올라와 격자를 덮는다
+        g.transform.position = new Vector3(WorldGrid.Size * 0.5f,
+                                           -(칸높이폭 * 0.5f + 칸흔들 * 0.5f + 0.05f),
+                                           WorldGrid.Size * 0.5f);
         g.transform.localScale = Vector3.one * (WorldGrid.Size / 10f);   // Plane 은 한 변 10m
 
         // ★★180도 돌린다 (2026-08-04). 유니티 기본 Plane 은 UV 가 **양쪽 축 모두 거꾸로**다
@@ -350,6 +366,8 @@ public class WorldGen : MonoBehaviour
         var mr = g.GetComponent<MeshRenderer>();
         if (!땅칠하기) { mr.sharedMaterial = Grey.Mat(C땅); return; }
 
+        // ★칸 하나가 여기서 정해지고, 색 경계·높이·격자 메시가 **전부 이 값을 쓴다**
+        GroundPaint.격자칸 = 격자칸;                 // 만들기 안에서 텍셀 정수배로 스냅된다
         var tex = GroundPaint.만들기(seed, Mathf.Clamp(땅해상도, 256, 4096), KindAt,
                                      땅얼룩, 큰무늬, 큰무늬칸, 잔무늬, 잔무늬칸);
         // ★★땅 전용 셰이더가 있으면 그걸 쓴다 — **자리마다 다른 결**을 깔 수 있는 건 이쪽뿐이다.
@@ -379,6 +397,13 @@ public class WorldGen : MonoBehaviour
             if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0f);
             결깔기(m);
         }
+        // ★칸 격자를 재질과 높이 함수에 물린다 — 셋이 같은 값을 봐야 어긋나지 않는다
+        if (m.HasProperty("_CellSize")) m.SetFloat("_CellSize", GroundPaint.격자칸);
+        if (m.HasProperty("_CellVary")) m.SetFloat("_CellVary", 칸색흔들);
+        땅격자.칸 = GroundPaint.격자칸;
+        땅격자.높이폭 = 칸높이폭;
+        땅격자.칸흔들 = 칸흔들;
+
         mr.sharedMaterial = m;
 
         // ★무엇이 실제로 걸렸는지 남긴다 — 짐작으로 값을 만지지 않으려고 (2026-08-05).
@@ -479,7 +504,7 @@ public class WorldGen : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             var p = Scatter(c, spread);
-            나무하나(p, Random.Range(9f, 15f));            // 나무 9~15m — 사람의 5~8배
+            나무하나(p, Random.Range(6f, 10f));            // ★9~15 → 6~10m (2026-08-07 "나무가 전체적으로 너무 커" — 캐릭터 2.68m 의 2~4배)
         }
 
         // ★★★**심지** — 숲 안에 **큰 놈이 못 들어오는 덤불**을 몇 군데 박는다 (헌법 7번).
@@ -521,7 +546,7 @@ public class WorldGen : MonoBehaviour
                 if (!GroundPaint.잔디인가(p)) continue;
 
                 // 심지는 어리고 가늘다 — 빛을 다툰다
-                나무하나(p, Random.Range(7f, 11f), 심지: true);
+                나무하나(p, Random.Range(4.5f, 7f), 심지: true);   // 심지는 어리다
             }
     }
 
@@ -946,7 +971,7 @@ public class WorldGen : MonoBehaviour
                     if (Mathf.Abs(at.x - 중심.x) > 반 || Mathf.Abs(at.z - 중심.z) > 반) continue;
                     if (!GroundPaint.잔디인가(at)) continue;
                     // 빽빽한 곳은 어리고 성긴 곳은 굵다 — 서로 빛을 다투는 숲의 모습
-                    float h = Random.Range(7f, 13f) * Mathf.Lerp(1.1f, 0.85f, 숲);
+                    float h = Random.Range(4.5f, 8.5f) * Mathf.Lerp(1.1f, 0.85f, 숲);   // ★7~13 → 4.5~8.5
                     나무하나(at, h);
                 }
             }
@@ -1160,9 +1185,17 @@ public class WorldGen : MonoBehaviour
     // ★재질 **에셋을 고치지 않는다** — `MaterialPropertyBlock` 으로 그 인스턴스에만 얹는다.
     //   에셋을 고치면 프로젝트 파일이 바뀌어 모델을 다시 임포트할 때 날아간다.
     [Tooltip("나뭇잎 색 — 받아 온 모델이 흰색이라 여기서 물들인다")]
-    public Color 잎색 = new Color(0.36f, 0.52f, 0.28f);
+    public Color 잎색 = new Color(0.34f, 0.53f, 0.25f);
     [Tooltip("잎 색을 포기마다 조금씩 흔든다 (0 이면 전부 같은 색)")]
-    [Range(0f, 0.4f)] public float 잎색흔들기 = 0.14f;
+    [Range(0f, 0.4f)] public float 잎색흔들기 = 0.10f;
+    [Tooltip("줄기 색")] public Color 줄기색 = new Color(0.40f, 0.29f, 0.20f);
+    // ★★잎을 **단색으로** 칠한다 (2026-08-09 사용자 "그라데이션 느낌 나지않게 단색으로,
+    //   빠지는곳없이"). 실측: 나무 5종은 렌더러 1 · 재질 1 이고 잎과 줄기가 텍스처 한 장에
+    //   같이 들어 있다 → 이름으로는 못 고른다. 셰이더가 **텍셀 색으로** 가른다.
+    [Tooltip("나무를 단색 두 가지(잎·줄기)로 칠한다")] public bool 단색나무 = true;
+    // ★색을 그루마다 따로 주면 드로콜이 그루 수만큼 난다 — 몇 벌로 묶어야 한다
+    [Tooltip("잎 색을 몇 벌로 나눌까 (많을수록 다채롭고 드로콜이 는다)")] [Range(1, 12)]
+    public int 색벌수 = 5;
 
     static MaterialPropertyBlock 잎블록;
 
@@ -1180,10 +1213,25 @@ public class WorldGen : MonoBehaviour
                           Mathf.Clamp01(잎색.g + 흔들),
                           Mathf.Clamp01(잎색.b + 흔들 * 0.5f), 1f);
 
+        // ★나무인가 — 프리팹 이름으로 고른다. 바위·조약돌엔 안 건다
+        bool 나무다 = inst.name.StartsWith("나무");
+
         foreach (var r in inst.GetComponentsInChildren<Renderer>(true))
         {
             var m = r.sharedMaterial;
             if (m == null) continue;
+
+            if (단색나무 && 나무다)
+            {
+                // ★★★색 변주를 `MaterialPropertyBlock` 으로 주면 안 된다 (2026-08-09 사용자
+                //   "렉이 너무심해"). 블록을 얹는 순간 **SRP 배처가 깨져 나무 한 그루가
+                //   드로콜 하나**가 된다 — 이 씬의 나무는 실측 **27,802그루**다.
+                //   → 색을 몇 벌로 묶고 그루마다 그중 하나를 고른다. 재질이 같으면 묶여 그려지고,
+                //     눈에는 「그루마다 조금씩 다른 초록」 그대로다.
+                r.sharedMaterial = 단색재질(m, Random.Range(0, Mathf.Max(1, 색벌수)));
+                continue;
+            }
+
             // 잎인가 — 재질 이름과 오브젝트 이름 둘 다 본다 (모델마다 다르게 부른다)
             if (!m.name.Contains("Leaf") && !m.name.Contains("Canopy")
                 && !r.gameObject.name.Contains("Canopy")) continue;
@@ -1195,6 +1243,41 @@ public class WorldGen : MonoBehaviour
             잎블록.SetColor("baseColorFactor", 색);
             r.SetPropertyBlock(잎블록);
         }
+    }
+
+    // ★원본 재질 × 색 벌 수 만큼만 만든다. 나무 5종 × 5벌 = 재질 25개 —
+    //   2만 7천 그루가 이 25개를 나눠 쓰므로 드로콜이 25 언저리로 떨어진다.
+    static readonly Dictionary<(Material, int), Material> 단색캐시 = new Dictionary<(Material, int), Material>();
+
+    Material 단색재질(Material 원본, int 벌)
+    {
+        if (단색캐시.TryGetValue((원본, 벌), out var 있던) && 있던 != null) return 있던;
+
+        var sh = Shader.Find("토이라/단색나무");
+        if (sh == null) { Debug.LogWarning("[나무] 토이라/단색나무 셰이더를 못 찾았다"); return 원본; }
+
+        var m = new Material(sh) { name = $"{원본.name}_단색{벌}" };
+        // 원본 그림을 그대로 물려준다 — 잎·줄기를 가르는 잣대다
+        Texture tex = null;
+        if (원본.HasProperty("baseColorTexture")) tex = 원본.GetTexture("baseColorTexture");
+        if (tex == null && 원본.HasProperty("_BaseMap")) tex = 원본.GetTexture("_BaseMap");
+        if (tex == null && 원본.HasProperty("_MainTex")) tex = 원본.GetTexture("_MainTex");
+        if (tex != null) m.SetTexture("_BaseMap", tex);
+        // 벌마다 초록을 조금씩 어긋내 둔다 — 벌 하나면 흔들림 0 과 같다
+        float 흔들 = 색벌수 <= 1 ? 0f
+                   : Mathf.Lerp(-잎색흔들기, 잎색흔들기, 벌 / (float)(색벌수 - 1));
+        m.SetColor("_LeafColor", new Color(Mathf.Clamp01(잎색.r + 흔들 * 0.7f),
+                                           Mathf.Clamp01(잎색.g + 흔들),
+                                           Mathf.Clamp01(잎색.b + 흔들 * 0.5f), 1f));
+        m.SetColor("_BarkColor", 줄기색);
+        // 원본이 알파로 잘라 쓰던 재질이면 그대로 자른다 (잎 카드)
+        float cut = 원본.HasProperty("alphaCutoff") ? 원본.GetFloat("alphaCutoff") : 0f;
+        m.SetFloat("_DoClip", cut > 0.001f ? 1f : 0f);
+        if (cut > 0.001f) m.SetFloat("_Cutoff", cut);
+        m.enableInstancing = true;
+
+        단색캐시[(원본, 벌)] = m;
+        return m;
     }
 
     // ★★★**잎을 「자르기(cutout)」로 바꾼다** (2026-08-06 사용자 "나무 그림자가 잎의

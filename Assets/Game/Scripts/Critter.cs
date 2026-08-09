@@ -139,7 +139,7 @@ public class Critter : MonoBehaviour, IHittable
 
         var pos = transform.position + d / dist * 종.이속 * 0.9f * dt;
         pos = Blocker.Resolve(pos, 종.반지름);
-        pos.y = 0f;
+        pos.y = 땅격자.걷는높이(pos.x, pos.z);
         transform.position = pos;
         transform.rotation = Quaternion.Slerp(transform.rotation,
             Quaternion.LookRotation(d / dist, Vector3.up), 8f * dt);
@@ -162,6 +162,59 @@ public class Critter : MonoBehaviour, IHittable
 
     // ── 타이머 (상태가 아니라 「막는 것」)
     float staggerT, downT;
+    Vector3 밀림; float 밀림남은;      // 맞아서 뒤로 밀리는 중 (크기·무게로 보정된 거리)
+
+    // ★★공격 커밋 (2026-08-07 사용자 "공격모션이 들어갔으면 끝까지 모션하도록, 허공에
+    //   때리더라도 · 앞으로 조금 돌진하면서"). 전에는 휘두르다가도 상대가 반 발짝 벗어나면
+    //   곧장 추격으로 끊겨서 **공격이 보이질 않았다.** 시작하면 무르지 않는다 —
+    //   그 대신 빗나갈 수 있다. 이 「커밋 + 빗나감」이 좀보이드 전투 읽기의 반쪽이다.
+    float 휘두름t = -1f;                 // 0 이상 = 휘두르는 중
+    float 마지막교전 = -99f;             // 공격 상태에 마지막으로 있던 시각 (선딜 재걸림 방지)
+    Vector3 휘두름방향;
+    bool 휘두름타격;
+    // ★★휘두름 시간은 상수가 아니라 **그 모델의 공격 클립 길이**다 (2026-08-07 "공격을
+    //   하고 한번 뚝 끊기는 듯한 느낌" — 클립 1.00초를 0.55초 커밋으로 자르니 모션이
+    //   중간에 잘려 대기 자세로 스냅됐다. 컨트롤러 갈아타기엔 블렌드가 없다).
+    float 휘두름시간 = 0.55f;            // 때리기 순간 클립 길이로 갱신된다
+    float 타격시점 = 0.32f;              // 휘두름시간 × 0.58 — 이빨이 앞을 지나는 순간
+    // ★후딜 1.2초 (2026-08-07 사용자 "공격 후에 1~1.5초는 서 있는 모션 후에 뛰어와야지").
+    //   이 동안 대기 모션으로 서 있는다 — 「물었다 → 숨 고르고 → 다시」 의 박자.
+    const float 후딜 = 1.2f;
+
+    /// 몸짓이 읽는다 — **실제로 휘두르는 동안만** 공격 모션 (후딜엔 대기로 서 있는다)
+    public bool 휘두르는중 => 휘두름t >= 0f && 휘두름t < 휘두름시간;
+
+    void 휘두름진행(float dt)
+    {
+        float 전 = 휘두름t;
+        휘두름t += dt;
+
+        if (전 < 휘두름시간)
+        {
+            // 살짝 파고든다 — 타격 시점까지만 세게, 그 뒤는 여운
+            float 밀도 = 휘두름t < 타격시점 ? 0.55f : 0.15f;
+            var pos = transform.position + 휘두름방향 * 종.이속 * 밀도 * dt;
+            pos = Blocker.Resolve(pos, 종.반지름); pos.y = 땅격자.걷는높이(pos.x, pos.z);
+            transform.position = pos;
+            Face(휘두름방향);
+
+            // 타격 순간 — 아직 닿으면 맞고, 벗어났으면 **허공을 벤다** (그게 컨트롤이다)
+            if (!휘두름타격 && 전 < 타격시점 && 휘두름t >= 타격시점)
+            {
+                휘두름타격 = true;
+                // ★상대의 **실루엣(뼈 점들)** 에 무는 것 — 사람이든 짐승이든 몸 어디든 닿으면 맞는다
+                // ★★여유를 0.45 → 0.1 로 줄였다 (2026-08-09 사용자 "실제와 다르게 멀리서 맞추고 떄려").
+                //   `종.사거리` 자체가 이미 「몸 표면에서 이만큼 안이면 때린다」는 여유인데,
+                //   거기에 반지름과 0.45 를 또 얹어 늑대가 중심에서 2.05m 밖에서 물었다
+                //   (늑대 입은 중심에서 0.6m 남짓이다).
+                if (target != null && target.Alive
+                    && 실루엣판정.닿나(target.T, transform.position, 종.사거리 + 종.반지름, 0.1f))
+                    target.TakeDamage(종.피해);
+            }
+        }
+        // 후딜 — 제자리에 선다 (이동도 회전도 없음)
+        if (휘두름t >= 휘두름시간 + 후딜) 휘두름t = -1f;
+    }
 
     Transform body;
     Vector3 bodyScale, bodyPos;
@@ -195,7 +248,19 @@ public class Critter : MonoBehaviour, IHittable
     void Update()
     {
         float dt = Time.deltaTime;
+        // ★뿌리 y 는 살아 있는 동안 언제나 0 — 어떤 경로로든 떠오르면 여기서 끌어내린다
+        { var 자리 = transform.position; float g = 땅격자.걷는높이(자리.x, 자리.z);
+          if (자리.y != g) { 자리.y = g; transform.position = 자리; } }
         if (대표 && 무리 != null) 무리.식힘(dt);
+
+        // ★맞아서 뒤로 밀리는 중 — 처음엔 훅, 끝으로 갈수록 잦아든다 (버티며 멎는 느낌)
+        if (밀림남은 > 0f)
+        {
+            float 총 = Mathf.Max(0.01f, 몸짓.피격길이 * 0.60f);
+            float 남음 = 밀림남은 / 총;                 // 1 → 0
+            transform.position += 밀림 * (남음 * 남음 * dt / 총 * 2f);
+            밀림남은 -= dt;
+        }
 
         // 붙잡혀 있는 동안은 스스로 판단하지 않는다 (사람이 끌고 간다)
         if (잡힘) { Squash(dt); return; }
@@ -211,6 +276,9 @@ public class Critter : MonoBehaviour, IHittable
             return;
         }
         if (staggerT > 0f) { staggerT -= dt; Squash(dt); return; }
+
+        // ★휘두르는 중엔 딴생각 안 한다 — 끝까지 모션 (허공이라도)
+        if (휘두름t >= 0f) { 휘두름진행(dt); Squash(dt); return; }
 
         // ★★**서 있을 때도 비켜선다** (2026-08-05). `걷기` 안의 밀어내기는 움직일 때만 도는데,
         //   자리에 다 온 펫은 거기서 멈춘다(`걷기` 의 이른 반환). 그 뒤에 주인이 걸어 들어오면
@@ -251,7 +319,7 @@ public class Critter : MonoBehaviour, IHittable
         // 내 편은 겁내지 않는다 — 주인이 시킨 자리를 지킨다
         if (side == Side.내편)
         {
-            if (적있음) { 지금상태(d적 <= 때리는거리(target) ? 상태.공격 : 상태.접근); return; }
+            if (적있음) { 지금상태(d적 <= 때리는거리(target) * 1.45f ? 상태.공격 : 상태.접근); return; }   // 돌진이 틈을 메운다
 
             // ★★따라가기와 어슬렁이 겹치면 안 된다 (2026-08-04 사용자 지적).
             //   전에는 "4m 밖이면 따라가고 안이면 어슬렁" 이었는데, 어슬렁이 7m 밖 지점을
@@ -322,12 +390,12 @@ public class Critter : MonoBehaviour, IHittable
 
             case 상태.접근:
                 if (!적있음) { 지금상태(상태.복귀); break; }
-                if (d적 <= 때리는거리(target)) 지금상태(상태.공격);
+                if (d적 <= 때리는거리(target) * 1.45f) 지금상태(상태.공격);   // ★반 발짝 모자라도 공격을 시작한다 — 돌진이 메운다 (계속 쫓아붙는 것 방지)
                 break;
 
             case 상태.공격:
                 if (!적있음) { 지금상태(상태.복귀); break; }
-                if (d적 > 때리는거리(target) * 1.25f) 지금상태(상태.접근);
+                if (d적 > 때리는거리(target) * 2.2f) 지금상태(상태.접근);   // ★넉넉해야 공격 자세를 유지한다 — 좁으면 쫓기↔공격이 매 프레임 뒤집힌다
                 break;
         }
     }
@@ -370,7 +438,19 @@ public class Critter : MonoBehaviour, IHittable
 
     bool 덤빌까(float 두려움) => 종.공격성 > 두려움 * 0.9f;
 
-    void 지금상태(상태 s) { if (지금 == s) return; 지금 = s; stateT = 0f; }
+    void 지금상태(상태 s)
+    {
+        if (지금 == s) return;
+        지금 = s; stateT = 0f;
+
+        // ★★**도착하자마자 못 때린다** (2026-08-07 사용자 "바로 달려와서 개패는 게 아니라
+        //   딜레이가 있어야"). 공격 자세를 잡는 선딜 — 이 반 박자가 플레이어에게
+        //   물러날 틈을 준다. 좀보이드의 전투 읽기가 이 틈에서 나온다.
+        //   ☆단 **재진입엔 다시 안 건다** — 백스텝 상대로 공격↔접근이 오가며 선딜이
+        //     계속 리셋되면 영원히 못 휘두른다 (2026-08-07 실제로 그랬다).
+        if (s == 상태.공격 && Time.time - 마지막교전 > 2f) atkCd = Mathf.Max(atkCd, 0.45f);
+        if (s == 상태.공격) 마지막교전 = Time.time;
+    }
 
     // ── 상태대로 움직인다
     void 행동(float dt)
@@ -395,7 +475,17 @@ public class Critter : MonoBehaviour, IHittable
                 break;
 
             case 상태.접근:
-                if (target != null) 걷기(target.T.position, dt, 1f);
+                if (target != null)
+                {
+                    걷기(target.T.position, dt, 1f);
+                    // ★★뒤로 빼는 상대에게도 휘두른다 (2026-08-07 사용자 "계속 뒤로 빼니까
+                    //   공격 끝까지 안 하고 따라온다"). 상태가 공격↔접근을 오가며 선딜이
+                    //   계속 리셋되던 구멍 — **쫓는 중에도 쿨이 차 있고 닿을 만하면 커밋한다.**
+                    //   돌진이 반 발짝을 메우고, 그래도 모자라면 허공을 벤다. 그게 맞다.
+                    if (atkCd <= 0f && target.Alive
+                        && Flat(target.T.position, transform.position) <= 때리는거리(target) * 1.45f)
+                        때리기();
+                }
                 break;
 
             case 상태.공격:
@@ -430,7 +520,7 @@ public class Critter : MonoBehaviour, IHittable
         pos = Blocker.Resolve(pos, 종.반지름);
         pos.x = Mathf.Clamp(pos.x, 1f, WorldGrid.Size - 1f);
         pos.z = Mathf.Clamp(pos.z, 1f, WorldGrid.Size - 1f);
-        pos.y = 0f;
+        pos.y = 땅격자.걷는높이(pos.x, pos.z);
         transform.position = pos;
         Face(d);
     }
@@ -447,7 +537,7 @@ public class Critter : MonoBehaviour, IHittable
         var p = 서로밀기(transform.position);
         if ((p - transform.position).sqrMagnitude < 1e-6f) return;
         p = Blocker.Resolve(p, 종.반지름);
-        p.y = 0f;
+        p.y = 땅격자.걷는높이(p.x, p.z);
         transform.position = p;
     }
 
@@ -536,7 +626,14 @@ public class Critter : MonoBehaviour, IHittable
     {
         if (atkCd > 0f) return;
         atkCd = 종.간격;
-        if (target != null && target.Alive) target.TakeDamage(종.피해);
+        // 즉발 피해가 아니라 **휘두름을 시작**한다 — 피해는 타격 시점에 (`휘두름진행`)
+        var d = target != null ? target.T.position - transform.position : transform.forward;
+        d.y = 0f;
+        휘두름방향 = d.sqrMagnitude > 1e-4f ? d.normalized : transform.forward;
+        var 몸짓기 = GetComponent<몸짓>();
+        휘두름시간 = 몸짓기 != null ? Mathf.Clamp(몸짓기.공격클립길이(), 0.3f, 1.6f) : 0.55f;
+        타격시점 = 휘두름시간 * 0.58f;
+        휘두름t = 0f; 휘두름타격 = false;
         squash = 0.7f;
     }
 
@@ -545,7 +642,28 @@ public class Critter : MonoBehaviour, IHittable
     {
         if (!Alive) return;
         hp -= d;
-        squash = 1f;
+        // ★눌림(squash)은 안 건다 — 맞는 동작은 저작된 `피격` 클립의 몫이다
+
+        // ★★**맞으면 맞는 게 보여야 전투다** (2026-08-07 사용자 — 좀보이드 참고).
+        //   ①피격 모션 (저작된 「피격」 클립을 잠깐 튼다) ②짧은 경직 — 이 0.22초가
+        //   「때리면 상대가 멈칫한다」는 컨트롤의 최소 단위다. 없으면 서로 딜만 교환한다.
+        // ★경직은 피격 모션의 **버팀 구간까지**만 (클립 0.90초의 45%). 회복 구간에는
+        //   다시 움직일 수 있어야 "아파하다 정신 차린다" 로 읽힌다 (2026-08-09).
+        staggerT = Mathf.Max(staggerT, 몸짓.피격길이 * 0.45f);
+
+        // ★★★**맞으면 실제로 뒤로 밀린다** (2026-08-09 사용자 "뒤로도 거리가 조금
+        //   밀려나게, 크기에 따라 보정되게"). 클립이 그리는 뒷걸음질과 짝이다 —
+        //   그림만 밀리고 자리가 그대로면 미끄러지는 것처럼 보인다.
+        //   ☆거리는 **몸 크기(키)에 비례**하고 **무게로 나눈다** — 큰 놈은 보폭이 크고,
+        //     무거운 놈은 덜 밀린다. 티라를 몽둥이로 밀어낼 수는 없다.
+        //   ☆0.22 → 0.07 (2026-08-09 사용자 "밀려나는게 너무 심하고"). 클립도 같이 줄였다 —
+        //     둘이 더해지던 걸 못 봤다.
+        밀림 = -transform.forward * (종.키 * 0.07f / Mathf.Max(0.2f, 종.무게));
+        밀림남은 = 몸짓.피격길이 * 0.60f;      // 클립의 충격+버팀 구간 동안만 밀린다
+        휘두름t = -1f;                                  // 맞으면 휘두르던 것도 끊긴다
+        var 몸짓기 = GetComponent<몸짓>();
+        if (몸짓기 != null) 몸짓기.맞았다();
+
         if (무리 != null) 무리.다쳤다(this, 새끼);
         if (hp <= 0f) Die();
     }
@@ -562,7 +680,7 @@ public class Critter : MonoBehaviour, IHittable
         if (dir.sqrMagnitude > 1e-4f && dist > 0.01f)
         {
             var p = Blocker.Resolve(transform.position + dir.normalized * dist, 종.반지름);
-            p.y = 0f;
+            p.y = 땅격자.걷는높이(p.x, p.z);
             transform.position = p;
         }
         staggerT = Mathf.Max(staggerT, stagger);
@@ -581,8 +699,33 @@ public class Critter : MonoBehaviour, IHittable
     void Die()
     {
         if (무리 != null) 무리.죽었다(새끼);
+
+        // ★야생은 그 자리에서 **사체로 전환**한다 (2026-08-07). `Destroy` 를 먼저 하면
+        //   저작된 `죽음` 모션(`몸짓`)이 돌 틈이 없다 — 죽는 모션이 눕히고, 누운 채 굳고,
+        //   그 몸이 곧 사체다. 이 컴포넌트만 끄면 뇌는 멈추고 몸은 남는다.
         if (side == Side.야생)
-            Carcass.남기다(this, Mathf.Max(1, Mathf.RoundToInt(종.체력 / 22f)));
+        {
+            // ★죽는 순간의 임시 자세(넘어짐 기울기·눌림·공중)를 먼저 걷어낸다 —
+            //   안 걷어내면 그 자세 위에 죽음 클립이 얹혀 시체가 떠서 굳는다 (사슴 실사례)
+            downT = 0f; staggerT = 0f; squash = 0f;
+            if (body != null) 몸복구();
+            var 자리 = transform.position; 자리.y = 땅격자.걷는높이(자리.x, 자리.z); transform.position = 자리;
+
+            // ★★★**죽으면 튕겨나간다** (2026-08-09 사용자 "그자리에서 쓱 눕는게 아니라
+            //   튕겨나가서 퍽"). 클립이 그리는 포물선과 짝이다 — 그림만 날고 자리가
+            //   그대로면 제자리에서 허우적대는 걸로 보인다.
+            //   ☆거리는 피격의 세 배. 크기에 비례하고 무게로 나눈다 (티라는 거의 안 날아간다).
+            //   ☆클립의 착지(55%)까지만 밀린다 — 땅에 부딪힌 뒤엔 안 미끄러진다.
+            //   ★이 컴포넌트는 곧 `enabled = false` 라 `Update` 가 안 돈다 →
+            //     **사체(`Carcass`)에게 맡긴다.** 걔는 계속 살아 있다.
+            var 튕김 = -transform.forward * (종.키 * 0.21f / Mathf.Max(0.2f, 종.무게));
+
+            Carcass.전환(this, Mathf.Max(1, Mathf.RoundToInt(종.체력 / 22f)));
+            var car = GetComponent<Carcass>();
+            if (car != null) car.튕겨내기(튕김, 1.4f * 0.55f);
+            enabled = false;                    // OnDisable 이 All 에서도 빼 준다 (표적에서 사라짐)
+            return;
+        }
         Destroy(gameObject);
     }
 
@@ -621,12 +764,16 @@ public class Critter : MonoBehaviour, IHittable
         body.localRotation = bodyRot;
     }
 
+    /// ★★★**스케일 눌림은 안 쓴다** (2026-08-09 사용자 "팻 쳐맞는 모션 만들고 왜 이상한걸
+    ///   쓰냐"). 맞는 동작은 저작된 **`피격` 클립**이 그린다 (`몸짓.맞았다()`).
+    ///   그 위에 몸을 가로 1.3배·세로 0.77배로 눌렀다 펴는 걸 겹치니 꿈틀거렸다.
+    ///   ☆같은 이유로 2026-08-03 에 넘어짐의 눌림도 걷어냈다 — *"짜부되는 건 좀 아닌 거 같고"*.
+    ///   ☆몸 크기는 건드리지 않고 원래 값으로 유지만 한다.
     void Squash(float dt)
     {
         if (body == null) return;
-        squash = Mathf.Max(0f, squash - dt * 4f);
-        float k = 1f + squash * 0.3f;
-        body.localScale = new Vector3(bodyScale.x * k, bodyScale.y / k, bodyScale.z * k);
+        squash = 0f;
+        if (body.localScale != bodyScale) body.localScale = bodyScale;
     }
 
     // ══════════════════════════════════════════════════════════
@@ -663,7 +810,11 @@ public class Critter : MonoBehaviour, IHittable
         }
     }
 
-    public static int 방향수 = 16;
+    // ★16칸 끊기는 **픽셀 화면과 함께 은퇴** (2026-08-07 사용자 "뚝 도는 게 아니라
+    //   자연스럽게 회전해서 전환"). 픽셀이 있을 땐 끊는 게 그림체였지만, 걷어낸 지금은
+    //   스냅이 그냥 버그로 보인다. → **정해진 속도로 돌아간다.** 큰 몸일수록 천천히 돈다
+    //   (다람쥐는 홱, 티라노는 무겁게 — 몸무게가 회전에서 읽힌다).
+    public static int 방향수 = 16;   // (은퇴 — 픽셀 화면을 되살리면 다시 쓴다)
     float 본각도; bool 각도있음;
 
     void Face(Vector3 dir)
@@ -672,13 +823,13 @@ public class Critter : MonoBehaviour, IHittable
         if (dir.sqrMagnitude < 1e-6f) return;
         float want = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
 
-        if (방향수 < 2) { transform.rotation = Quaternion.Euler(0f, want, 0f); return; }
-
-        float step = 360f / 방향수;
-        if (!각도있음) { 본각도 = Mathf.Round(want / step) * step; 각도있음 = true; }
-        else if (Mathf.Abs(Mathf.DeltaAngle(본각도, want)) > step * 0.6f)
-            본각도 = Mathf.Round(want / step) * step;
-
+        if (!각도있음) { 본각도 = want; 각도있음 = true; }
+        else
+        {
+            // 키 1m(다람쥐) ≈ 720°/s · 키 5m(티라노) ≈ 240°/s
+            float 빠르기 = Mathf.Lerp(720f, 240f, Mathf.InverseLerp(1f, 5f, 종.키));
+            본각도 = Mathf.MoveTowardsAngle(본각도, want, 빠르기 * Time.deltaTime);
+        }
         transform.rotation = Quaternion.Euler(0f, 본각도, 0f);
     }
 

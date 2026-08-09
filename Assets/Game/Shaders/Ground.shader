@@ -37,6 +37,10 @@ Shader "Toyra/Ground"
         _PhotoBand("섞이는 폭 (작을수록 또렷하게 갈린다)", Range(0.02,0.6)) = 0.18
         _PhotoShade("큰 명암 흔들기", Range(0,0.5)) = 0.12
 
+        [Header(Cell grid)]
+        _CellSize("칸 크기 (m) — 0 이면 끔", Float) = 0
+        _CellVary("칸마다 밝기 흔들기", Range(0,0.5)) = 0.10
+
         [Header(Legacy gray detail)]
         _GrassTex("잔디 결", 2D) = "gray" {}
         _DirtTex("흙 결", 2D) = "gray" {}
@@ -78,6 +82,10 @@ Shader "Toyra/Ground"
 
             TEXTURE2D_ARRAY(_PhotoArr); SAMPLER(sampler_PhotoArr);
 
+            // ★구름 그림자는 **전역**이다 — 땅과 격자바닥이 같은 값을 봐야 이어진다
+            TEXTURE2D(_CloudTex); SAMPLER(sampler_CloudTex);
+            float4 _CloudParams;      // (1/구름크기, 흐른x, 흐른z, 짙기)
+
             // ★사진 낱장의 밭 — CBUFFER 밖에 둔다. `SetVectorArray` 로 넣는 값이다
             float4 _PhotoParams[PHOTO_MAX];   // (주파수 1/m, 오프셋x, 오프셋z, 편향)
             float4 _PhotoGroup[PHOTO_MAX];    // (무리 0잔디 1흙 2돌, uv배율, -, -)
@@ -90,6 +98,8 @@ Shader "Toyra/Ground"
                 float _PhotoTiling;
                 float _PhotoBand;
                 float _PhotoShade;
+                float _CellSize;      // 칸 크기 (m) — 0 이면 끔
+                float _CellVary;      // 칸마다 밝기가 흔들리는 폭
             CBUFFER_END
 
             struct Attributes
@@ -207,6 +217,16 @@ Shader "Toyra/Ground"
                     albedo = base.rgb * f;
                 }
 
+                // ★★칸마다 밝기를 조금씩 흔든다 (2026-08-09 사용자 "칸칸마다 색이 조금
+                //   달라야하는데말이지"). **월드 좌표로 계산**해서 판때기와 격자 메시가
+                //   같은 무늬를 받는다 — 정점 색을 쓰면 판때기엔 그 스트림이 없어 못 쓴다.
+                if (_CellSize > 0.01h)
+                {
+                    float2 cell = floor(IN.positionWS.xz / _CellSize);
+                    float h1 = frac(sin(dot(cell, float2(127.1, 311.7))) * 43758.5453);
+                    albedo *= 1.0h + (h1 - 0.5h) * _CellVary;
+                }
+
                 // ── 빛 (해 + 그림자 + 주변광). 땅은 완전 평지라 이만큼이면 충분하다
                 float4 shadowCoord = TransformWorldToShadowCoord(IN.positionWS);
                 Light mainLight = GetMainLight(shadowCoord);
@@ -216,7 +236,18 @@ Shader "Toyra/Ground"
                 half3 lit = mainLight.color * (ndl * mainLight.shadowAttenuation);
                 half3 ambient = SampleSH(n2);
 
-                half3 col2 = albedo * (lit + ambient);
+                // ★★구름 그림자 — **월드 좌표로** 무늬를 훑는다 (2026-08-09 사용자
+                //   "땅에 지나가는 구름 그림자"). 판때기를 따로 깔지 않으니 드로콜이 안 는다.
+                //   `_CloudParams` = (1/구름크기, 흐른x, 흐른z, 짙기). 짙기 0 이면 아무 일도 안 한다.
+                half cloud = 1.0h;
+                if (_CloudParams.w > 0.001h)
+                {
+                    float2 cuv = IN.positionWS.xz * _CloudParams.x + _CloudParams.yz;
+                    cloud = SAMPLE_TEXTURE2D(_CloudTex, sampler_CloudTex, cuv).r;
+                    cloud = lerp(1.0h, cloud, _CloudParams.w);
+                }
+
+                half3 col2 = albedo * (lit * cloud + ambient * lerp(1.0h, cloud, 0.5h));
                 col2 = MixFog(col2, IN.fogCoord);
                 return half4(col2, 1.0h);
             }

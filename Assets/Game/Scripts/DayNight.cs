@@ -66,7 +66,11 @@ public class DayNight : MonoBehaviour
         if (sun != null && sun.type != LightType.Directional) sun = null;
         foreach (var l in FindObjectsByType<Light>(FindObjectsSortMode.None))
             if (l.type == LightType.Directional) { sun = l; break; }
-        RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+        // ★★단색(Flat) → **삼색(Trilight)** (2026-08-07 사용자 "빛이 너무 조잡하다").
+        //   단색 환경광은 모든 면을 같은 색으로 채워서 입체가 플라스틱처럼 죽는다.
+        //   하늘(위)·수평·땅(아래)을 갈라 주면 **환경광만으로 형태가 읽힌다** — 이게
+        //   스타일라이즈 게임들이 값싸게 「퀄리티 있어 보이는」 표준 수법이다.
+        RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
         Apply();
     }
 
@@ -140,7 +144,11 @@ public class DayNight : MonoBehaviour
             var c = Color.Lerp(밤색, 낮색, 낮정도);
             sun.color = Color.Lerp(c, 저녁색, low * 0.8f * 낮정도);
         }
-        RenderSettings.ambientLight = Color.Lerp(밤주변, 낮주변, 낮정도);
+        var 주변 = Color.Lerp(밤주변, 낮주변, 낮정도);
+        // 위는 살짝 차고 밝게(하늘 반사) · 수평은 그대로 · 아래는 어둡고 살짝 따뜻하게(땅 반사)
+        RenderSettings.ambientSkyColor     = 주변 * 1.18f + new Color(0f, 0.012f, 0.03f);
+        RenderSettings.ambientEquatorColor = 주변;
+        RenderSettings.ambientGroundColor  = 주변 * 0.45f + new Color(0.02f, 0.012f, 0f);
     }
 
     // ★★시야는 **늦게 들어온다** (2026-08-04 사용자 — "밝은 날은 대부분 빼주고,

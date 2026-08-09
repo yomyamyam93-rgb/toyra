@@ -352,7 +352,7 @@ public class Wildlife : MonoBehaviour
         float 밑 = g.transform.position.y + (b.min.y - g.transform.position.y) * k;
         g.transform.position += Vector3.up * (parent.position.y - 밑);
 
-        걷기물리기(g, s);
+        걷기물리기(parent, g, s);
     }
 
     /// ★★**리깅 모델에 걷기 애니메이션을 물린다** (2026-08-07 사용자 "팻 리깅 다 쳐넣고
@@ -364,17 +364,81 @@ public class Wildlife : MonoBehaviour
     ///
     /// ★`AlwaysAnimate` 로 둔다 — 아이소 화면에서는 몸이 화면 밖으로 조금 나가도
     ///   그림자·실루엣이 남으므로, 컬링되어 자세가 굳으면 눈에 띈다.
-    static void 걷기물리기(GameObject g, SpeciesDef s)
+    /// ★★★**경로가 한 칸 어긋나 있었다** (2026-08-07 — "공중에 떠 있고 모션도 하나도 없는").
+    ///
+    ///   클립은 `Armature/spine_hip/...` 을 찾는데, glb 로 임포트된 프리팹에는 **Armature
+    ///   노드가 없다** (루트가 곧 그 자리다). 그래서 46종 전부 **바인딩 0%** — 애니메이터는
+    ///   시간만 흐르고 뼈는 하나도 안 붙었다. "모션 없음" 의 정체가 이것이다.
+    ///   ☆실측: `Armature/` 접두를 떼면 46종 모두 100% 붙는다.
+    ///   → **모델 루트를 `Armature` 로 개명**하고 애니메이터를 **부모(생물 루트)** 에 단다.
+    ///     그러면 클립 경로가 그대로 맞는다. `Critter` 는 자식을 이름이 아니라
+    ///     `GetChild(0)` 으로 잡으므로 개명해도 안전하다.
+    static void 걷기물리기(Transform parent, GameObject g, SpeciesDef s)
     {
         if (s.모델 == null) return;
-        var ctrl = Resources.Load<RuntimeAnimatorController>("rig/걷기_" + s.모델.name);
-        if (ctrl == null) return;                       // 짝이 없으면 그냥 선 모델로 둔다
+        // ★동작은 이제 `몸짓` 이 공용 컨트롤러(_공용동작) + 오버라이드로 전부 맡는다 —
+        //   여기서는 뼈 경로를 맞추고(개명) 애니메이터만 세운다
+        g.name = "Armature";                            // 클립 경로의 첫 칸이 된다
 
-        var an = g.GetComponent<Animator>();
-        if (an == null) an = g.AddComponent<Animator>();
-        an.runtimeAnimatorController = ctrl;
+        var an = parent.GetComponent<Animator>();
+        if (an == null) an = parent.gameObject.AddComponent<Animator>();
         an.applyRootMotion = false;                    // 이동은 `Critter.걷기` 가 한다
         an.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+
+        // ★★검은 테두리 — 짐승은 **스폰될 때** 붙여야 한다 (씬에 미리 없으니까).
+        //   비용이 드로콜 ×2 라 **짐승·캐릭터에만** 붙인다. 나무 2만 그루엔 절대 안 붙인다.
+        if (parent.GetComponent<외곽선붙이기>() == null)
+            parent.gameObject.AddComponent<외곽선붙이기>();
+
+        // ★상태 따라 여섯 동작(걷기·뛰기·대기·공격·피격·죽음)을 갈아탄다
+        var 몸짓기 = parent.GetComponent<몸짓>();
+        if (몸짓기 == null) 몸짓기 = parent.gameObject.AddComponent<몸짓>();
+        몸짓기.준비(an, s.모델.name);
+
+        // ★★★**크기·바닥은 「애니메이션이 붙은 자세」로 다시 잰다** (2026-08-07 실측 —
+        //   "스케일이 하나도 적용 안 됐어, 공중에 떠 있고").
+        //   클립이 뼈 위치를 원본 리그 값으로 끌고 가서, 정지 자세로 맞춘 크기가
+        //   **재생 첫 프레임에 절반으로 줄고 몸이 떠올랐다** (다람쥐 실측 1.62 → 0.83).
+        //   정지 자세 바운즈는 거짓말을 한다 — **스킨 정점을 구워(BakeMesh) 재는 것**만 진실이다.
+        an.Update(0f);                                   // 첫 자세를 강제로 적용
+        진짜맞춤(parent, g.transform, s, an);
+    }
+
+    // ★필드 초기화에서 `new Mesh()` 를 부르면 안 된다 (유니티가 클래스 통째로 죽인다 —
+    //   실제로 야생이 0마리가 됐다). 처음 쓸 때 만든다.
+    static Mesh 잼틀;
+
+    /// 스킨 정점 기준으로 ①키를 `종.키` 에 맞추고 ②발밑을 땅에 붙인다
+    static void 진짜맞춤(Transform parent, Transform g, SpeciesDef s, Animator an)
+    {
+        if (잼틀 == null) 잼틀 = new Mesh();
+        float 최저, 최고;
+        void 재기(out float lo, out float hi)
+        {
+            lo = 9e9f; hi = -9e9f;
+            foreach (var smr in g.GetComponentsInChildren<SkinnedMeshRenderer>())
+            {
+                smr.BakeMesh(잼틀, true);
+                var vs = 잼틀.vertices;
+                for (int i = 0; i < vs.Length; i += 5)
+                {
+                    float y = smr.transform.TransformPoint(vs[i]).y;
+                    if (y < lo) lo = y; if (y > hi) hi = y;
+                }
+            }
+        }
+
+        재기(out 최저, out 최고);
+        if (최저 > 8e9f) return;                          // 스킨이 없으면 (상자) 그대로
+
+        float 실키 = 최고 - 최저;
+        if (실키 > 0.01f)
+        {
+            g.localScale *= s.키 / 실키;                  // ①진짜 키를 설정값으로
+            an.Update(0f);
+            재기(out 최저, out 최고);                      // 크기를 바꿨으니 다시 잰다
+        }
+        g.position += Vector3.up * (parent.position.y - 최저);   // ②진짜 발밑을 땅에
     }
 
     /// 모델이 없을 때 — 색칠한 상자 (앞에 머리를 붙여 방향이 읽히게)

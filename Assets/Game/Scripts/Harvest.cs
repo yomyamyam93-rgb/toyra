@@ -28,16 +28,21 @@ public class Harvest : MonoBehaviour
     //
     //   → 흔들림은 **팰 때만** 도는 코루틴으로 옮겼다. 컴포넌트를 끄는 수는 못 쓴다 —
     //     `OnEnable` 에서 `All` 에 등록하므로 끄면 캐기 자체가 안 된다.
+    /// ★★★**스케일 눌림은 안 쓴다** (2026-08-09 사용자 "리깅을 쓰니까 스쿼시는 다 없애").
+    ///   전에는 맞을 때마다 세로 1.12배·가로 0.89배로 늘렸다 줄였다 했는데,
+    ///   `Harvest` 는 나무·바위만이 아니라 **사체에도 붙는다** — 리깅된 몸이 늘어나면 흉하다.
+    ///   → 크기 대신 **기울여서** 흔든다. 리깅이든 아니든 형태가 안 망가진다.
     System.Collections.IEnumerator 흔들기()
     {
+        var 기본회전 = transform.localRotation;
         while (shake > 0f)
         {
             shake = Mathf.Max(0f, shake - Time.deltaTime * 5f);
-            float k = 1f + shake * 0.12f;
-            transform.localScale = new Vector3(baseScale.x / k, baseScale.y * k, baseScale.z / k);
+            float a = Mathf.Sin(Time.time * 34f) * shake * 3.5f;      // 3.5° 안쪽으로 파르르
+            transform.localRotation = 기본회전 * Quaternion.Euler(a, 0f, a * 0.6f);
             yield return null;
         }
-        transform.localScale = baseScale;
+        transform.localRotation = 기본회전;
     }
 
     [Tooltip("다 캐면 이 자리의 장애물도 지운다 (안 지우면 보이지 않는 벽이 남는다)")]

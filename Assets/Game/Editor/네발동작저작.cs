@@ -91,6 +91,18 @@ public static class 네발동작저작
         [Tooltip("가장 낮은 이 비율(0~1)의 정점은 「튀어나온 것」으로 보고 접지에서 뺀다")]
         public float 접지무시 = 0f;
 
+        /// ★★**땅을 짚으면 안 되는 뼈** (이름에 이 낱말이 들어가면 접지 계산에서 뺀다).
+        ///   백분율(`접지무시`)로는 뿔을 못 거른다 — 실측상 큰뿔사슴은 낮은 쪽 **25%가 전부 뿔**이라
+        ///   비율을 아무리 올려도 몸통까지 잘라먹는다. 눕는 것은 몸통이니 뿔을 아예 빼는 게 맞다.
+        public string[] 접지제외 = null;
+
+        /// ★★**땅에 얼마나 박히나** — 몸 두께 대비 비율 (2026-08-09 사용자 "죽었을때 다들
+        ///   붕 떠있거든? 몸사이즈보다 30프로정도만 땅쪽으로 박히게").
+        ///   접지 계산은 「제일 낮은 표면이 y=0」으로 맞추는데, 누운 몸은 털·근육이 눌리므로
+        ///   그 상태가 오히려 떠 보인다. 이 값만큼 더 내려서 땅에 파묻는다.
+        ///   ☆몸 두께 배수라 **큰 놈은 깊게, 작은 놈은 얕게** 파묻힌다 (크기 보정 자동).
+        public float 파묻힘 = 0f;
+
         public List<줄> 줄들 = new List<줄>();
 
         public 동작 회전(string 뼈, 축 축, params 키[] 키들)
@@ -368,7 +380,7 @@ public static class 네발동작저작
         }
 
         if (m.바닥맞춤 != 바닥.그대로 && 길.ContainsKey("spine_hip"))
-            땅에붙이기(clip, g, 길["spine_hip"], 쉬는위치["spine_hip"], m.길이, m.바닥맞춤, m.접지무시);
+            땅에붙이기(clip, g, 길["spine_hip"], 쉬는위치["spine_hip"], m.길이, m.바닥맞춤, m.접지무시, m.접지제외, m.파묻힘);
 
         var s = AnimationUtility.GetAnimationClipSettings(clip);
         s.loopTime = m.반복;
@@ -383,7 +395,7 @@ public static class 네발동작저작
     ///   (늑대 0.25m · 브론토 0.67m). 굴러가는 동안 최저점이 골반이 아니라 **목·꼬리로
     ///   옮겨다니기** 때문이다. 그래서 프레임마다 실제 최저점을 재서 그만큼 올린다.
     ///   보정은 뿌리 높이 하나만 움직이므로 한 번에 정확히 맞는다 (선형 관계).
-    static void 땅에붙이기(AnimationClip clip, GameObject g, string 뿌리길, Vector3 쉬는뿌리, float 길이, 바닥 모드, float 접지무시 = 0f)
+    static void 땅에붙이기(AnimationClip clip, GameObject g, string 뿌리길, Vector3 쉬는뿌리, float 길이, 바닥 모드, float 접지무시 = 0f, string[] 접지제외 = null, float 파묻힘 = 0f)
     {
         bool 딱 = 모드 == 바닥.딱붙임;
         // ★이름을 `바닥` 이라 두면 **열거형 `바닥` 과 부딪힌다** — 이 안에서는 지역 변수가
@@ -392,6 +404,12 @@ public static class 네발동작저작
         // ★`접지무시` 가 0 이면 예전 그대로 **가장 낮은 한 점**을 쓴다 (걷기·뛰기 — 발끝은
         //   진짜로 점으로 닿는다). 0 보다 크면 그 비율만큼은 뾰족한 것으로 보고 건너뛴다
         //   (죽음·피격 — 뿔·가시가 땅을 짚어 몸이 뜨는 것을 막는다).
+        // ★★★**뿔은 땅을 못 짚는다** (2026-08-09 사용자 "사슴 뿔위로 누워서 뒤지는거").
+        //   실측(큰뿔사슴 죽음, 정점 13,850): 낮은 쪽 **25% 까지가 전부 `head`**(뿔)이고
+        //   몸통은 45cm 위에 떠 있었다. 백분율로는 못 가른다 — 뿔이 고르게 퍼져 있어서
+        //   제일 큰 계단이 3mm 뿐이다. `접지무시 0.02` 로는 어림도 없었다.
+        //   → **머리에 물린 정점을 접지 계산에서 뺀다.** 눕는 것은 몸통이지 뿔이 아니다.
+        //     (걷기·뛰기는 `접지제외` 를 안 쓰므로 그대로다 — 발끝은 진짜로 점으로 닿는다)
         var 통 = new List<float>();
         System.Func<float> 밑재기 = () =>
         {
@@ -402,14 +420,29 @@ public static class 네발동작저작
                 var sk = r as SkinnedMeshRenderer; if (sk == null) continue;
                 var mesh = new Mesh(); sk.BakeMesh(mesh, true);
                 var mtx = sk.transform.localToWorldMatrix;
-                foreach (var v in mesh.vertices)
+
+                // 제외할 뼈의 번호를 미리 모은다
+                var 뺄것 = new HashSet<int>();
+                if (접지제외 != null && 접지제외.Length > 0 && sk.bones != null)
+                    for (int i = 0; i < sk.bones.Length; i++)
+                    {
+                        if (sk.bones[i] == null) continue;
+                        foreach (var 낱말 in 접지제외)
+                            if (sk.bones[i].name.Contains(낱말)) { 뺄것.Add(i); break; }
+                    }
+                var 무게 = 뺄것.Count > 0 && sk.sharedMesh != null ? sk.sharedMesh.boneWeights : null;
+
+                var vs = mesh.vertices;
+                for (int i = 0; i < vs.Length; i++)
                 {
-                    float y = mtx.MultiplyPoint3x4(v).y;
+                    if (무게 != null && i < 무게.Length && 무게[i].weight0 > 0.5f && 뺄것.Contains(무게[i].boneIndex0)) continue;
+                    float y = mtx.MultiplyPoint3x4(vs[i]).y;
                     if (y < lo) lo = y;
                     if (접지무시 > 0f) 통.Add(y);
                 }
                 Object.DestroyImmediate(mesh);
             }
+            if (lo == float.MaxValue) return 0f;
             if (접지무시 <= 0f || 통.Count == 0) return lo;
             // 가장 낮은 쪽 `접지무시` 만큼을 건너뛴 자리가 **몸이 실제로 눌리는 높이**다
             통.Sort();
@@ -452,6 +485,46 @@ public static class 네발동작저작
             return;
         }
 
+        // ★★**땅에 파묻는 깊이** — 몸 두께(누웠을 때 높이)의 비율만큼 더 내린다.
+        //   누운 몸은 털·근육이 눌리는데 접지 계산은 「제일 낮은 표면이 y=0」으로 맞추니
+        //   오히려 떠 보인다 (2026-08-09 사용자 "죽었을때 다들 붕 떠있거든").
+        //   ☆몸 두께 배수라 큰 놈은 깊게, 작은 놈은 얕게 — 크기 보정이 저절로 된다.
+        // ★★두께는 **접지 기준과 같은 잣대(`밑재기`)로** 재야 한다. 전에는 모든 정점의
+        //   최저점으로 쟀는데, `밑재기` 는 머리(뿔)를 빼고 재므로 기준이 달라 **두 번 내려가**
+        //   늑대가 157% 파묻혔다 (2026-08-09 실측).
+        float 파묻기 = 0f;
+        if (파묻힘 > 0.0001f)
+        {
+            //   ★두께도 **접지와 같은 잣대**로 잰다 — 뿔·가시를 뺀 「몸」의 두께다.
+            //     안 그러면 큰뿔사슴처럼 뿔이 큰 놈이 두께를 부풀려 30%가 57%로 먹는다 (실측).
+            clip.SampleAnimation(g, 길이);                    // 다 쓰러진 끝 자세에서 잰다
+            float 밑2 = 밑재기();
+            float 높 = float.MinValue;
+            foreach (var r in g.GetComponentsInChildren<Renderer>(true))
+            {
+                var sk = r as SkinnedMeshRenderer; if (sk == null) continue;
+                var 뺄것 = new HashSet<int>();
+                if (접지제외 != null && sk.bones != null)
+                    for (int i = 0; i < sk.bones.Length; i++)
+                    {
+                        if (sk.bones[i] == null) continue;
+                        foreach (var 낱말 in 접지제외)
+                            if (sk.bones[i].name.Contains(낱말)) { 뺄것.Add(i); break; }
+                    }
+                var 무게 = 뺄것.Count > 0 && sk.sharedMesh != null ? sk.sharedMesh.boneWeights : null;
+                var mesh = new Mesh(); sk.BakeMesh(mesh, true);
+                var mtx = sk.transform.localToWorldMatrix;
+                var vs = mesh.vertices;
+                for (int i = 0; i < vs.Length; i++)
+                {
+                    if (무게 != null && i < 무게.Length && 무게[i].weight0 > 0.5f && 뺄것.Contains(무게[i].boneIndex0)) continue;
+                    float y2 = mtx.MultiplyPoint3x4(vs[i]).y; if (y2 > 높) 높 = y2;
+                }
+                Object.DestroyImmediate(mesh);
+            }
+            if (높 > 밑2) 파묻기 = (높 - 밑2) * 파묻힘;
+        }
+
         var 새 = new AnimationCurve();
         for (int f = 0; f < 프레임; f++)
         {
@@ -460,7 +533,10 @@ public static class 네발동작저작
             float 밑 = 밑재기();
             float y = 기존 != null ? 기존.Evaluate(t) : 쉬는뿌리.y;
             float 보정 = 쉬는바닥 - 밑;
-            새.AddKey(t, y + (딱 ? 보정 : Mathf.Max(0f, 보정)));   // 딱이 아니면 **아래로만** 막는다
+            // ★파묻기는 **누운 뒤에만** 먹인다 — 날아가는 동안 땅에 박히면 안 된다
+            float 진행 = 길이 > 0.001f ? t / 길이 : 1f;
+            float 깊이 = 파묻기 * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.50f, 0.75f, 진행));
+            새.AddKey(t, y + (딱 ? 보정 : Mathf.Max(0f, 보정)) - 깊이);   // 딱이 아니면 **아래로만** 막는다
         }
         if (!딱)   // 아무 프레임도 안 파묻혔으면 굳이 커브를 남기지 않는다
         {
@@ -599,16 +675,35 @@ public static class 네발동작저작
             {
                 var clip = 굽기(m, 몸);
                 string ap = 저장 + "/" + m.이름 + "_" + 몸.name + ".anim";
-                if (AssetDatabase.LoadAssetAtPath<AnimationClip>(ap) != null) AssetDatabase.DeleteAsset(ap);
-                AssetDatabase.CreateAsset(clip, ap);
+
+                // ★★★**있는 파일을 갈아끼운다. 지웠다 새로 만들지 않는다** (2026-08-09).
+                //   `DeleteAsset` + `CreateAsset` 을 하면 GUID 가 바뀌어, 그 클립을 물고 있던
+                //   **`_공용동작` 컨트롤러의 자리표 참조가 통째로 끊긴다.** 실제로 이 도구를
+                //   한 번 돌렸다가 **펫 46종의 모션이 전부 사라졌다** (자리표가 null 이 되면
+                //   `몸짓` 의 갈아끼우기가 실패해 아무 동작도 안 나온다).
+                var 있는것 = AssetDatabase.LoadAssetAtPath<AnimationClip>(ap);
+                if (있는것 != null)
+                {
+                    있는것.ClearCurves();
+                    EditorUtility.CopySerialized(clip, 있는것);     // 내용만 덮어쓴다 (GUID 유지)
+                    // ★`CopySerialized` 는 이름까지 덮어쓴다 — 파일명과 어긋나면 헷갈리니 되돌린다
+                    있는것.name = System.IO.Path.GetFileNameWithoutExtension(ap);
+                    Object.DestroyImmediate(clip);
+                    clip = 있는것;
+                    EditorUtility.SetDirty(clip);
+                }
+                else AssetDatabase.CreateAsset(clip, ap);
 
                 string cp = 저장 + "/" + m.이름 + "_" + 몸.name + ".controller";
-                if (AssetDatabase.LoadAssetAtPath<UnityEditor.Animations.AnimatorController>(cp) != null)
-                    AssetDatabase.DeleteAsset(cp);
-                var ctrl = UnityEditor.Animations.AnimatorController.CreateAnimatorControllerAtPath(cp);
-                var st = ctrl.layers[0].stateMachine.AddState(m.이름);
+                var ctrl = AssetDatabase.LoadAssetAtPath<UnityEditor.Animations.AnimatorController>(cp);
+                if (ctrl == null)
+                    ctrl = UnityEditor.Animations.AnimatorController.CreateAnimatorControllerAtPath(cp);
+                var sm = ctrl.layers[0].stateMachine;
+                UnityEditor.Animations.AnimatorState st = null;
+                foreach (var cs in sm.states) if (cs.state.name == m.이름) st = cs.state;
+                if (st == null) st = sm.AddState(m.이름);
                 st.motion = clip; st.writeDefaultValues = true;
-                ctrl.layers[0].stateMachine.defaultState = st;
+                sm.defaultState = st;
                 EditorUtility.SetDirty(ctrl);
                 만든수++;
             }

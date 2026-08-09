@@ -18,7 +18,42 @@ public class Carcass : MonoBehaviour
     Transform 몸;
     Vector3 처음자리;
 
-    /// 죽은 자리에 사체를 남긴다 — 죽은 놈의 몸을 그대로 눕혀서 쓴다
+    /// ★★죽는 순간 **튕겨나가는 이동** — `Critter` 는 죽자마자 꺼져서 `Update` 가 안 돈다.
+    ///   저작된 죽음 클립이 포물선을 그리므로, 자리도 같이 움직여야 「날아가 퍽 쓰러진다」가 된다
+    ///   (2026-08-09). 처음엔 훅, 착지로 갈수록 잦아든다.
+    Vector3 튕김; float 튕김남은, 튕김총;
+    public void 튕겨내기(Vector3 거리, float 시간)
+    {
+        튕김 = 거리; 튕김총 = Mathf.Max(0.01f, 시간); 튕김남은 = 튕김총;
+        처음자리 = transform.position;
+    }
+
+    /// ★★★**몸을 그 자리에서 사체로 전환한다** (2026-08-07 사용자 "공중에 붕 떠서 뒤지는데
+    ///   뒤지는 모션도 적용 안 한 듯").
+    ///
+    ///   옛길(`남기다`)은 몸을 뜯어다 코드로 86° 눕히고 **정지 자세 바운즈**로 높이를 쟀다 —
+    ///   리깅 모델에선 그 바운즈가 거짓말이라 시체가 떴고, 저작된 `죽음` 모션은 버려졌다.
+    ///   → 이제 **오브젝트를 그대로 사체로 바꾼다.** 눕히는 건 `죽음` 클립이 하고
+    ///     (`몸짓` 이 재생 후 마지막 자세에서 멈춘다), 발은 이미 `진짜맞춤` 이 심어 놓았다.
+    ///     재부착도 높이 계산도 없다 — 계산이 없으면 틀릴 것도 없다.
+    public static void 전환(Critter c, int 고기량)
+    {
+        var go = c.gameObject;
+        go.name = c.종.이름 + " 사체";
+
+        var h = go.GetComponent<Harvest>();
+        if (h == null) h = go.AddComponent<Harvest>();
+        h.kind = Stock.Kind.고기;
+        h.hits = 3;                                        // 세 번 갈라야 다 챙긴다
+        h.perHit = Mathf.Max(1, Mathf.CeilToInt(고기량 / 3f));
+        h.장애물치우기 = false;
+
+        var car = go.AddComponent<Carcass>();
+        car.몸 = go.transform.childCount > 0 ? go.transform.GetChild(0) : null;
+        car.처음자리 = go.transform.position;
+    }
+
+    /// (은퇴) 몸을 뜯어다 코드로 눕히던 옛길 — 상자 몸일 때만 맞았다. 지금은 `전환` 이 정본.
     public static void 남기다(Critter c, int 고기량)
     {
         var go = new GameObject(c.종.이름 + " 사체");
@@ -61,6 +96,16 @@ public class Carcass : MonoBehaviour
     void Update()
     {
         t += Time.deltaTime;
+
+        // ★튕겨나가는 중 — 처음엔 훅, 착지로 갈수록 잦아든다 (남은 비율의 제곱)
+        if (튕김남은 > 0f)
+        {
+            float 남음 = 튕김남은 / 튕김총;
+            transform.position += 튕김 * (남음 * 남음 * Time.deltaTime / 튕김총 * 3f);
+            튕김남은 -= Time.deltaTime;
+            처음자리 = transform.position;          // 썩어 가라앉는 기준도 따라 옮긴다
+        }
+
         float u = t / Mathf.Max(1f, 썩는시간);
         if (u >= 1f) { Destroy(gameObject); return; }
 

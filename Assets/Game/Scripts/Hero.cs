@@ -186,7 +186,9 @@ public class Hero : MonoBehaviour, IHittable
         pos = Blocker.Resolve(pos, radius);
         pos.x = Mathf.Clamp(pos.x, 1f, WorldGrid.Size - 1f);
         pos.z = Mathf.Clamp(pos.z, 1f, WorldGrid.Size - 1f);
-        pos.y = 0f;
+        // ★★칸 높이를 딛는다 (2026-08-09 사용자 "캐릭터 팻들이 모두 땅에 박혀있어").
+        //   `땅격자` 가 그림과 판정의 **단 하나뿐인 출처**다 — 여기서 안 물으면 발이 묻힌다.
+        pos.y = 땅격자.걷는높이(pos.x, pos.z);
         transform.position = pos;
     }
 

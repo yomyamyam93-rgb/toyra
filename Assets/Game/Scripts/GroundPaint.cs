@@ -29,6 +29,19 @@ public static class GroundPaint
     static readonly Color 물   = new Color(0.42f, 0.62f, 0.68f);
     static readonly Color 깊은물 = new Color(0.32f, 0.52f, 0.60f);
 
+    // ★★★격자 — 잔디·흙길·물의 **경계를 칸 단위로 끊는다** (2026-08-09 사용자
+    //   "길과 잔디등등이 분리되는 기준이 격자형식으로 되도록").
+    //
+    //   **색을 새로 만들지 않는다.** 칠하는 자리(`w`)를 칸 가운데로 스냅할 뿐이다.
+    //   그러면 한 칸 안의 모든 텍셀이 같은 판정을 받아 경계가 저절로 네모로 떨어진다.
+    //   잔디톤·물·모래·길이 **한 군데도 안 바뀌고** 경계만 격자가 된다.
+    //   ★풀(`잔디자리`)·결(`결종류`)도 같은 배열을 쓰므로 저절로 따라온다.
+    //
+    //   0 이면 끈다 (예전처럼 매끄러운 경계).
+    public static float 격자칸 = 0f;
+    static float 격자스냅(float v)
+        => 격자칸 <= 0.01f ? v : (Mathf.Floor(v / 격자칸) + 0.5f) * 격자칸;
+
     // ★어디가 잔디인가 — 잔디를 「잔디 위에만」 깔려고 들고 있는다 (2026-08-04 사용자).
     //   땅을 칠할 때 같이 만들어 두면 나중에 물어보기만 하면 된다.
     static byte[] 잔디자리;
@@ -314,6 +327,15 @@ public static class GroundPaint
         };
 
         float m당 = WorldGrid.Size / size;       // 텍셀 하나가 몇 미터인가
+
+        // ★★칸을 **텍셀의 정수배로 맞춘다.** 안 그러면 어떤 칸은 3텍셀, 어떤 칸은 2텍셀이
+        //   되어 격자가 들쭉날쭉해진다 (2048px / 1440m → 한 텍셀 0.70m).
+        if (격자칸 > 0.01f)
+        {
+            float 전 = 격자칸;
+            격자칸 = Mathf.Max(1f, Mathf.Round(격자칸 / m당)) * m당;
+            Debug.Log($"[땅] 격자 {전:0.00}m → {격자칸:0.000}m (텍셀 {m당:0.000}m × {Mathf.Round(격자칸 / m당)})");
+        }
         var px = new Color32[size * size];
 
         // 길 — 캠프에서 뻗어 나가는 갈래. 먼저 좌표를 뽑아 두고 아래에서 거리로 칠한다
@@ -327,7 +349,8 @@ public static class GroundPaint
         {
             for (int x = 0; x < size; x++)
             {
-                var w = new Vector3((x + 0.5f) * m당, 0f, (y + 0.5f) * m당);
+                // ★격자를 켜면 칸 가운데에서 판정한다 — 한 칸이 통째로 같은 색이 된다
+                var w = new Vector3(격자스냅((x + 0.5f) * m당), 0f, 격자스냅((y + 0.5f) * m당));
 
                 // ① 잔디 바탕 — **두 겹**으로 흔든다 (2026-08-04).
                 //   큰 얼룩만 쓰면(250m 급) 한 화면이 통째로 한 색이라 밋밋하다.
@@ -649,8 +672,9 @@ public static class GroundPaint
         for (int y = y0; y <= y1; y++)
             for (int x = x0; x <= x1; x++)
             {
-                float dx = (x + 0.5f) * m당 - at.x;
-                float dy = (y + 0.5f) * m당 - at.y;
+                // ★길도 같은 칸 스냅을 쓴다 — 안 그러면 길만 매끄러워 격자가 어긋난다
+                float dx = 격자스냅((x + 0.5f) * m당) - at.x;
+                float dy = 격자스냅((y + 0.5f) * m당) - at.y;
                 float d = Mathf.Sqrt(dx * dx + dy * dy);
                 if (d > 겉) continue;
 
