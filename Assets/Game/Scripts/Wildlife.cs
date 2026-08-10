@@ -411,8 +411,33 @@ public class Wildlife : MonoBehaviour
                 ?? Resources.Load<RuntimeAnimatorController>("rig/걷기_" + s.모델.name);
         if (ctrl == null) return;                       // 짝이 없으면 그냥 선 모델로 둔다
 
+        // ★★★**뼈 뿌리를 `Armature` 껍데기 안에 넣는다 — 이걸 빼면 한 대도 안 움직인다.**
+        //
+        //   2026-08-10 사용자 — *"팻에 모션 하나도 적용안돼는 버그, 이거 고쳤는데 또 이러네"*.
+        //   맞다. **`동작진열`(F1)·`ToyShowcase` 에는 진작 들어 있었고 여기에만 없었다.**
+        //   그래서 F1 로 보면 잘 돌고 실제 플레이에선 하나도 안 움직였다.
+        //
+        //   구운 클립의 경로가 언제나 `Armature/spine_hip/…` 인데 glb 에는 그 한 겹이 없다
+        //   (실측: 모델 56개 전부 없음 · 컨트롤러 343개 전부 그 접두를 씀 → 뼈 경로 15개가
+        //   하나도 안 맞았다). ☆경로가 한 글자만 달라도 **에러 없이 조용히 무시된다** —
+        //   그래서 여태 콘솔에 아무 표시도 안 났다.
+        var 뿌리 = g.transform.Find("spine_hip");
+        if (뿌리 != null)
+        {
+            var 껍 = new GameObject("Armature").transform;
+            껍.SetParent(g.transform, false);
+            뿌리.SetParent(껍, true);
+        }
+
         var an = g.GetComponent<Animator>();
         if (an == null) an = g.AddComponent<Animator>();
+        // ★glTF 로 들여온 것은 아바타가 안 딸려 온다. 계층을 바꾼 **뒤에** 만들어야 한다
+        if (an.avatar == null)
+        {
+            var av = AvatarBuilder.BuildGenericAvatar(g, "");
+            av.name = g.name + "_아바타";
+            an.avatar = av;
+        }
         an.runtimeAnimatorController = ctrl;
         an.applyRootMotion = false;                    // 이동은 `Critter.걷기` 가 한다
         an.cullingMode = AnimatorCullingMode.AlwaysAnimate;
