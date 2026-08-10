@@ -27,17 +27,13 @@ public static class Stock
 
     public static int Get(Kind k) => 인벤.내것.개수(이름(k));
 
-    /// ★넣는다. **무게 한도를 넘으면 나머지는 발밑에 떨어진다** —
-    ///   규칙으로 막아 세우지 않고, 넘친 만큼이 눈에 보이게 한다
+    /// ★넣는다. **한도를 넘어도 다 들어간다 — 대신 못 걷는다** (`인벤.짐배`).
+    ///   무엇을 버릴지는 게임이 아니라 **내가 고른다**
     public static void Add(Kind k, int n)
     {
         var 종 = 아이템표.찾기(이름(k));
         if (종 == null || n <= 0) return;
-
-        int 들어감 = 인벤.내것.넣기(종, n);
-        int 남음 = n - 들어감;
-        if (남음 > 0) 땅무더기.떨구기(종, 남음, 사람자리());
-
+        인벤.내것.넣기(종, n);
         Recent = k; RecentAt = Time.time;
     }
 

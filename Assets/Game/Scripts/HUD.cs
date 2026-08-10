@@ -97,18 +97,19 @@ public class HUD : MonoBehaviour
         var 것 = 인벤.내것;
         if (것.한도 <= 0f) return;
 
-        float t = Mathf.Clamp01(것.무게 / 것.한도);
+        float 비 = 것.무게비;
         float x = 20f, y = Screen.height - 30f, w = 240f;
 
-        var c = t > 0.95f ? new Color(0.9f, 0.3f, 0.25f)
-              : t > 0.75f ? new Color(0.9f, 0.7f, 0.25f) : new Color(0.5f, 0.55f, 0.6f);
-        // 꽉 찼으면 깜빡인다 — 소리 없이 알리는 유일한 수단
-        if (t > 0.98f) c.a = 0.5f + 0.5f * Mathf.Abs(Mathf.Sin(Time.time * 4f));
-        Bar(x, y, w, 7f, t, c);
+        var c = 것.넘침 ? new Color(0.92f, 0.25f, 0.2f)
+              : 비 > 0.75f ? new Color(0.9f, 0.7f, 0.25f) : new Color(0.5f, 0.55f, 0.6f);
+        // ★넘쳐서 발이 안 나갈 때는 깜빡인다 — 왜 안 움직이는지 알아야 한다
+        if (것.넘침) c.a = 0.55f + 0.45f * Mathf.Abs(Mathf.Sin(Time.time * 5f));
+        Bar(x, y, w, 7f, Mathf.Clamp01(비), c);
 
         var s = new GUIStyle(GUI.skin.label) { fontSize = 11, alignment = TextAnchor.MiddleLeft };
-        s.normal.textColor = new Color(0.7f, 0.7f, 0.74f);
-        GUI.Label(new Rect(x + w + 8f, y - 5f, 120f, 16f), $"{것.무게:F1}kg", s);
+        s.normal.textColor = 것.넘침 ? new Color(1f, 0.55f, 0.5f) : new Color(0.7f, 0.7f, 0.74f);
+        GUI.Label(new Rect(x + w + 8f, y - 5f, 160f, 16f),
+                  것.넘침 ? $"{것.무게:F1}kg  무거워서 못 걷는다" : $"{것.무게:F1}kg", s);
     }
 
     생존 삶;
