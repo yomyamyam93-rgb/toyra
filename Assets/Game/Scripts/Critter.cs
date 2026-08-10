@@ -28,7 +28,9 @@ public interface IHittable
 public class Critter : MonoBehaviour, IHittable
 {
     public enum Side { 야생, 내편 }
-    public enum 상태 { 어슬렁, 경계, 접근, 공격, 도주, 복귀 }
+    // ★불놀람·불도망은 **사람을 무서워하는 도주와 다른 길이다.** `도망끔` 스위치가
+    //   도주를 통째로 껐어도 불은 무서워한다 — 끈 것은 「사람이 무섭다」지 「불이 무섭다」가 아니다.
+    public enum 상태 { 어슬렁, 경계, 접근, 공격, 도주, 복귀, 불놀람, 불도망 }
 
     [Header("편")]
     public Side side = Side.야생;
@@ -82,8 +84,47 @@ public class Critter : MonoBehaviour, IHittable
     //  생포 — **아이템으로 줍는 게 아니라 집까지 데려간다**
     // ══════════════════════════════════════════════════════════
 
-    /// 지쳤나 — 이 상태여야 붙잡을 수 있다. 넘어져 있거나 체력이 바닥나거나
-    public bool 지침 => Alive && side == Side.야생 && (넘어짐 || hp <= 종.체력 * 0.35f);
+    // ══════════════════════════════════════════════════════════
+    //  ★★기절 — **뾰족한 것으로는 기절시킬 수 없다** (2026-08-10 사용자 —
+    //  *"뾰족한 무기가 아니라, 둔기같은 뭉뚱한 무기로만 때렸을때 기절하게 해줘,
+    //    말이안돼니까"*). 창으로 찔러 기절시키는 건 말이 안 된다.
+    //
+    //  ☆체력과 **따로 도는 수치**다. 그래서 「죽이지 않고 제압한다」가 가능해진다 —
+    //    기획 5-1 의 *"어미를 기절시켜 꺼낸다(죽이면 안 된다)"* 가 여기서 열린다.
+    //  ☆큰 놈일수록 한계가 높다. 티라를 기절시키려면 몽둥이로 열일곱 대는 쳐야 한다.
+    // ══════════════════════════════════════════════════════════
+
+    /// 쌓인 기절값 — 둔기로 맞을 때만 오른다
+    [HideInInspector] public float 기절치;
+    /// 이만큼 쌓이면 엎어진다 — 무겁고 튼튼할수록 높다
+    public float 기절한계 => 30f + 종.무게 * 22f + 종.체력 * 0.25f;
+    /// 지금 기절해 엎어져 있나
+    public bool 기절중 { get; private set; }
+
+    [Header("기절")]
+    [Tooltip("안 맞고 있으면 기절값이 1초에 이만큼 식는다")] public float 기절식음 = 7f;
+    [Tooltip("엎어진 동안 기절값이 1초에 이만큼 빠진다 — 0 이 되면 깬다")] public float 기절빠짐 = 13f;
+
+    [Tooltip("무게가 밀림을 얼마나 막나 — 클수록 큰 놈이 꿈쩍 안 한다")]
+    [Range(1f, 2.5f)] public float 밀림지수 = 1.4f;
+
+    float 기절든지;                 // 엎어진 지 얼마나 됐나 (엎어지는 동작에 쓴다)
+
+    /// ★둔기로 맞았다 — 기절값이 쌓인다. 뾰족한 무기는 이걸 안 부른다
+    public void 기절값먹임(float 값)
+    {
+        if (값 <= 0f || !Alive || 기절중) return;      // 이미 엎어진 놈에겐 더 안 쌓는다
+        기절치 += 값;
+        if (기절치 < 기절한계) return;
+        기절치 = 기절한계;
+        기절중 = true;
+        기절든지 = 0f;
+        target = null;
+        지금상태(상태.어슬렁);                          // 하던 걸 다 놓는다
+    }
+
+    /// 지쳤나 — 이 상태여야 붙잡을 수 있다. 넘어져 있거나 **기절했거나** 체력이 바닥나거나
+    public bool 지침 => Alive && side == Side.야생 && (넘어짐 || 기절중 || hp <= 종.체력 * 0.35f);
 
     /// 지금 사람에게 붙잡혀 있나
     [HideInInspector] public bool 잡힘;
@@ -99,12 +140,84 @@ public class Critter : MonoBehaviour, IHittable
     /// 먹이 한 번의 값 — 새끼가 훨씬 잘 길든다. 겁 많은 종은 더디다
     public float 먹이값 => (새끼 ? 34f : 15f) * Mathf.Lerp(1.2f, 0.6f, 종.겁);
 
-    public void 먹이받음()
+    /// `배` — 구운 고기는 더 값을 한다. 불을 땔 이유가 하나 더 생긴다 (기획 5-5)
+    public void 먹이받음(float 배 = 1f)
     {
-        신뢰 = Mathf.Min(100f, 신뢰 + 먹이값);
+        신뢰 = Mathf.Min(100f, 신뢰 + 먹이값 * 배);
         squash = 0.8f;
         // 먹으면 기운이 돌아온다 — 굶어 죽는 시계가 되감긴다
         hp = Mathf.Min(종.체력, hp + 종.체력 * 0.35f);
+        자라기(배);
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  ★★성장 — 기획 5-2 의 2층. **먹이면 실제로 몸이 커진다**
+    //
+    //  *"먹이면 큰다. 안 주면 멈춘다(죽지 않는다)"* — 이게 이 게임의 「깊은 시스템 하나」다.
+    //  ☆길들이기의 끝이 아니라 시작이다: 신뢰 100 으로 내 것이 된 다음에도 계속 먹여야 큰다.
+    //  ☆리깅을 안 건드린다 — 몸 전체의 크기만 키운다 (6장: 펫은 리깅 안 함).
+    // ══════════════════════════════════════════════════════════
+
+    /// 0 = 갓 잡아온 새끼 · 1 = 다 컸다
+    [HideInInspector] public float 자람;
+    /// 다 크면 이 몸이 된다 (새끼일 때만 들어 있다)
+    SpeciesDef 어른;
+    /// 갓 잡아왔을 때의 몸 — 자람 0 쪽의 끝점이다
+    SpeciesDef 새끼적;
+    float 처음키;
+    Vector3 첫몸크기, 첫몸자리;
+    bool 몸기억함;
+
+    [Tooltip("먹이 한 번에 얼마나 자라나 (0.2 = 다섯 번이면 성체)")]
+    public float 한입성장 = 0.2f;
+
+    /// 새끼로 만든다 — `어른정의` 는 다 컸을 때의 몸이다
+    public void 새끼로설정(SpeciesDef 어른정의)
+    {
+        새끼 = true;
+        어른 = 어른정의;
+        새끼적 = 종.복제();          // 자람 0 쪽의 끝점을 붙들어 둔다
+        자람 = 0f;
+    }
+
+    void 자라기(float 배)
+    {
+        if (!새끼 || 어른 == null || 새끼적 == null) return;
+
+        자람 = Mathf.Clamp01(자람 + 한입성장 * 배);
+
+        // ★새끼 몸 → 어른 몸으로. **두 끝점 사이를 `자람` 으로 섞는다** —
+        //   현재값에서 조금씩 다가가면 영영 어른 값에 못 닿는다 (지수 접근)
+        float hp01 = hp / Mathf.Max(1f, 종.체력);
+        종.키      = Mathf.Lerp(새끼적.키,     어른.키,     자람);
+        종.반지름  = Mathf.Lerp(새끼적.반지름, 어른.반지름, 자람);
+        종.무게    = Mathf.Lerp(새끼적.무게,   어른.무게,   자람);
+        종.체력    = Mathf.Lerp(새끼적.체력,   어른.체력,   자람);
+        종.피해    = Mathf.Lerp(새끼적.피해,   어른.피해,   자람);
+        종.사거리  = Mathf.Lerp(새끼적.사거리, 어른.사거리, 자람);
+        종.이속    = Mathf.Lerp(새끼적.이속,   어른.이속,   자람);
+        hp = 종.체력 * hp01;
+
+        몸키우기();
+
+        if (자람 >= 1f)
+        {
+            // ★다 컸다 — 이제 새끼가 아니다. 잘 길들던 이점도 같이 사라진다
+            새끼 = false;
+            종.이름 = 어른.이름;
+            gameObject.name = 어른.이름;
+        }
+    }
+
+    /// 몸을 실제로 키운다 — **기준 크기 자체를 바꾼다.**
+    /// (눌림·놀람 동작이 `bodyScale` 을 기준으로 쓰므로, 여기서 기준을 갱신해야 안 싸운다)
+    void 몸키우기()
+    {
+        if (body == null || !몸기억함 || 처음키 <= 0.0001f) return;
+        float r = 종.키 / 처음키;
+        bodyScale = 첫몸크기 * r;
+        bodyPos = new Vector3(첫몸자리.x, 첫몸자리.y * r, 첫몸자리.z);
+        몸복구();
     }
 
     /// 굶주림 정도 (0 = 멀쩡 · 1 = 곧 죽는다) — 화면에 띄운다
@@ -222,6 +335,11 @@ public class Critter : MonoBehaviour, IHittable
     float downTotal, downSign = 1f;
     IHittable target;
     float findCd, atkCd, squash, wanderCd, stateT;
+
+    // ── 불 공포 (`불에놀람` 참고)
+    float 불겁냄쿨, 놀람길이, 안전거리;
+    int 놀람종류;
+    Vector3 불자리;
     bool 따라가는중;
     Vector3 wander, 집;
     bool 대표;                     // 무리에서 한 마리만 무리 냉각을 돌린다
@@ -240,6 +358,10 @@ public class Critter : MonoBehaviour, IHittable
             bodyScale = body.localScale;
             bodyPos = body.localPosition;
             bodyRot = body.localRotation;
+
+            // ★성장의 기준자 — 이 몸이 「처음 크기」다 (`몸키우기` 가 여기에 배를 곱한다)
+            첫몸크기 = bodyScale; 첫몸자리 = bodyPos;
+            처음키 = 종.키; 몸기억함 = true;
         }
         if (무리 != null && 무리.식구.Count > 0 && 무리.식구[0] == this) 대표 = true;
     }
@@ -267,6 +389,18 @@ public class Critter : MonoBehaviour, IHittable
         // 매여 있는 동안도 마찬가지 — 먹이를 기다린다
         if (묶임) { 묶인채(dt); Squash(dt); return; }
 
+        // ★★기절이 제일 먼저다 — 엎어져 있는 동안은 아무것도 못 한다.
+        //   ☆**기절값이 완전히 바닥날 때까지** 엎어져 있는다 (사용자 확정)
+        if (기절중)
+        {
+            기절든지 += dt;
+            기절치 -= 기절빠짐 * dt;
+            그로기몸();
+            if (기절치 <= 0f) { 기절치 = 0f; 기절중 = false; 몸복구(); }
+            return;
+        }
+        if (기절치 > 0f) 기절치 = Mathf.Max(0f, 기절치 - 기절식음 * dt);   // 안 맞으면 식는다
+
         // ── 막는 타이머가 먼저다. 넘어져 있으면 아무 판단도 안 한다
         if (downT > 0f)
         {
@@ -288,6 +422,7 @@ public class Critter : MonoBehaviour, IHittable
         using (new 잼("Critter.비켜서기")) 비켜서기();
 
         atkCd -= dt; stateT += dt;
+        if (휘두름T > 0f) 휘두름T -= dt;
 
         findCd -= dt;
         if (findCd <= 0f)
@@ -315,6 +450,36 @@ public class Critter : MonoBehaviour, IHittable
         bool 적있음 = target != null && target.Alive;
         float d적 = 적있음 ? Flat(target.T.position, transform.position) : 999f;
         float d집 = Flat(집, transform.position);
+
+        // ══════════════════════════════════════════════════════════
+        //  ★★★불 — **어떤 판단보다 먼저다.** 사람을 쫓던 중이라도 불 앞에선 다 잊는다
+        // ══════════════════════════════════════════════════════════
+        if (불겁냄쿨 > 0f) 불겁냄쿨 -= Time.deltaTime;
+
+        if (지금 == 상태.불놀람)
+        {
+            // 놀란 시간이 다 차면 등을 돌린다 (개체마다 2~3.2초로 다르다)
+            if (stateT >= 놀람길이) { 몸복구(); 지금상태(상태.불도망); }
+            return;
+        }
+        if (지금 == 상태.불도망)
+        {
+            // 충분히 멀어졌거나 오래 달렸으면 그만둔다.
+            // ★쿨을 두는 이유: 경계선에서 놀람↔도망을 오가며 제자리 떠는 걸 막는다
+            if (Flat(불자리, transform.position) > 안전거리 || stateT > 4f)
+            {
+                불겁냄쿨 = 6f;
+                지금상태(상태.복귀);
+            }
+            return;
+        }
+
+        // 야생만 무서워한다. 내 펫은 제 주인이 피운 불이다
+        if (side == Side.야생 && 불겁냄쿨 <= 0f)
+        {
+            var 불 = 모닥불.무서운불(transform.position);
+            if (불 != null) { 불에놀람(불); return; }
+        }
 
         // 내 편은 겁내지 않는다 — 주인이 시킨 자리를 지킨다
         if (side == Side.내편)
@@ -503,7 +668,87 @@ public class Critter : MonoBehaviour, IHittable
             case 상태.복귀:
                 걷기(side == Side.내편 && owner != null ? 내자리 : 집, dt, 0.9f);
                 break;
+
+            case 상태.불놀람:
+                바라보기(불자리, dt);      // 무서운 것을 본다 — 등을 돌리는 건 그 다음이다
+                놀람동작(dt);
+                break;
+
+            case 상태.불도망:
+                // ★**걷지 않는다. 달린다** (사용자 — "걸어서 멀어지는게 아니라 달려서")
+                var 반대 = transform.position + (transform.position - 불자리).normalized * 14f;
+                걷기(반대, dt, 1.9f);
+                break;
         }
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  ★불에 놀란다 — 2026-08-10 사용자
+    //  *"바운더리에 왔을때... 한 2~3초정도 두려워하는 놀라는 모습을 하다가,
+    //    반대로 도망가는 모습이었음 좋겠어... 달려서 좀 도망가게끔"*
+    //  *"비슷하게 말고 서로 조금씩 달랐음하고"*
+    //
+    //  ☆왜 밀어내지 않는가: 장애물처럼 막으면 「보이지 않는 벽」이 하나 더 생길 뿐이고,
+    //    벽에 비벼대는 짐승은 고장처럼 보인다. **무서운 건 몸으로 드러나야 무서운 것이다.**
+    //  ☆리깅이 없어도 된다 (6장) — 몸통을 젖히고·세우고·흔드는 것으로 다 된다.
+    // ══════════════════════════════════════════════════════════
+
+    void 불에놀람(모닥불 불)
+    {
+        불자리 = 불.transform.position;
+        안전거리 = 불.겁내는거리 * 2.2f;
+
+        // ★개체마다 다르게 — 몸짓 종류도, 놀라는 길이도 제 번호에서 뽑는다.
+        //   같은 놈은 언제나 같은 버릇이라 "쟤는 저렇게 놀란다" 가 생긴다
+        놀람종류 = Mathf.Abs(GetInstanceID()) % 4;
+        놀람길이 = 2f + 절차.값(GetInstanceID(), 0, 7) * 1.2f;      // 2.0 ~ 3.2초
+
+        target = null;                 // 쫓던 것도 잊는다
+        지금상태(상태.불놀람);
+    }
+
+    /// 놀란 몸짓 — 넷 중 하나. **앞이 세고 뒤로 갈수록 잦아든다** (몸의 3막: 본동작 → 여운)
+    void 놀람동작(float dt)
+    {
+        if (body == null) return;
+
+        float u = Mathf.Clamp01(stateT / Mathf.Max(0.01f, 놀람길이));
+        float 세기 = Mathf.Lerp(1f, 0.25f, u);
+        float t = Time.time + GetInstanceID() * 0.017f;
+        float k = 종.키;
+
+        Vector3 회전 = Vector3.zero, 밀림 = Vector3.zero, 크기 = Vector3.one;
+
+        switch (놀람종류)
+        {
+            case 0:     // 움찔 — 상체를 홱 젖히고 뒷걸음질하듯 잘게 떤다
+                회전.x = -26f * 세기 + Mathf.Sin(t * 26f) * 4f * 세기;
+                밀림.z = -0.16f * k * 세기;
+                밀림.y = 0.03f * k * 세기;
+                break;
+
+            case 1:     // 곧추섬 — 몸을 세우고 굳는다. 숨만 떤다
+                크기 = new Vector3(1f - 0.09f * 세기, 1f + 0.17f * 세기, 1f - 0.09f * 세기);
+                회전.x = -9f * 세기;
+                밀림.y = 0.06f * k * 세기 + Mathf.Sin(t * 19f) * 0.012f * k * 세기;
+                break;
+
+            case 2:     // 어쩔 줄 몰라 좌우로 — 갈 데를 못 정한다
+                회전.y = Mathf.Sin(t * 11f) * 34f * 세기;
+                회전.z = Mathf.Sin(t * 11f) * 7f * 세기;
+                밀림.x = Mathf.Sin(t * 11f) * 0.09f * k * 세기;
+                break;
+
+            default:    // 고개를 세차게 젓는다
+                회전.y = Mathf.Sin(t * 24f) * 19f * 세기;
+                회전.x = -12f * 세기 + Mathf.Abs(Mathf.Sin(t * 12f)) * 10f * 세기;
+                밀림.y = Mathf.Abs(Mathf.Sin(t * 12f)) * 0.05f * k * 세기;
+                break;
+        }
+
+        body.localRotation = bodyRot * Quaternion.Euler(회전);
+        body.localPosition = bodyPos + 밀림;
+        body.localScale = new Vector3(bodyScale.x * 크기.x, bodyScale.y * 크기.y, bodyScale.z * 크기.z);
     }
 
     float 때리는거리(IHittable t) => 종.사거리 + 종.반지름 + (t != null ? t.Radius : 0f);
@@ -622,6 +867,13 @@ public class Critter : MonoBehaviour, IHittable
         return true;
     }
 
+    // ★동작을 고르라고 밖에 알려 주는 것들 (`펫동작`) — 판단은 안 한다, 상태만 비춘다
+    /// 맞아서 비틀거리는 중인가
+    public bool 맞는중 => staggerT > 0f;
+    /// 방금 휘둘렀나 — 공격 동작이 끝까지 보이도록 잠깐 켜 둔다
+    public bool 때리는중 => 휘두름T > 0f;
+    float 휘두름T;
+
     void 때리기()
     {
         if (atkCd > 0f) return;
@@ -634,6 +886,7 @@ public class Critter : MonoBehaviour, IHittable
         휘두름시간 = 몸짓기 != null ? Mathf.Clamp(몸짓기.공격클립길이(), 0.3f, 1.6f) : 0.55f;
         타격시점 = 휘두름시간 * 0.58f;
         휘두름t = 0f; 휘두름타격 = false;
+        휘두름T = 휘두름시간;                          // `때리는중` 표시용 (`펫동작` 이 본다)
         squash = 0.7f;
     }
 
@@ -672,7 +925,16 @@ public class Critter : MonoBehaviour, IHittable
     public void Knock(Vector3 dir, float dist, float stagger, float down = 0f)
     {
         if (!Alive) return;
-        float 저항 = Mathf.Max(0.2f, 종.무게);
+
+        // ★★★**큰 놈이 너무 밀렸다** (2026-08-10 사용자 — "큰데도 밀려나는게 심한것들도 많고").
+        //
+        //   전에는 `저항 = 무게` 를 그냥 나눴다. 두 가지가 잘못이었다:
+        //    ① 무게가 1 보다 작은 놈(다람쥐 0.72)은 저항이 1 미만이라 **오히려 더 날아갔다**
+        //    ② 무게에 비례만 해서, 세 배 무거운 놈이 3분의 1 밀리는 데 그쳤다 —
+        //       덩치가 세 배면 꿈쩍도 안 해야 「크다」로 읽힌다
+        //   → **1 아래로는 안 내려가게 막고, 무게에 지수를 준다.**
+        //     실측(넉백 0.6m): 다람쥐 0.60 · 늑대 0.47 · 사슴 0.19 · 트리케 0.13 · 티라노 0.03
+        float 저항 = Mathf.Max(1f, Mathf.Pow(Mathf.Max(0.2f, 종.무게), 밀림지수));
         dist /= 저항; stagger /= 저항;
         down = 종.무게 > 3f ? 0f : down / 저항;      // 무거운 놈은 아예 안 넘어진다
 
@@ -756,6 +1018,34 @@ public class Critter : MonoBehaviour, IHittable
         body.localPosition = bodyPos - Vector3.up * (bodyPos.y * 0.55f * 누움) + Vector3.up * 들썩;
     }
 
+    /// ★그로기 — **엎어져서 낑낑댄다** (2026-08-10 사용자).
+    ///
+    ///   ☆넘어짐(`넘어진몸`)과 갈라 놓는다: 넘어짐은 **옆으로** 자빠져 바둥거리고,
+    ///     기절은 **앞으로** 엎어져 코를 박고 들썩인다. 둘이 같으면 무엇에 당했는지 못 읽는다.
+    ///   ☆낑낑대는 건 큰 몸짓이 아니라 **잔 떨림**이다 — 기운이 빠져 못 일어나는 것이라
+    ///     크게 움직이면 오히려 멀쩡해 보인다.
+    void 그로기몸()
+    {
+        if (body == null) return;
+        body.localScale = bodyScale;
+
+        const float 엎어지는데 = 0.28f;
+        float 엎 = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(기절든지 / 엎어지는데));
+
+        // 깨어날 때가 가까우면 들썩임이 커진다 — 곧 일어난다는 예고
+        float 깰때쯤 = 1f - Mathf.Clamp01(기절치 / Mathf.Max(1f, 기절한계));
+        float 낑 = Mathf.Sin(Time.time * (6.5f + 깰때쯤 * 5f) + GetInstanceID());
+        float 폭 = (0.35f + 깰때쯤 * 0.65f) * 엎;
+
+        // 앞으로 코를 박는다 (x 축으로 78°) + 잔 떨림
+        body.localRotation = bodyRot * Quaternion.Euler(78f * 엎 + 낑 * 3.2f * 폭,
+                                                        낑 * 5f * 폭,
+                                                        낑 * 3f * 폭);
+        // 엎어지면 무게중심이 내려가고, 숨 쉬듯 조금 들썩인다
+        float 들썩 = Mathf.Abs(Mathf.Sin(Time.time * 3.4f)) * 0.035f * 종.키 * 엎;
+        body.localPosition = bodyPos - Vector3.up * (bodyPos.y * 0.62f * 엎) + Vector3.up * 들썩;
+    }
+
     void 몸복구()
     {
         if (body == null) return;
@@ -772,6 +1062,8 @@ public class Critter : MonoBehaviour, IHittable
     void Squash(float dt)
     {
         if (body == null) return;
+        // 놀란 몸짓이 몸을 쥐고 있는 동안은 되돌림이 덮어쓰지 않는다 (`놀람동작` 참고)
+        if (지금 == 상태.불놀람) return;
         squash = 0f;
         if (body.localScale != bodyScale) body.localScale = bodyScale;
     }

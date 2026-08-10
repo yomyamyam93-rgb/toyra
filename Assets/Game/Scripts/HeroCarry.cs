@@ -27,11 +27,18 @@ public class HeroCarry : MonoBehaviour
     [Tooltip("끌고 있을 때 이동 속도 배수")] [Range(0.2f, 1f)] public float 끌때 = 0.55f;
     [Tooltip("끌 때 이 거리를 넘으면 놓친다 (m)")] public float 끊기는거리 = 3.5f;
 
-    [Header("집")]
-    [Tooltip("여기 안에 들여놓으면 목줄을 맨다 (m)")] public float 집반경 = 22f;
+    // ★★★**「집」이라는 보이지 않는 원을 없앴다** (2026-08-10 사용자 — *"집이라고 바운더리를
+    //   가정하지는 않았으면 좋겠어"*).
+    //
+    //   전에는 맵 정중앙 반경 22m 안에 들어가면 저절로 묶였다. 그건 규칙이지 세상이 아니고,
+    //   무엇보다 **보이지 않는 선**이었다.
+    //   → 이제 **내가 F 를 눌러 그 자리에 맨다.** 어디든 맬 수 있다.
+    //     ☆그런데도 다들 모닥불 옆에 매게 된다 — **불이 야생을 밀어내서 거기가 안전하기
+    //       때문**이다(`모닥불.무서운불`). 캠프가 규칙이 아니라 **이득으로** 생긴다.
 
     [Header("먹이 (E)")]
     [Tooltip("이 거리 안에 먹이를 준다 (m)")] public float 먹이거리 = 3f;
+    [Tooltip("구운 고기를 주면 신뢰가 이 배로 오른다")] [Range(1f, 3f)] public float 구운것배 = 1.7f;
 
     /// 지금 데려가는 중인 놈 (없으면 null)
     public Critter 데려가는것 { get; private set; }
@@ -59,6 +66,9 @@ public class HeroCarry : MonoBehaviour
         눌림 = Input.GetKeyDown(KeyCode.F);
         먹임 = Input.GetKeyDown(KeyCode.E);
 #endif
+        // 모닥불 앞에 서 있으면 F 는 그쪽 것이다 (재료 붓기·땔감 넣기)
+        if (모닥불.F먹음) 눌림 = false;
+
         if (먹임) 먹이주기();
 
         if (데려가는것 == null)
@@ -71,7 +81,9 @@ public class HeroCarry : MonoBehaviour
         // ── 데려가는 중
         if (데려가는것 == null || !데려가는것.Alive) { 놓침("놓쳤다"); return; }
 
-        if (눌림) { 놓기(); return; }
+        // ★F 를 다시 누르면 **그 자리에 맨다.** 여기가 끝이 아니라 여기서 시작이다 —
+        //   먹이를 주며 신뢰를 채워야 비로소 내 것이 된다
+        if (눌림) { 매어두기(); return; }
 
         // ★뛰면 놓친다
         if (hero.Running) { 놓침("뿌리치고 달아났다"); return; }
@@ -96,12 +108,6 @@ public class HeroCarry : MonoBehaviour
             if (d > 끊기는거리) { 놓침("줄이 풀렸다"); return; }
             if (버팀) hero.MoveMul = 0.12f;      // 버티는 동안은 거의 못 간다
         }
-
-        // ── 집에 도착했나
-        var c = WorldGrid.Center;
-        float 집까지 = Vector3.Distance(new Vector3(transform.position.x, 0f, transform.position.z),
-                                        new Vector3(c.x, 0f, c.z));
-        if (집까지 <= 집반경) 도착();
     }
 
     void 붙잡기()
@@ -139,18 +145,19 @@ public class HeroCarry : MonoBehaviour
         해제();
     }
 
+    /// 뿌리치고 달아났다 — **안 묶인다.** 실패는 실패로 남아야 한다
     void 놓침(string 말)
     {
         띄움(말);
         놓기();
     }
 
-    /// ★캠프에 닿으면 **매어둔다.** 여기서 끝이 아니라 여기서 시작이다 —
-    ///   먹이를 주며 신뢰를 채워야 비로소 내 것이 된다
-    void 도착()
+    /// ★내가 고른 자리에 **매어둔다.** 어디든 맬 수 있다 — 보이지 않는 「집」은 없다.
+    ///   ☆그래도 불 옆에 매게 된다. 야생이 불 안으로 못 들어오기 때문이다.
+    void 매어두기()
     {
         var got = 데려가는것;
-        해제();
+        놓기();
         if (got == null) return;
         got.묶임 = true;
         띄움($"{got.종.이름}  묶었다");
@@ -163,17 +170,29 @@ public class HeroCarry : MonoBehaviour
         Critter best = null; float bd = 먹이거리 * 먹이거리;
         foreach (var c in Critter.All)
         {
-            if (c == null || !c.Alive || c.side != Critter.Side.야생) continue;
-            if (!c.묶임 && !c.지침) continue;               // 멀쩡한 놈은 안 받아먹는다
+            if (c == null || !c.Alive) continue;
+            if (!먹일수있나(c)) continue;
             float d2 = (c.transform.position - transform.position).sqrMagnitude;
             if (d2 > bd) continue;
             bd = d2; best = c;
         }
         if (best == null) return;
 
-        if (!Stock.Take(Stock.Kind.고기, 1)) { 띄움("고기가 없다"); return; }
+        // ★★구운 고기를 먼저 준다 — **더 잘 길든다.**
+        //   "오늘 잡아온 고기를 내가 먹나, 펫을 주나" 에 "구워서 주나" 가 한 겹 더 얹힌다 (5-5).
+        bool 구움 = Stock.Take(Stock.Kind.구운고기, 1);
+        if (!구움 && !Stock.Take(Stock.Kind.고기, 1)) { 띄움("고기가 없다"); return; }
 
-        best.먹이받음();
+        best.먹이받음(구움 ? 구운것배 : 1f);
+
+        // ★내 펫은 이미 내 것이다 — 먹이는 건 「기르는」 일이지 「길들이는」 일이 아니다
+        if (best.side == Critter.Side.내편)
+        {
+            띄움(best.새끼 ? $"{best.종.이름}  {Mathf.RoundToInt(best.자람 * 100f)}%"
+                           : best.종.이름);
+            return;
+        }
+
         if (best.신뢰 >= 100f)
         {
             best.묶임 = false;
@@ -183,14 +202,23 @@ public class HeroCarry : MonoBehaviour
         else 띄움($"{best.종.이름}  {Mathf.RoundToInt(best.신뢰)}");
     }
 
+    /// ★누구에게 먹일 수 있나
+    ///   · 야생 — **묶였거나 지친** 놈만. 멀쩡한 놈은 안 받아먹는다
+    ///   · 내 펫 — **아직 크는 중이거나 다친** 놈. 길들인 뒤에도 먹여야 큰다 (기획 5-2 2층)
+    bool 먹일수있나(Critter c)
+    {
+        if (c.side == Critter.Side.야생) return c.묶임 || c.지침;
+        return c.새끼 || c.hp < c.종.체력 * 0.99f;
+    }
+
     /// 가까이 있는 길들이는 중인 놈 — 화면에 신뢰를 띄우려고 찾는다
     public Critter 가까운대상()
     {
         Critter best = null; float bd = 먹이거리 * 먹이거리 * 2.2f;
         foreach (var c in Critter.All)
         {
-            if (c == null || !c.Alive || c.side != Critter.Side.야생) continue;
-            if (!c.묶임 && !c.지침) continue;
+            if (c == null || !c.Alive) continue;
+            if (!먹일수있나(c)) continue;
             float d2 = (c.transform.position - transform.position).sqrMagnitude;
             if (d2 > bd) continue;
             bd = d2; best = c;

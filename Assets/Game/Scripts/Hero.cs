@@ -83,6 +83,14 @@ public class Hero : MonoBehaviour, IHittable
 
     /// 밖에서 거는 이동 속도 배수 — 휘두르는 동안 발이 느려진다 (`HeroAttack`)
     [HideInInspector] public float MoveMul = 1f;
+
+    // ★★생존이 거는 배수 (`생존` 이 매 프레임 써넣는다). **죽이지 않고 무디게 만든다** —
+    //   기획 5-5: *"벌칙은 죽음이 아니라 무뎌짐. 느려지고 힘이 빠진다"*.
+    //   ☆`MoveMul` 과 따로 둔다 — 그쪽은 `HeroCarry`·`HeroAttack` 이 매 프레임 덮어써서
+    //     같이 쓰면 서로 지워 버린다 (소유권이 갈려 있어야 안 싸운다)
+    [HideInInspector] public float 생존이속 = 1f;
+    [HideInInspector] public float 생존힘 = 1f;
+    [HideInInspector] public float 생존지구력 = 1f;   // 최대 지구력에 곱한다
     /// 앉아 있는 동안은 발이 묶인다 (의자) — 밖에서 건다 (`HeroAnim`)
     [HideInInspector] public bool 묶임;
 
@@ -127,7 +135,8 @@ public class Hero : MonoBehaviour, IHittable
         if (stamina <= 0.5f) 지쳤다 = true;
         else if (지쳤다 && stamina >= maxStamina * 숨돌리기) 지쳤다 = false;
 
-        Running = wantRun && mv.sqrMagnitude > 0.01f && !지쳤다;
+        // 짐이 넘치면 뛰기는커녕 걷지도 못한다 — 지구력만 축내지 않게 여기서 끊는다
+        Running = wantRun && mv.sqrMagnitude > 0.01f && !지쳤다 && !인벤.총넘침;
         Sneaking = wantSneak && !Running;             // 뛰면서 웅크릴 수는 없다
         float spd = Running ? run : (wantSneak ? sneak : walk);
 
@@ -156,10 +165,15 @@ public class Hero : MonoBehaviour, IHittable
         FaceQuantized(LookDir);
 
         stamina += (Running ? -runCost : regen) * Time.deltaTime;
-        stamina = Mathf.Clamp(stamina, 0f, maxStamina);
+        // ★피로가 쌓이면 **최대 지구력 자체가 줄어든다** (`생존`) — 덜 뛰게 된다
+        stamina = Mathf.Clamp(stamina, 0f, maxStamina * Mathf.Clamp(생존지구력, 0.1f, 1f));
         // 숨이 차면 느려진다 — 화력이 아니라 숨이 전투를 제한한다
         if (stamina < maxStamina * 0.2f) spd *= Mathf.Lerp(0.6f, 1f, stamina / (maxStamina * 0.2f));
         spd *= Mathf.Clamp(MoveMul, 0.05f, 1f);      // 휘두르는 동안 발이 느려진다
+        spd *= Mathf.Clamp(생존이속, 0.2f, 1f);        // 굶고 목마르면 느려진다 (`생존`)
+        // ★★짐이 무거우면 느려지고, **한도를 넘으면 발이 아예 안 나간다** (`인벤.짐배`).
+        //   떨어뜨려 주지 않는다 — 무엇을 버릴지는 내가 고른다
+        spd *= 인벤.짐배;
 
         // ── 이동 (화면 기준 — 카메라가 고정이라 항상 같다)
         var want = 갈방향;

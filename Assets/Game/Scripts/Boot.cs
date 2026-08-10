@@ -10,8 +10,23 @@ public class Boot : MonoBehaviour
     public WorldGen world;
     public Hero hero;
 
-    [Header("동행 펫")]
-    public bool 펫데리고시작 = true;
+    // ══════════════════════════════════════════════════════════
+    //  ★★★**이건 은퇴한 「크기 재던 자」다 — 되살릴 물건이 아니다** (2026-08-10)
+    //
+    //  아래 `동행들` 은 펫 크기를 눈으로 견주려고 세워 둔 시험용 자였다.
+    //  **게임 기능이 아니었다.** 두 가지 이유로 이제 쓰지 않는다:
+    //
+    //   ① `Resources/toys/` 의 **옛 치비 모델**이다 — 뼈대도 걷기 애니도 없어서
+    //      다리를 안 젓고 미끄러진다. 야생은 `Resources/rig/` 의 리깅 모델을 쓴다
+    //   ② ★**저절로 주어지는 펫은 9-0(인과와 행위)에 어긋난다.**
+    //      펫은 이제 **잡아서 데려와 먹여야** 생긴다 (`HeroCarry` · `Critter.자라기`)
+    //
+    //  ☆지우지 않고 꺼 둔다 (9장 3조 — 은퇴는 삭제가 아니라 스위치).
+    //    크기를 다시 견줘 볼 일이 생기면 그때만 잠깐 켠다.
+    // ══════════════════════════════════════════════════════════
+    [Header("동행 펫 — ★은퇴한 시험용 자. 평소엔 꺼 둔다")]
+    [Tooltip("크기 견주기용 옛 자다. 펫은 잡아서 기르는 것으로 바뀌었다 — 위 주석 참고")]
+    public bool 펫데리고시작 = false;
 
     // ★씬을 안 고쳐도 되게 여기서 붙인다 — F1 을 누르기 전엔 아무 일도 안 한다
     [Header("동작 진열 (F1)")]
@@ -21,6 +36,9 @@ public class Boot : MonoBehaviour
     /// ★크기를 눈으로 견주려고 셋을 **다른 덩치**로 데리고 나간다 (사람 1.8m 기준).
     ///   무릎께 · 가슴께 · 올려다보는 것. 이래야 크기 규칙을 실제로 정할 수 있다.
     ///   ★큰 놈일수록 느리게 — 덩치와 속도가 같이 가야 크기가 읽힌다.
+    ///
+    /// ★★**은퇴함 (2026-08-10).** 위 `펫데리고시작` 의 주석을 볼 것 —
+    ///   옛 `toys/` 모델이고, 펫은 이제 잡아서 길러야 생긴다.
     [System.Serializable]
     public class 동행
     {
@@ -47,6 +65,12 @@ public class Boot : MonoBehaviour
         if (world != null) world.Generate();
 
         if (hero == null) return;
+
+        // 씬을 안 고쳐도 되게 여기서 붙인다 (C — 제작창 · 배고픔·목마름·피로)
+        if (hero.GetComponent<제작창>() == null) hero.gameObject.AddComponent<제작창>();
+        if (hero.GetComponent<생존>() == null) hero.gameObject.AddComponent<생존>();
+        if (hero.GetComponent<인벤창>() == null) hero.gameObject.AddComponent<인벤창>();   // Tab
+        if (hero.GetComponent<대상표시>() == null) hero.gameObject.AddComponent<대상표시>();
 
         // 집 칸 한가운데 — 부화터 바로 옆에 선다
         var c = WorldGrid.Center;
