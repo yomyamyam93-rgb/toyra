@@ -28,7 +28,9 @@ public interface IHittable
 public class Critter : MonoBehaviour, IHittable
 {
     public enum Side { 야생, 내편 }
-    public enum 상태 { 어슬렁, 경계, 접근, 공격, 도주, 복귀 }
+    // ★불놀람·불도망은 **사람을 무서워하는 도주와 다른 길이다.** `도망끔` 스위치가
+    //   도주를 통째로 껐어도 불은 무서워한다 — 끈 것은 「사람이 무섭다」지 「불이 무섭다」가 아니다.
+    public enum 상태 { 어슬렁, 경계, 접근, 공격, 도주, 복귀, 불놀람, 불도망 }
 
     [Header("편")]
     public Side side = Side.야생;
@@ -99,9 +101,10 @@ public class Critter : MonoBehaviour, IHittable
     /// 먹이 한 번의 값 — 새끼가 훨씬 잘 길든다. 겁 많은 종은 더디다
     public float 먹이값 => (새끼 ? 34f : 15f) * Mathf.Lerp(1.2f, 0.6f, 종.겁);
 
-    public void 먹이받음()
+    /// `배` — 구운 고기는 더 값을 한다. 불을 땔 이유가 하나 더 생긴다 (기획 5-5)
+    public void 먹이받음(float 배 = 1f)
     {
-        신뢰 = Mathf.Min(100f, 신뢰 + 먹이값);
+        신뢰 = Mathf.Min(100f, 신뢰 + 먹이값 * 배);
         squash = 0.8f;
         // 먹으면 기운이 돌아온다 — 굶어 죽는 시계가 되감긴다
         hp = Mathf.Min(종.체력, hp + 종.체력 * 0.35f);
@@ -169,6 +172,11 @@ public class Critter : MonoBehaviour, IHittable
     float downTotal, downSign = 1f;
     IHittable target;
     float findCd, atkCd, squash, wanderCd, stateT;
+
+    // ── 불 공포 (`불에놀람` 참고)
+    float 불겁냄쿨, 놀람길이, 안전거리;
+    int 놀람종류;
+    Vector3 불자리;
     bool 따라가는중;
     Vector3 wander, 집;
     bool 대표;                     // 무리에서 한 마리만 무리 냉각을 돌린다
@@ -247,6 +255,36 @@ public class Critter : MonoBehaviour, IHittable
         bool 적있음 = target != null && target.Alive;
         float d적 = 적있음 ? Flat(target.T.position, transform.position) : 999f;
         float d집 = Flat(집, transform.position);
+
+        // ══════════════════════════════════════════════════════════
+        //  ★★★불 — **어떤 판단보다 먼저다.** 사람을 쫓던 중이라도 불 앞에선 다 잊는다
+        // ══════════════════════════════════════════════════════════
+        if (불겁냄쿨 > 0f) 불겁냄쿨 -= Time.deltaTime;
+
+        if (지금 == 상태.불놀람)
+        {
+            // 놀란 시간이 다 차면 등을 돌린다 (개체마다 2~3.2초로 다르다)
+            if (stateT >= 놀람길이) { 몸복구(); 지금상태(상태.불도망); }
+            return;
+        }
+        if (지금 == 상태.불도망)
+        {
+            // 충분히 멀어졌거나 오래 달렸으면 그만둔다.
+            // ★쿨을 두는 이유: 경계선에서 놀람↔도망을 오가며 제자리 떠는 걸 막는다
+            if (Flat(불자리, transform.position) > 안전거리 || stateT > 4f)
+            {
+                불겁냄쿨 = 6f;
+                지금상태(상태.복귀);
+            }
+            return;
+        }
+
+        // 야생만 무서워한다. 내 펫은 제 주인이 피운 불이다
+        if (side == Side.야생 && 불겁냄쿨 <= 0f)
+        {
+            var 불 = 모닥불.무서운불(transform.position);
+            if (불 != null) { 불에놀람(불); return; }
+        }
 
         // 내 편은 겁내지 않는다 — 주인이 시킨 자리를 지킨다
         if (side == Side.내편)
@@ -413,7 +451,87 @@ public class Critter : MonoBehaviour, IHittable
             case 상태.복귀:
                 걷기(side == Side.내편 && owner != null ? 내자리 : 집, dt, 0.9f);
                 break;
+
+            case 상태.불놀람:
+                바라보기(불자리, dt);      // 무서운 것을 본다 — 등을 돌리는 건 그 다음이다
+                놀람동작(dt);
+                break;
+
+            case 상태.불도망:
+                // ★**걷지 않는다. 달린다** (사용자 — "걸어서 멀어지는게 아니라 달려서")
+                var 반대 = transform.position + (transform.position - 불자리).normalized * 14f;
+                걷기(반대, dt, 1.9f);
+                break;
         }
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  ★불에 놀란다 — 2026-08-10 사용자
+    //  *"바운더리에 왔을때... 한 2~3초정도 두려워하는 놀라는 모습을 하다가,
+    //    반대로 도망가는 모습이었음 좋겠어... 달려서 좀 도망가게끔"*
+    //  *"비슷하게 말고 서로 조금씩 달랐음하고"*
+    //
+    //  ☆왜 밀어내지 않는가: 장애물처럼 막으면 「보이지 않는 벽」이 하나 더 생길 뿐이고,
+    //    벽에 비벼대는 짐승은 고장처럼 보인다. **무서운 건 몸으로 드러나야 무서운 것이다.**
+    //  ☆리깅이 없어도 된다 (6장) — 몸통을 젖히고·세우고·흔드는 것으로 다 된다.
+    // ══════════════════════════════════════════════════════════
+
+    void 불에놀람(모닥불 불)
+    {
+        불자리 = 불.transform.position;
+        안전거리 = 불.겁내는거리 * 2.2f;
+
+        // ★개체마다 다르게 — 몸짓 종류도, 놀라는 길이도 제 번호에서 뽑는다.
+        //   같은 놈은 언제나 같은 버릇이라 "쟤는 저렇게 놀란다" 가 생긴다
+        놀람종류 = Mathf.Abs(GetInstanceID()) % 4;
+        놀람길이 = 2f + 절차.값(GetInstanceID(), 0, 7) * 1.2f;      // 2.0 ~ 3.2초
+
+        target = null;                 // 쫓던 것도 잊는다
+        지금상태(상태.불놀람);
+    }
+
+    /// 놀란 몸짓 — 넷 중 하나. **앞이 세고 뒤로 갈수록 잦아든다** (몸의 3막: 본동작 → 여운)
+    void 놀람동작(float dt)
+    {
+        if (body == null) return;
+
+        float u = Mathf.Clamp01(stateT / Mathf.Max(0.01f, 놀람길이));
+        float 세기 = Mathf.Lerp(1f, 0.25f, u);
+        float t = Time.time + GetInstanceID() * 0.017f;
+        float k = 종.키;
+
+        Vector3 회전 = Vector3.zero, 밀림 = Vector3.zero, 크기 = Vector3.one;
+
+        switch (놀람종류)
+        {
+            case 0:     // 움찔 — 상체를 홱 젖히고 뒷걸음질하듯 잘게 떤다
+                회전.x = -26f * 세기 + Mathf.Sin(t * 26f) * 4f * 세기;
+                밀림.z = -0.16f * k * 세기;
+                밀림.y = 0.03f * k * 세기;
+                break;
+
+            case 1:     // 곧추섬 — 몸을 세우고 굳는다. 숨만 떤다
+                크기 = new Vector3(1f - 0.09f * 세기, 1f + 0.17f * 세기, 1f - 0.09f * 세기);
+                회전.x = -9f * 세기;
+                밀림.y = 0.06f * k * 세기 + Mathf.Sin(t * 19f) * 0.012f * k * 세기;
+                break;
+
+            case 2:     // 어쩔 줄 몰라 좌우로 — 갈 데를 못 정한다
+                회전.y = Mathf.Sin(t * 11f) * 34f * 세기;
+                회전.z = Mathf.Sin(t * 11f) * 7f * 세기;
+                밀림.x = Mathf.Sin(t * 11f) * 0.09f * k * 세기;
+                break;
+
+            default:    // 고개를 세차게 젓는다
+                회전.y = Mathf.Sin(t * 24f) * 19f * 세기;
+                회전.x = -12f * 세기 + Mathf.Abs(Mathf.Sin(t * 12f)) * 10f * 세기;
+                밀림.y = Mathf.Abs(Mathf.Sin(t * 12f)) * 0.05f * k * 세기;
+                break;
+        }
+
+        body.localRotation = bodyRot * Quaternion.Euler(회전);
+        body.localPosition = bodyPos + 밀림;
+        body.localScale = new Vector3(bodyScale.x * 크기.x, bodyScale.y * 크기.y, bodyScale.z * 크기.z);
     }
 
     float 때리는거리(IHittable t) => 종.사거리 + 종.반지름 + (t != null ? t.Radius : 0f);
@@ -624,6 +742,8 @@ public class Critter : MonoBehaviour, IHittable
     void Squash(float dt)
     {
         if (body == null) return;
+        // 놀란 몸짓이 몸을 쥐고 있는 동안은 눌림이 덮어쓰지 않는다 (`놀람동작` 참고)
+        if (지금 == 상태.불놀람) return;
         squash = Mathf.Max(0f, squash - dt * 4f);
         float k = 1f + squash * 0.3f;
         body.localScale = new Vector3(bodyScale.x * k, bodyScale.y / k, bodyScale.z * k);

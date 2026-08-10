@@ -48,6 +48,9 @@ public class Boot : MonoBehaviour
 
         if (hero == null) return;
 
+        // 씬을 안 고쳐도 되게 여기서 붙인다 (C — 제작창)
+        if (hero.GetComponent<제작창>() == null) hero.gameObject.AddComponent<제작창>();
+
         // 집 칸 한가운데 — 부화터 바로 옆에 선다
         var c = WorldGrid.Center;
         hero.transform.position = new Vector3(c.x, 0f, c.z - 12f);

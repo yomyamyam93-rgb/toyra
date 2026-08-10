@@ -5,7 +5,9 @@ using System.Collections.Generic;
 /// ★고기는 **나와 펫이 같이 먹는다** — "내가 먹나, 펫을 주나" 가 이 게임의 매일의 판단이다.
 public static class Stock
 {
-    public enum Kind { 고기, 나무, 돌 }
+    // ★구운고기 — 모닥불이 만든다. 생고기보다 몸에 더 되고, 펫도 더 좋아한다.
+    //   "오늘 잡아온 고기를 내가 먹나, 펫을 주나" 가 여기서 한 겹 더 갈린다.
+    public enum Kind { 고기, 나무, 돌, 구운고기 }
 
     static readonly Dictionary<Kind, int> have = new Dictionary<Kind, int>();
 
