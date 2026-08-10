@@ -36,6 +36,10 @@ public class TreeFall : MonoBehaviour
         Blocker.Remove(선자리);                            // 서 있던 자리를 튼다
 
         foreach (Transform c in transform) if (c.name.Contains("잎")) { 잎 = c; break; }
+
+        // ★8/6 에 Update 를 걷어내며 이 시동을 빠뜨려 **나무가 영영 안 쓰러졌다** (2026-08-11).
+        //   시작만 하고 아무도 넘어가기를 안 돌리니, 선 나무는 팬 만큼만 닳고 그대로 서 있었다
+        StartCoroutine(넘어가기());
     }
 
     // ★★★**`Update` 를 없앴다** (2026-08-06 — `Harvest` 와 같은 이유).

@@ -152,7 +152,10 @@ public class 대상표시 : MonoBehaviour
             // 대상 기준의 자리를 그대로 물려받는다
             g.transform.localPosition = 대상.InverseTransformPoint(mf.transform.position);
             g.transform.localRotation = Quaternion.Inverse(대상.rotation) * mf.transform.rotation;
-            g.transform.localScale = mf.transform.lossyScale;
+            // ★부모가 대상이라 대상 스케일이 다시 곱해진다 — lossyScale 을 그대로 넣으면
+            //   껍데기가 스케일 **제곱**이 된다 (스케일 5짜리 나무 = 화면을 덮는 흰 덩어리, 2026-08-11)
+            var ls = mf.transform.lossyScale; var ts = 대상.lossyScale;
+            g.transform.localScale = new Vector3(ls.x / ts.x, ls.y / ts.y, ls.z / ts.z);
 
             g.AddComponent<MeshFilter>().sharedMesh = mf.sharedMesh;
             var r = g.AddComponent<MeshRenderer>();

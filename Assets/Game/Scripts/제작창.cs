@@ -127,8 +127,22 @@ public class 제작창 : MonoBehaviour
 
         목록짜기();
 
-        float w = 300f, 줄h = 54f, 여백 = 10f;
-        float h = 목록.Count * (줄h + 6f) + 여백 * 2f;
+        var 제목투 = new GUIStyle(GUI.skin.label) { fontSize = 17, alignment = TextAnchor.MiddleLeft };
+        var 곁투 = new GUIStyle(GUI.skin.label) { fontSize = 13, alignment = TextAnchor.UpperLeft, wordWrap = true };
+
+        // ★칸 높이는 내용이 정한다 (2026-08-11 "텍스트가 다 깨졌어") — 고정 54px 시절엔
+        //   긴 설명이 두 줄로 접히고 아랫줄이 칸 밑으로 잘려 글자가 깨져 보였다
+        float w = 300f, 여백 = 10f;
+        float 글폭 = w - 여백 * 2f - 24f;
+        var 칸h = new float[목록.Count];
+        float h = 여백 * 2f;
+        for (int i = 0; i < 목록.Count; i++)
+        {
+            float 설명h = string.IsNullOrEmpty(목록[i].곁들임)
+                ? 0f : 곁투.CalcHeight(new GUIContent(목록[i].곁들임), 글폭);
+            칸h[i] = 28f + 설명h + 6f;
+            h += 칸h[i] + 6f;
+        }
         float x = Screen.width * 0.5f - w * 0.5f;
         float y = Screen.height * 0.5f - h * 0.5f;
 
@@ -137,13 +151,12 @@ public class 제작창 : MonoBehaviour
         GUI.DrawTexture(new Rect(x, y, w, h), px);
         GUI.color = Color.white;
 
-        var 제목투 = new GUIStyle(GUI.skin.label) { fontSize = 17, alignment = TextAnchor.MiddleLeft };
-        var 곁투 = new GUIStyle(GUI.skin.label) { fontSize = 13, alignment = TextAnchor.MiddleLeft };
-
+        float 줄y = y + 여백;
         for (int i = 0; i < 목록.Count; i++)
         {
             var it = 목록[i];
-            var r = new Rect(x + 여백, y + 여백 + i * (줄h + 6f), w - 여백 * 2f, 줄h);
+            var r = new Rect(x + 여백, 줄y, w - 여백 * 2f, 칸h[i]);
+            줄y += 칸h[i] + 6f;
 
             bool 위에 = r.Contains(Event.current.mousePosition);
             GUI.color = it.됨
@@ -153,9 +166,9 @@ public class 제작창 : MonoBehaviour
             GUI.color = Color.white;
 
             제목투.normal.textColor = it.됨 ? Color.white : new Color(0.45f, 0.45f, 0.47f);
-            곁투.normal.textColor = it.됨 ? new Color(0.68f, 0.7f, 0.74f) : new Color(0.34f, 0.34f, 0.36f);
+            곁투.normal.textColor = it.됨 ? new Color(0.68f, 0.7f, 0.74f) : new Color(0.5f, 0.5f, 0.53f);
             GUI.Label(new Rect(r.x + 12f, r.y + 6f, r.width - 24f, 22f), it.제목, 제목투);
-            GUI.Label(new Rect(r.x + 12f, r.y + 28f, r.width - 24f, 20f), it.곁들임, 곁투);
+            GUI.Label(new Rect(r.x + 12f, r.y + 28f, r.width - 24f, r.height - 34f), it.곁들임, 곁투);
 
             if (it.됨 && it.하기 != null && Event.current.type == EventType.MouseDown && 위에)
             {
