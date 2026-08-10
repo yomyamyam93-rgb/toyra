@@ -25,13 +25,12 @@ public class HUD : MonoBehaviour
         Bar(x, y, w, bh, h.hp / Mathf.Max(1f, h.maxHp), new Color(0.85f, 0.25f, 0.25f));
         Bar(x, y + bh + 6f, w, bh * 0.7f, h.stamina / Mathf.Max(1f, h.maxStamina), new Color(0.9f, 0.8f, 0.3f));
 
-        // ── 가진 것 · 시각 (오른쪽 위)
-        var st = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.UpperRight };
-        st.normal.textColor = Color.white;
-        int 구움 = Stock.Get(Stock.Kind.구운고기);
-        GUI.Label(new Rect(Screen.width - 380f, 10f, 360f, 26f),
-            (구움 > 0 ? $"구운고기 {구움}   " : "") +
-            $"고기 {Stock.Get(Stock.Kind.고기)}   나무 {Stock.Get(Stock.Kind.나무)}   돌 {Stock.Get(Stock.Kind.돌)}", st);
+        // ── ★★가진 것을 **글자로 나열하지 않는다** (2026-08-10 사용자 —
+        //   *"돌이 몇갠지 나무가 몇갠지 UI로 표현해서 좆같았던 적이 있다. 아이템이 그것만
+        //   있는 게 아닌데."*). 옛 코드는 `고기 X 나무 X 돌 X` 를 여기에 박아 놨었다 —
+        //   종류가 늘 때마다 이 줄을 늘려야 했고 화면이 글자로 도배됐다.
+        //   → **상시로 뜨는 것은 무게 막대 하나뿐.** 개수는 Tab 을 눌러야 본다 (기획 5-7)
+        무게그리기();
 
         if (day == null) day = FindFirstObjectByType<DayNight>();
         if (day != null)
@@ -90,6 +89,26 @@ public class HUD : MonoBehaviour
             big.normal.textColor = new Color(0.9f, 0.3f, 0.3f);
             GUI.Label(new Rect(0, Screen.height * 0.4f, Screen.width, 60f), "쓰러졌다", big);
         }
+    }
+
+    /// 짐 무게 — 상시로 뜨는 유일한 「가진 것」 표시
+    void 무게그리기()
+    {
+        var 것 = 인벤.내것;
+        if (것.한도 <= 0f) return;
+
+        float t = Mathf.Clamp01(것.무게 / 것.한도);
+        float x = 20f, y = Screen.height - 30f, w = 240f;
+
+        var c = t > 0.95f ? new Color(0.9f, 0.3f, 0.25f)
+              : t > 0.75f ? new Color(0.9f, 0.7f, 0.25f) : new Color(0.5f, 0.55f, 0.6f);
+        // 꽉 찼으면 깜빡인다 — 소리 없이 알리는 유일한 수단
+        if (t > 0.98f) c.a = 0.5f + 0.5f * Mathf.Abs(Mathf.Sin(Time.time * 4f));
+        Bar(x, y, w, 7f, t, c);
+
+        var s = new GUIStyle(GUI.skin.label) { fontSize = 11, alignment = TextAnchor.MiddleLeft };
+        s.normal.textColor = new Color(0.7f, 0.7f, 0.74f);
+        GUI.Label(new Rect(x + w + 8f, y - 5f, 120f, 16f), $"{것.무게:F1}kg", s);
     }
 
     생존 삶;
