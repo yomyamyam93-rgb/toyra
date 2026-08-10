@@ -70,6 +70,7 @@ public class Boot : MonoBehaviour
         if (hero.GetComponent<제작창>() == null) hero.gameObject.AddComponent<제작창>();
         if (hero.GetComponent<생존>() == null) hero.gameObject.AddComponent<생존>();
         if (hero.GetComponent<인벤창>() == null) hero.gameObject.AddComponent<인벤창>();   // Tab
+        if (hero.GetComponent<대상표시>() == null) hero.gameObject.AddComponent<대상표시>();
 
         // 집 칸 한가운데 — 부화터 바로 옆에 선다
         var c = WorldGrid.Center;

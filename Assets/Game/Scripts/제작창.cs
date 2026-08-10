@@ -112,12 +112,22 @@ public class 제작창 : MonoBehaviour
         // ── 빈 땅
         else
         {
+            int 돌 = Stock.Get(Stock.Kind.돌), 나무 = Stock.Get(Stock.Kind.나무);
             목록.Add(new 항목
             {
                 제목 = "모닥불",
-                곁들임 = $"돌 {Stock.Get(Stock.Kind.돌)}   나무 {Stock.Get(Stock.Kind.나무)}",
+                곁들임 = $"돌 {돌}/5   나무 {나무}/3",
                 됨 = true,
                 하기 = 터놓기
+            });
+
+            // ★길 표식 — 나무 둘이면 박는다. **길은 저절로 안 생기고 내가 낸다**
+            목록.Add(new 항목
+            {
+                제목 = "표식",
+                곁들임 = $"나무 {나무}/{표식나무}",
+                됨 = 나무 >= 표식나무,
+                하기 = 표식박기
             });
         }
 
@@ -146,6 +156,16 @@ public class 제작창 : MonoBehaviour
                 됨 = 배고프다 || 다쳤다,
                 하기 = () => 먹기(Stock.Kind.고기, 날것, 날것배부름)
             });
+    }
+
+    [Tooltip("표식 하나에 드는 나무")] public int 표식나무 = 2;
+
+    /// ★길 표식을 앞에 박는다 — 이건 재료를 붓는 단계 없이 바로 선다.
+    ///   모닥불과 달리 **작고 값이 싸서** 여러 개를 빨리 박아야 길이 되기 때문이다
+    void 표식박기()
+    {
+        if (!Stock.Take(Stock.Kind.나무, 표식나무)) { 띄움("나무가 모자란다"); return; }
+        표식.박기(transform.position + transform.forward * 1.2f);
     }
 
     /// ★터만 놓는다. 재료는 그 앞에서 F 로 붓는다 — 저절로 서지 않는다
