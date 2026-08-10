@@ -21,6 +21,8 @@ public class 제작창 : MonoBehaviour
     [Header("먹기")]
     [Tooltip("구운 고기가 채워 주는 체력")] public float 구운것 = 26f;
     [Tooltip("생고기가 채워 주는 체력 — 굽는 게 이득이어야 불을 땐다")] public float 날것 = 7f;
+    [Tooltip("구운 고기가 배고픔을 이만큼 내린다")] public float 구운것배부름 = 0.5f;
+    [Tooltip("생고기가 배고픔을 이만큼 내린다 — 굽는 게 이득이어야 한다")] public float 날것배부름 = 0.22f;
 
     public bool 열림 { get; private set; }
 
@@ -120,14 +122,19 @@ public class 제작창 : MonoBehaviour
         }
 
         // ── 먹기 — 어디서든
+        // ★배가 부르거나 다쳤으면 먹을 값이 있다 — 둘 다 멀쩡하면 흐리게
+        var 삶 = GetComponent<생존>();
+        bool 배고프다 = 삶 != null && 삶.배고픔 > 0.02f;
+        bool 다쳤다 = hero.hp < hero.maxHp;
+
         int 구움 = Stock.Get(Stock.Kind.구운고기);
         if (구움 > 0)
             목록.Add(new 항목
             {
                 제목 = "구운 고기",
                 곁들임 = $"{구움}",
-                됨 = hero.hp < hero.maxHp,
-                하기 = () => 먹기(Stock.Kind.구운고기, 구운것)
+                됨 = 배고프다 || 다쳤다,
+                하기 = () => 먹기(Stock.Kind.구운고기, 구운것, 구운것배부름)
             });
 
         int 날 = Stock.Get(Stock.Kind.고기);
@@ -136,8 +143,8 @@ public class 제작창 : MonoBehaviour
             {
                 제목 = "생고기",
                 곁들임 = $"{날}",
-                됨 = hero.hp < hero.maxHp,
-                하기 = () => 먹기(Stock.Kind.고기, 날것)
+                됨 = 배고프다 || 다쳤다,
+                하기 = () => 먹기(Stock.Kind.고기, 날것, 날것배부름)
             });
     }
 
@@ -151,10 +158,12 @@ public class 제작창 : MonoBehaviour
         열림 = false;
     }
 
-    void 먹기(Stock.Kind 무엇, float 회복)
+    void 먹기(Stock.Kind 무엇, float 회복, float 배부름)
     {
         if (!Stock.Take(무엇, 1)) return;
         hero.hp = Mathf.Min(hero.maxHp, hero.hp + 회복);
+        var 삶 = GetComponent<생존>();
+        if (삶 != null) 삶.먹었다(배부름);
         띄움($"+{Mathf.RoundToInt(회복)}");
     }
 

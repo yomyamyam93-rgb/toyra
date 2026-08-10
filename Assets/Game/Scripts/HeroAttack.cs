@@ -343,7 +343,7 @@ public class HeroAttack : MonoBehaviour
             if (ang < lo - 6f || ang > hi + 6f) continue;
 
             맞은것.Add(c);
-            c.TakeDamage(피해);
+            c.TakeDamage(피해 * Mathf.Clamp(hero.생존힘, 0.2f, 1f));   // 굶으면 힘이 빠진다
             if (c.Alive)
             {
                 c.Knock(v, 넉백, 비틀);

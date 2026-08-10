@@ -77,6 +77,9 @@ public class HUD : MonoBehaviour
             }
         }
 
+        // ── 생존 — ★평소엔 아무것도 안 뜬다. 문턱을 넘을 때만 뜬다 (5-5 · 11장)
+        생존그리기(h);
+
         // ── 모닥불 — 짓는 게이지 · 남은 불 · 알림 (수치와 상태만)
         모닥불그리기(h);
 
@@ -86,6 +89,51 @@ public class HUD : MonoBehaviour
             var big = new GUIStyle(GUI.skin.label) { fontSize = 42, alignment = TextAnchor.MiddleCenter };
             big.normal.textColor = new Color(0.9f, 0.3f, 0.3f);
             GUI.Label(new Rect(0, Screen.height * 0.4f, Screen.width, 60f), "쓰러졌다", big);
+        }
+    }
+
+    생존 삶;
+
+    /// ★★**게이지를 상시로 띄우지 않는다** (기획 5-5 · 11장).
+    ///   평소엔 화면에 아무것도 없다가, 몸이 신호를 보낼 때만 뜬다.
+    ///   ☆상시로 띄우면 「관리 게임」이 된다 — 눈이 계속 게이지에 가 있게 된다.
+    void 생존그리기(Hero h)
+    {
+        if (삶 == null) { 삶 = h.GetComponent<생존>(); if (삶 == null) return; }
+
+        float x = 20f, y = Screen.height - 104f, w = 240f;
+        var s = new GUIStyle(GUI.skin.label) { fontSize = 13, alignment = TextAnchor.MiddleLeft };
+
+        void 한줄(string 이름, float 값, float 문턱, Color c)
+        {
+            if (값 < 문턱) return;                       // 아직 신호가 아니다 — 안 그린다
+            float t = Mathf.InverseLerp(문턱, 1f, 값);
+            // 한계에 가까우면 깜빡인다 — 소리 없이 재촉하는 유일한 수단
+            float 깜 = 값 > 0.9f ? 0.55f + 0.45f * Mathf.Abs(Mathf.Sin(Time.time * 4f)) : 1f;
+            GUI.color = new Color(c.r, c.g, c.b, 깜);
+            Bar(x, y, w, 8f, t, c);
+            GUI.color = Color.white;
+            s.normal.textColor = new Color(1f, 1f, 1f, 0.85f * 깜);
+            GUI.Label(new Rect(x + w + 8f, y - 5f, 120f, 18f), 이름, s);
+            y -= 14f;
+        }
+
+        한줄("목마름", 삶.목마름, 0.5f, new Color(0.35f, 0.65f, 0.95f));
+        한줄("배고픔", 삶.배고픔, 0.55f, new Color(0.9f, 0.6f, 0.25f));
+        한줄("피로",   삶.피로,   0.6f, new Color(0.6f, 0.5f, 0.75f));
+
+        // 물가에 섰을 때만 — 상호작용 표시는 허용된다 (11장)
+        if (삶.물가 && 삶.목마름 > 0.02f)
+        {
+            var ms = new GUIStyle(GUI.skin.label) { fontSize = 15, alignment = TextAnchor.MiddleCenter };
+            ms.normal.textColor = new Color(0.75f, 0.9f, 1f);
+            GUI.Label(new Rect(0f, Screen.height * 0.68f, Screen.width, 22f), "F  물", ms);
+        }
+        if (!string.IsNullOrEmpty(삶.알림))
+        {
+            var ns = new GUIStyle(GUI.skin.label) { fontSize = 18, alignment = TextAnchor.MiddleCenter };
+            ns.normal.textColor = new Color(0.8f, 0.92f, 1f);
+            GUI.Label(new Rect(0f, Screen.height * 0.64f, Screen.width, 24f), 삶.알림, ns);
         }
     }
 
