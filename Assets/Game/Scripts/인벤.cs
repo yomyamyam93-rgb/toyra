@@ -235,6 +235,29 @@ public class 인벤
         통.것들.Clear();
     }
 
+    /// ★통 전부에서 그 일에 제일 좋은 도구 — **가방에 있기만 하면 된다** (좀보이드처럼).
+    ///   고르는 조작이 없다 (4장)
+    public static 아이템 어느통에든도구(string 도구쓰임)
+    {
+        아이템 best = null;
+        for (int i = 0; i < 통들.Count; i++)
+        {
+            var it = 통들[i].제일좋은도구(도구쓰임);
+            if (it != null && (best == null || it.종.성능 > best.종.성능)) best = it;
+        }
+        return best;
+    }
+
+    /// 어느 통에 있든 그 도구를 닳린다 — 다 닳으면 부러져 사라진다
+    public static void 어느통에서든닳음(아이템 도구, float 만큼 = 1f)
+    {
+        if (도구 == null || 도구.종.내구 <= 0f) return;
+        도구.내구 -= 만큼;
+        if (도구.내구 > 0f) return;
+        for (int i = 0; i < 통들.Count; i++) 통들[i].것들.Remove(도구);
+        if (쥔것 == 도구) 쥔것 = null;
+    }
+
     /// 쥔 것이 닳는다 — 다 닳으면 부러져 사라진다
     public static void 도구닳음쥔것(float 만큼 = 1f)
     {
