@@ -303,6 +303,7 @@ public class Critter : MonoBehaviour, IHittable
         using (new 잼("Critter.비켜서기")) 비켜서기();
 
         atkCd -= dt; stateT += dt;
+        if (휘두름T > 0f) 휘두름T -= dt;
 
         findCd -= dt;
         if (findCd <= 0f)
@@ -725,10 +726,18 @@ public class Critter : MonoBehaviour, IHittable
         return true;
     }
 
+    // ★동작을 고르라고 밖에 알려 주는 것들 (`펫동작`) — 판단은 안 한다, 상태만 비춘다
+    /// 맞아서 비틀거리는 중인가
+    public bool 맞는중 => staggerT > 0f;
+    /// 방금 휘둘렀나 — 공격 동작이 끝까지 보이도록 잠깐 켜 둔다
+    public bool 때리는중 => 휘두름T > 0f;
+    float 휘두름T;
+
     void 때리기()
     {
         if (atkCd > 0f) return;
         atkCd = 종.간격;
+        휘두름T = Mathf.Min(0.5f, 종.간격 * 0.7f);   // 동작이 보일 만큼만
         if (target != null && target.Alive) target.TakeDamage(종.피해);
         squash = 0.7f;
     }

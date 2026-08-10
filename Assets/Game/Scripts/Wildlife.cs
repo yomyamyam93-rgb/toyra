@@ -354,6 +354,11 @@ public class Wildlife : MonoBehaviour
 
         var c = go.AddComponent<Critter>();
         c.side = side; c.종 = s; c.owner = owner;
+
+        // ★동작 여섯 벌을 물린다 — 「몸」이 만들어지고 놈이 붙은 다음이어야 한다
+        if (s.모델 != null && go.transform.childCount > 0)
+            동작물리기(go.transform.GetChild(0).gameObject, s, c);
+
         return c;
     }
 
@@ -382,7 +387,7 @@ public class Wildlife : MonoBehaviour
         float 밑 = g.transform.position.y + (b.min.y - g.transform.position.y) * k;
         g.transform.position += Vector3.up * (parent.position.y - 밑);
 
-        걷기물리기(g, s);
+        // 동작은 `Make` 가 `Critter` 를 붙인 뒤에 물린다 (`펫동작` 이 그 놈을 봐야 한다)
     }
 
     /// ★★**리깅 모델에 걷기 애니메이션을 물린다** (2026-08-07 사용자 "팻 리깅 다 쳐넣고
@@ -394,10 +399,16 @@ public class Wildlife : MonoBehaviour
     ///
     /// ★`AlwaysAnimate` 로 둔다 — 아이소 화면에서는 몸이 화면 밖으로 조금 나가도
     ///   그림자·실루엣이 남으므로, 컬링되어 자세가 굳으면 눈에 띈다.
-    static void 걷기물리기(GameObject g, SpeciesDef s)
+    /// ★★★**여섯 동작을 다 물린다** (2026-08-10 — 여태 「걷기」 하나만 물렸다).
+    ///   모델마다 `걷기·뛰기·대기·공격·피격·죽음` 이 이미 다 저작돼 있는데
+    ///   아무도 안 골라서, 짐승들이 **서 있어도 걷고 맞아도 걸었다.**
+    ///   → 고르는 일은 `펫동작` 이 맡는다 (상태를 비추기만 한다 — 판단은 `Critter` 것이다).
+    static void 동작물리기(GameObject g, SpeciesDef s, Critter c)
     {
         if (s.모델 == null) return;
-        var ctrl = Resources.Load<RuntimeAnimatorController>("rig/걷기_" + s.모델.name);
+        // 대기가 기본이다 — 갓 태어난 놈은 서 있다
+        var ctrl = Resources.Load<RuntimeAnimatorController>("rig/대기_" + s.모델.name)
+                ?? Resources.Load<RuntimeAnimatorController>("rig/걷기_" + s.모델.name);
         if (ctrl == null) return;                       // 짝이 없으면 그냥 선 모델로 둔다
 
         var an = g.GetComponent<Animator>();
@@ -405,6 +416,11 @@ public class Wildlife : MonoBehaviour
         an.runtimeAnimatorController = ctrl;
         an.applyRootMotion = false;                    // 이동은 `Critter.걷기` 가 한다
         an.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+
+        if (c == null) return;
+        var 고르개 = c.GetComponent<펫동작>();
+        if (고르개 == null) 고르개 = c.gameObject.AddComponent<펫동작>();
+        고르개.물릴모델(an, s.모델.name);
     }
 
     /// 모델이 없을 때 — 색칠한 상자 (앞에 머리를 붙여 방향이 읽히게)
