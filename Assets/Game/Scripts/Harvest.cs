@@ -52,19 +52,81 @@ public class Harvest : MonoBehaviour
     [Tooltip("★다 팼을 때 사라지는 대신 이게 쓰러진다 (선 나무). 없으면 그냥 사라진다")]
     public TreeFall 쓰러짐;
 
+    float 진행틱;
+
+    /// 이 자원에 맞는 도구의 쓰임새 — 나무는 도끼, 돌은 곡괭이
+    string 맞는쓰임 => kind == Stock.Kind.나무 ? "나무"
+                    : kind == Stock.Kind.돌 ? "돌" : null;
+
     void Chop(Vector3 방향)
     {
-        // perHit 이 0 이면 아무것도 안 나온다 — 선 나무를 패는 단계가 그렇다.
-        // 나무는 **통나무가 된 뒤에** 나온다 (인과와 행위)
-        if (perHit > 0) Stock.Add(kind, perHit);
+        // ★도구가 속도를 정한다 (헌법 5-4 "맨손도 되긴 하되 아주 느리다").
+        //   기존 hits 숫자는 「맞는 도구 기준」 그대로 — 맨손은 3타에 한 번만 진전된다.
+        float 일 = 3f;                                  // 도구 개념이 없는 것(사체 등)은 지금 그대로
+        if (맞는쓰임 != null)
+        {
+            var 도구 = 인벤.어느통에든도구(맞는쓰임);
+            if (도구 != null) { 일 = 도구.종.성능; 인벤.어느통에서든닳음(도구); }
+            else 일 = 1f;
+        }
+
         bool 흔들던중 = shake > 0f;
         shake = 1f;
         if (!흔들던중) StartCoroutine(흔들기());     // 이미 돌고 있으면 새로 안 띄운다
-        if (--hits > 0) return;
 
-        if (쓰러짐 != null) { 쓰러짐.시작(방향); Destroy(this); return; }
+        진행틱 += 일;
+        while (진행틱 >= 3f)
+        {
+            진행틱 -= 3f;
+            if (!한타(방향)) return;                     // 파괴가 걸렸으면 즉시 끝
+        }
+    }
+
+    /// 실제 한 히트 — 지급·소모·쓰러짐. **계속 패도 되면 true**
+    bool 한타(Vector3 방향)
+    {
+        // perHit 이 0 이면 아무것도 안 나온다 — 선 나무를 패는 단계가 그렇다.
+        // 나무는 **통나무가 된 뒤에** 나온다 (인과와 행위)
+        // ★돌은 인벤에 바로 꽂히지 않는다 — **돌맹이가 튀어 떨어지고, 줍는 것이 수확이다**
+        //   (9-0 인과: 결과는 행위에서. 2026-08-11 사용자 "주변에 툭툭 떨어지게")
+        if (kind == Stock.Kind.돌 && perHit > 0) { for (int i = 0; i < perHit; i++) 돌맹이튀기(); }
+        else if (perHit > 0) Stock.Add(kind, perHit);
+
+        if (--hits > 0) return true;
+
+        if (쓰러짐 != null) { 쓰러짐.시작(방향); Destroy(this); return false; }
         if (장애물치우기) Blocker.Remove(blockAt);
         Destroy(gameObject);
+        return false;
+    }
+
+    /// 돌맹이 하나가 포물선으로 툭 떨어져 줍이가 된다
+    void 돌맹이튀기()
+    {
+        float s = Random.Range(0.22f, 0.34f);
+        var 돌알 = Grey.Box(transform.parent, transform.position + Vector3.up * 0.6f,
+                 new Vector3(s, s * 0.7f, s * Random.Range(0.8f, 1.2f)),
+                 new Color(0.45f, 0.45f, 0.43f), "돌맹이", 0f, Random.value * 360f);
+        var 무 = 땅무더기.줍이(아이템표.찾기("돌"), 1, 돌알);
+
+        var 끝 = transform.position + new Vector3(Random.Range(-1f, 1f), 0f, Random.Range(-1f, 1f)).normalized
+                 * Random.Range(0.8f, 1.6f);
+        if (무 != null) 무.StartCoroutine(툭(돌알.transform, 끝 + Vector3.up * (s * 0.35f)));
+    }
+
+    /// 짧은 포물선 — 이펙트가 아니라 실제로 그 자리로 간다 (그림 = 판정)
+    static System.Collections.IEnumerator 툭(Transform t, Vector3 끝)
+    {
+        var 시작 = t.position;
+        for (float u = 0f; u < 1f; u += Time.deltaTime / 0.38f)
+        {
+            if (t == null) yield break;
+            var p = Vector3.Lerp(시작, 끝, u);
+            p.y += Mathf.Sin(u * Mathf.PI) * 0.55f;    // 포물선 아치
+            t.position = p;
+            yield return null;
+        }
+        if (t != null) t.position = 끝;
     }
 
     /// 앞쪽 가장 가까운 자원을 한 번 캔다
