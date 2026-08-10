@@ -41,6 +41,17 @@ public class HeroAttack : MonoBehaviour
     [Tooltip("맞으면 이만큼 비틀거린다 (초)")] public float 비틀 = 0.35f;
     [Tooltip("한 번 휘두를 때 쓰는 지구력")] public float 지구력소모 = 6f;
 
+    // ★★★**뾰족한 것으로는 기절시킬 수 없다** (2026-08-10 사용자 — *"뾰족한 무기가 아니라,
+    //   둔기같은 뭉뚱한 무기로만 때렸을때 기절하게 해줘, 말이안돼니까"*).
+    //   창으로 찔러서 기절시키는 건 말이 안 된다. **무기 고르기가 획득 방법을 가른다** —
+    //   죽이려면 뾰족한 것, 산 채로 잡으려면 뭉툭한 것.
+    //   ☆기획 5-1 의 *"어미를 기절시켜 꺼낸다(죽이면 안 된다)"* 가 여기서 열린다.
+    [Header("★무기 성질 — 뭉툭하냐 뾰족하냐")]
+    [Tooltip("몽둥이·돌 같은 둔기인가. 끄면(창·칼) 기절을 못 시킨다")]
+    public bool 둔기 = true;
+    [Tooltip("둔기로 한 대 칠 때 쌓이는 기절값")] public float 기절력 = 20f;
+    [Tooltip("밀 때 쌓이는 기절값 — 미는 건 언제나 뭉툭한 짓이다")] public float 밀기기절 = 12f;
+
     [Header("밀기 (우클릭)")]
     public float 밀기피해 = 2f;
     public float 밀기사거리 = 1.9f;
@@ -333,7 +344,11 @@ public class HeroAttack : MonoBehaviour
 
             맞은것.Add(c);
             c.TakeDamage(피해);
-            if (c.Alive) c.Knock(v, 넉백, 비틀);
+            if (c.Alive)
+            {
+                c.Knock(v, 넉백, 비틀);
+                if (둔기) c.기절값먹임(기절력);      // ★뾰족한 무기면 이 줄이 안 돈다
+            }
             hit = true;
         }
 
@@ -357,7 +372,11 @@ public class HeroAttack : MonoBehaviour
             if (d > 0.01f && Vector3.Dot(v / d, look) < cos) continue;
 
             c.TakeDamage(밀기피해);
-            if (c.Alive) c.Knock(v, 밀기넉백, 0.3f, 넘어짐);
+            if (c.Alive)
+            {
+                c.Knock(v, 밀기넉백, 0.3f, 넘어짐);
+                c.기절값먹임(밀기기절);              // 미는 건 언제나 뭉툭한 짓이다
+            }
         }
 
         // 미는 몸짓 — 무기를 앞으로 쭉

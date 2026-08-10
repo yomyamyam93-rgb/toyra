@@ -84,8 +84,47 @@ public class Critter : MonoBehaviour, IHittable
     //  생포 — **아이템으로 줍는 게 아니라 집까지 데려간다**
     // ══════════════════════════════════════════════════════════
 
-    /// 지쳤나 — 이 상태여야 붙잡을 수 있다. 넘어져 있거나 체력이 바닥나거나
-    public bool 지침 => Alive && side == Side.야생 && (넘어짐 || hp <= 종.체력 * 0.35f);
+    // ══════════════════════════════════════════════════════════
+    //  ★★기절 — **뾰족한 것으로는 기절시킬 수 없다** (2026-08-10 사용자 —
+    //  *"뾰족한 무기가 아니라, 둔기같은 뭉뚱한 무기로만 때렸을때 기절하게 해줘,
+    //    말이안돼니까"*). 창으로 찔러 기절시키는 건 말이 안 된다.
+    //
+    //  ☆체력과 **따로 도는 수치**다. 그래서 「죽이지 않고 제압한다」가 가능해진다 —
+    //    기획 5-1 의 *"어미를 기절시켜 꺼낸다(죽이면 안 된다)"* 가 여기서 열린다.
+    //  ☆큰 놈일수록 한계가 높다. 티라를 기절시키려면 몽둥이로 열일곱 대는 쳐야 한다.
+    // ══════════════════════════════════════════════════════════
+
+    /// 쌓인 기절값 — 둔기로 맞을 때만 오른다
+    [HideInInspector] public float 기절치;
+    /// 이만큼 쌓이면 엎어진다 — 무겁고 튼튼할수록 높다
+    public float 기절한계 => 30f + 종.무게 * 22f + 종.체력 * 0.25f;
+    /// 지금 기절해 엎어져 있나
+    public bool 기절중 { get; private set; }
+
+    [Header("기절")]
+    [Tooltip("안 맞고 있으면 기절값이 1초에 이만큼 식는다")] public float 기절식음 = 7f;
+    [Tooltip("엎어진 동안 기절값이 1초에 이만큼 빠진다 — 0 이 되면 깬다")] public float 기절빠짐 = 13f;
+
+    [Tooltip("무게가 밀림을 얼마나 막나 — 클수록 큰 놈이 꿈쩍 안 한다")]
+    [Range(1f, 2.5f)] public float 밀림지수 = 1.4f;
+
+    float 기절든지;                 // 엎어진 지 얼마나 됐나 (엎어지는 동작에 쓴다)
+
+    /// ★둔기로 맞았다 — 기절값이 쌓인다. 뾰족한 무기는 이걸 안 부른다
+    public void 기절값먹임(float 값)
+    {
+        if (값 <= 0f || !Alive || 기절중) return;      // 이미 엎어진 놈에겐 더 안 쌓는다
+        기절치 += 값;
+        if (기절치 < 기절한계) return;
+        기절치 = 기절한계;
+        기절중 = true;
+        기절든지 = 0f;
+        target = null;
+        지금상태(상태.어슬렁);                          // 하던 걸 다 놓는다
+    }
+
+    /// 지쳤나 — 이 상태여야 붙잡을 수 있다. 넘어져 있거나 **기절했거나** 체력이 바닥나거나
+    public bool 지침 => Alive && side == Side.야생 && (넘어짐 || 기절중 || hp <= 종.체력 * 0.35f);
 
     /// 지금 사람에게 붙잡혀 있나
     [HideInInspector] public bool 잡힘;
@@ -284,6 +323,18 @@ public class Critter : MonoBehaviour, IHittable
         if (잡힘) { Squash(dt); return; }
         // 매여 있는 동안도 마찬가지 — 먹이를 기다린다
         if (묶임) { 묶인채(dt); Squash(dt); return; }
+
+        // ★★기절이 제일 먼저다 — 엎어져 있는 동안은 아무것도 못 한다.
+        //   ☆**기절값이 완전히 바닥날 때까지** 엎어져 있는다 (사용자 확정)
+        if (기절중)
+        {
+            기절든지 += dt;
+            기절치 -= 기절빠짐 * dt;
+            그로기몸();
+            if (기절치 <= 0f) { 기절치 = 0f; 기절중 = false; 몸복구(); }
+            return;
+        }
+        if (기절치 > 0f) 기절치 = Mathf.Max(0f, 기절치 - 기절식음 * dt);   // 안 맞으면 식는다
 
         // ── 막는 타이머가 먼저다. 넘어져 있으면 아무 판단도 안 한다
         if (downT > 0f)
@@ -756,7 +807,16 @@ public class Critter : MonoBehaviour, IHittable
     public void Knock(Vector3 dir, float dist, float stagger, float down = 0f)
     {
         if (!Alive) return;
-        float 저항 = Mathf.Max(0.2f, 종.무게);
+
+        // ★★★**큰 놈이 너무 밀렸다** (2026-08-10 사용자 — "큰데도 밀려나는게 심한것들도 많고").
+        //
+        //   전에는 `저항 = 무게` 를 그냥 나눴다. 두 가지가 잘못이었다:
+        //    ① 무게가 1 보다 작은 놈(다람쥐 0.72)은 저항이 1 미만이라 **오히려 더 날아갔다**
+        //    ② 무게에 비례만 해서, 세 배 무거운 놈이 3분의 1 밀리는 데 그쳤다 —
+        //       덩치가 세 배면 꿈쩍도 안 해야 「크다」로 읽힌다
+        //   → **1 아래로는 안 내려가게 막고, 무게에 지수를 준다.**
+        //     실측(넉백 0.6m): 다람쥐 0.60 · 늑대 0.47 · 사슴 0.19 · 트리케 0.13 · 티라노 0.03
+        float 저항 = Mathf.Max(1f, Mathf.Pow(Mathf.Max(0.2f, 종.무게), 밀림지수));
         dist /= 저항; stagger /= 저항;
         down = 종.무게 > 3f ? 0f : down / 저항;      // 무거운 놈은 아예 안 넘어진다
 
@@ -813,6 +873,34 @@ public class Critter : MonoBehaviour, IHittable
         body.localRotation = bodyRot * Quaternion.Euler(바둥 * 0.5f, 0f, (86f * 누움 + 바둥) * downSign);
         // 옆으로 누우면 무게중심이 내려간다
         body.localPosition = bodyPos - Vector3.up * (bodyPos.y * 0.55f * 누움) + Vector3.up * 들썩;
+    }
+
+    /// ★그로기 — **엎어져서 낑낑댄다** (2026-08-10 사용자).
+    ///
+    ///   ☆넘어짐(`넘어진몸`)과 갈라 놓는다: 넘어짐은 **옆으로** 자빠져 바둥거리고,
+    ///     기절은 **앞으로** 엎어져 코를 박고 들썩인다. 둘이 같으면 무엇에 당했는지 못 읽는다.
+    ///   ☆낑낑대는 건 큰 몸짓이 아니라 **잔 떨림**이다 — 기운이 빠져 못 일어나는 것이라
+    ///     크게 움직이면 오히려 멀쩡해 보인다.
+    void 그로기몸()
+    {
+        if (body == null) return;
+        body.localScale = bodyScale;
+
+        const float 엎어지는데 = 0.28f;
+        float 엎 = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(기절든지 / 엎어지는데));
+
+        // 깨어날 때가 가까우면 들썩임이 커진다 — 곧 일어난다는 예고
+        float 깰때쯤 = 1f - Mathf.Clamp01(기절치 / Mathf.Max(1f, 기절한계));
+        float 낑 = Mathf.Sin(Time.time * (6.5f + 깰때쯤 * 5f) + GetInstanceID());
+        float 폭 = (0.35f + 깰때쯤 * 0.65f) * 엎;
+
+        // 앞으로 코를 박는다 (x 축으로 78°) + 잔 떨림
+        body.localRotation = bodyRot * Quaternion.Euler(78f * 엎 + 낑 * 3.2f * 폭,
+                                                        낑 * 5f * 폭,
+                                                        낑 * 3f * 폭);
+        // 엎어지면 무게중심이 내려가고, 숨 쉬듯 조금 들썩인다
+        float 들썩 = Mathf.Abs(Mathf.Sin(Time.time * 3.4f)) * 0.035f * 종.키 * 엎;
+        body.localPosition = bodyPos - Vector3.up * (bodyPos.y * 0.62f * 엎) + Vector3.up * 들썩;
     }
 
     void 몸복구()
