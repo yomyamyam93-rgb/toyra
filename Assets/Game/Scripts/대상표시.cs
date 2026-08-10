@@ -20,13 +20,12 @@ using UnityEngine;
 public class 대상표시 : MonoBehaviour
 {
     [Header("색 — 무엇을 할 수 있나")]
-    [Tooltip("캘 수 있다 (나무·바위)")] public Color 캘것 = new Color(0.95f, 0.95f, 0.9f);
+    [Tooltip("캘 수 있다 (나무·바위)")] public Color 캘것 = new Color(0.35f, 0.95f, 0.45f);   // ★초록 (2026-08-11 사용자)
     [Tooltip("★산 채로 잡을 수 있다 (지쳤거나 기절함)")] public Color 잡을것 = new Color(0.35f, 0.95f, 0.5f);
     [Tooltip("때릴 대상")] public Color 때릴것 = new Color(0.95f, 0.35f, 0.3f);
     [Tooltip("상호작용 (모닥불·무더기)")] public Color 만질것 = new Color(1f, 0.7f, 0.25f);
 
     [Header("두께")]
-    [Tooltip("껍데기를 몇 배로 부풀리나")] [Range(1.01f, 1.2f)] public float 부풀리기 = 1.05f;
     [Tooltip("몇 초마다 대상을 다시 찾나 (0.1 = 초당 10번)")] public float 찾는간격 = 0.08f;
 
     Hero hero;
@@ -35,7 +34,7 @@ public class 대상표시 : MonoBehaviour
     Transform 지금대상;
     GameObject 껍데기;
     float 찾을때까지;
-    static Material 재질;
+    static Material 마스크재질, 선재질;
 
     void Awake()
     {
@@ -137,71 +136,92 @@ public class 대상표시 : MonoBehaviour
         껍데기.transform.SetParent(대상, false);
         껍데기.transform.localPosition = Vector3.zero;
         껍데기.transform.localRotation = Quaternion.identity;
-        껍데기.transform.localScale = Vector3.one * 부풀리기;
+        껍데기.transform.localScale = Vector3.one;      // 부풀림은 셰이더 노멀 푸시가 맡는다
 
         재질만들기();
+        if (선재질 == null) return;
 
-        // 대상의 몸을 그대로 한 겹 복사한다
+        // ★겹은 **마스크·선 두 장씩** — 마스크(큐 2001)가 원본 실루엣을 스텐실에 굽고,
+        //   선(큐 2002)은 스텐실 밖에만 그려져 **최외곽만** 남는다 (2026-08-11 사용자
+        //   "모델링 안쪽까지 실루엣을 보이게 하면 안 됨"). 큐가 순서를 강제하므로
+        //   메시가 여럿이어도 안쪽 이음선이 안 샌다.
         foreach (var mf in 대상.GetComponentsInChildren<MeshFilter>(false))
         {
             var mr = mf.GetComponent<MeshRenderer>();
             if (mr == null || !mr.enabled || mf.sharedMesh == null) continue;
-
-            var g = new GameObject("겹");
-            g.transform.SetParent(껍데기.transform, false);
-            // 대상 기준의 자리를 그대로 물려받는다
-            g.transform.localPosition = 대상.InverseTransformPoint(mf.transform.position);
-            g.transform.localRotation = Quaternion.Inverse(대상.rotation) * mf.transform.rotation;
-            // ★부모가 대상이라 대상 스케일이 다시 곱해진다 — lossyScale 을 그대로 넣으면
-            //   껍데기가 스케일 **제곱**이 된다 (스케일 5짜리 나무 = 화면을 덮는 흰 덩어리, 2026-08-11)
-            var ls = mf.transform.lossyScale; var ts = 대상.lossyScale;
-            g.transform.localScale = new Vector3(ls.x / ts.x, ls.y / ts.y, ls.z / ts.z);
-
-            g.AddComponent<MeshFilter>().sharedMesh = mf.sharedMesh;
-            var r = g.AddComponent<MeshRenderer>();
-            r.sharedMaterial = 재질;
-            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            r.receiveShadows = false;
+            겹만들기(mf.transform, 대상, mf.sharedMesh, 마스크재질);
+            겹만들기(mf.transform, 대상, mf.sharedMesh, 선재질);
         }
 
         // 뼈가 있는 몸(리깅 모델)은 뼈를 나눠 써야 자세가 따라온다
         foreach (var sm in 대상.GetComponentsInChildren<SkinnedMeshRenderer>(false))
         {
             if (!sm.enabled || sm.sharedMesh == null) continue;
-            var g = new GameObject("겹");
-            g.transform.SetParent(껍데기.transform, false);
-            var r = g.AddComponent<SkinnedMeshRenderer>();
-            r.sharedMesh = sm.sharedMesh;
-            r.bones = sm.bones;                 // ★같은 뼈를 쓴다 — 동작까지 따라온다
-            r.rootBone = sm.rootBone;
-            r.sharedMaterial = 재질;
-            r.updateWhenOffscreen = true;
-            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            r.receiveShadows = false;
+            뼈겹만들기(sm, 마스크재질);
+            뼈겹만들기(sm, 선재질);
         }
 
         색칠(색);
     }
 
+    void 겹만들기(Transform 원본, Transform 대상, Mesh mesh, Material mat)
+    {
+        var g = new GameObject("겹");
+        g.transform.SetParent(껍데기.transform, false);
+        // 대상 기준의 자리를 그대로 물려받는다
+        g.transform.localPosition = 대상.InverseTransformPoint(원본.position);
+        g.transform.localRotation = Quaternion.Inverse(대상.rotation) * 원본.rotation;
+        // ★부모가 대상이라 대상 스케일이 다시 곱해진다 — lossyScale 을 그대로 넣으면
+        //   껍데기가 스케일 **제곱**이 된다 (스케일 5짜리 나무 = 화면을 덮는 흰 덩어리, 2026-08-11)
+        var ls = 원본.lossyScale; var ts = 대상.lossyScale;
+        g.transform.localScale = new Vector3(ls.x / ts.x, ls.y / ts.y, ls.z / ts.z);
+
+        g.AddComponent<MeshFilter>().sharedMesh = mesh;
+        var r = g.AddComponent<MeshRenderer>();
+        r.sharedMaterial = mat;
+        r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        r.receiveShadows = false;
+    }
+
+    void 뼈겹만들기(SkinnedMeshRenderer sm, Material mat)
+    {
+        var g = new GameObject("겹");
+        g.transform.SetParent(껍데기.transform, false);
+        var r = g.AddComponent<SkinnedMeshRenderer>();
+        r.sharedMesh = sm.sharedMesh;
+        r.bones = sm.bones;                 // ★같은 뼈를 쓴다 — 동작까지 따라온다
+        r.rootBone = sm.rootBone;
+        r.sharedMaterial = mat;
+        r.updateWhenOffscreen = true;
+        r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        r.receiveShadows = false;
+    }
+
     static void 재질만들기()
     {
-        if (재질 != null) return;
-        var sh = Shader.Find("Universal Render Pipeline/Unlit");
-        if (sh == null) sh = Shader.Find("Unlit/Color");
-        재질 = new Material(sh) { name = "외곽선" };
-        // ★앞면을 버린다 — 뒤집힌 껍질이라 **실루엣 바깥에만** 남는다
-        재질.SetFloat("_Cull", (float)UnityEngine.Rendering.CullMode.Front);
-        재질.renderQueue = 2000;
+        if (선재질 != null) return;
+        var sh = Shader.Find("토이라/대상외곽");
+        if (sh == null) { Debug.LogWarning("[대상표시] 토이라/대상외곽 셰이더가 없다 — Assets/Game/Shaders/대상외곽.shader"); return; }
+        마스크재질 = new Material(sh) { name = "대상외곽_마스크", renderQueue = 2001 };
+        마스크재질.SetFloat("_Mode", 0f);
+        마스크재질.SetFloat("_Cull", (float)UnityEngine.Rendering.CullMode.Back);
+        마스크재질.SetFloat("_ColorMask", 0f);                       // 색을 안 쓴다 — 스텐실만
+        마스크재질.SetFloat("_StencilComp", (float)UnityEngine.Rendering.CompareFunction.Always);
+        선재질 = new Material(sh) { name = "대상외곽_선", renderQueue = 2002 };
+        선재질.SetFloat("_Mode", 1f);
+        선재질.SetFloat("_Cull", (float)UnityEngine.Rendering.CullMode.Front);
+        선재질.SetFloat("_ColorMask", 15f);
+        선재질.SetFloat("_StencilComp", (float)UnityEngine.Rendering.CompareFunction.NotEqual);
     }
 
     MaterialPropertyBlock 값;
     void 색칠(Color c)
     {
-        if (껍데기 == null) return;
+        if (껍데기 == null || 선재질 == null) return;
         값 ??= new MaterialPropertyBlock();
-        값.SetColor("_BaseColor", c);
-        값.SetColor("_Color", c);
-        foreach (var r in 껍데기.GetComponentsInChildren<Renderer>(true)) r.SetPropertyBlock(값);
+        값.SetColor("_OutlineColor", c);
+        foreach (var r in 껍데기.GetComponentsInChildren<Renderer>(true))
+            if (r.sharedMaterial == 선재질) r.SetPropertyBlock(값);
     }
 
     void 치우기()

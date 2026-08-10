@@ -12,7 +12,7 @@ using UnityEngine;
 public class TreeFall : MonoBehaviour
 {
     [Tooltip("통나무를 다 패면 나오는 나무 총량")] public int 통나무값 = 6;
-    [Tooltip("쓰러지는 데 걸리는 시간 (초)")] public float 쓰러지는시간 = 1.1f;
+    [Tooltip("쓰러지는 데 걸리는 시간 (초)")] public float 쓰러지는시간 = 1.6f;   // ★"쭈우우욱" — t² 곡선이라 앞 절반이 길게 기운다
     [HideInInspector] public Vector3 선자리;
 
     bool 쓰러지는중;
@@ -68,7 +68,7 @@ public class TreeFall : MonoBehaviour
     void 통나무되기()
     {
         쓰러지는중 = false;
-        if (잎 != null) Destroy(잎.gameObject);
+        if (잎 != null) { 잎흩날리기(); Destroy(잎.gameObject); }
 
         gameObject.name = "통나무";
 
@@ -80,4 +80,46 @@ public class TreeFall : MonoBehaviour
 
         Destroy(this);
     }
+
+    /// 착지 순간 — 잎이 있던 자리에서 잎 조각이 펄럭이며 가라앉는다 (12장: 몸이 실제로 한 일)
+    void 잎흩날리기()
+    {
+        var 색 = new Color(0.32f, 0.46f, 0.22f);
+        var r = 잎.GetComponentInChildren<Renderer>();
+        if (r != null && r.sharedMaterial != null) 색 = r.sharedMaterial.color;
+        var 중심 = r != null ? r.bounds.center : 잎.position;
+        float 반 = r != null ? Mathf.Max(r.bounds.extents.x, r.bounds.extents.z) : 1.5f;
+
+        int n = Random.Range(9, 14);
+        for (int i = 0; i < n; i++)
+        {
+            float s = Random.Range(0.14f, 0.24f);
+            var at = 중심 + new Vector3(Random.Range(-반, 반), Random.Range(-0.4f, 0.4f), Random.Range(-반, 반));
+            var 조각 = Grey.Box(transform.parent, at, new Vector3(s, 0.02f, s * 0.7f),
+                                색, "잎조각", 0f, Random.value * 360f);
+            // ★숙주를 조각 자신에 둔다 — TreeFall 은 곧 Destroy 되어 코루틴이 같이 죽는다
+            var 숙주 = 조각.AddComponent<잎조각숙주>();
+            숙주.StartCoroutine(펄럭(조각.transform));
+        }
+    }
+
+    /// 흔들리며 가라앉고, 땅에 닿으면 잠시 뒤 사라진다
+    static System.Collections.IEnumerator 펄럭(Transform t)
+    {
+        float 위상 = Random.value * 10f, 돌기 = Random.Range(-160f, 160f);
+        float 흔들 = Random.Range(0.6f, 1.2f);
+        while (t != null && t.position.y > 0.03f)
+        {
+            var p = t.position;
+            p.y -= 0.55f * Time.deltaTime;
+            p.x += Mathf.Sin(Time.time * 3.1f + 위상) * 흔들 * Time.deltaTime;
+            t.position = p;
+            t.Rotate(0f, 돌기 * Time.deltaTime, 24f * Time.deltaTime);
+            yield return null;
+        }
+        if (t != null) Object.Destroy(t.gameObject, Random.Range(0.6f, 1.4f));
+    }
 }
+
+/// 잎 조각의 코루틴 숙주 — Update 없음, 코루틴만 든다 (공짜)
+public class 잎조각숙주 : MonoBehaviour {}
