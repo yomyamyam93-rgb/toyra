@@ -558,15 +558,16 @@ public class WorldGen : MonoBehaviour
         {
             var p = i == 0 ? c : Scatter(c, spread);
             // 바위지대의 큰 놈은 막고, 작은 놈은 넘어 다닌다 (위 「막는돌지름」과 같은 잣대)
-            if (Swap(바위프리팹, p, true, -1f)) continue;   // 크기가 판정을 정한다
+            // ★프리팹으로 서든 상자로 서든 **같이 캘 수 있어야 한다** — 나무의 「문 하나」
+            //   원칙과 같다 (프리팹 바위만 Harvest 가 안 붙어 아예 못 캤다, 2026-08-11)
+            var 세운 = Swap놈(바위프리팹, p, true, -1f);
+            if (세운 != null) { 바위채집(세운, p); continue; }
             float w = i == 0 ? Random.Range(3.5f, 5.5f) : Random.Range(1.2f, 2.8f);
             float h = w * Random.Range(0.7f, 1.4f);
             var rock = Grey.Box(holder, p + Vector3.up * (h * 0.42f),
                      new Vector3(w, h, w * Random.Range(0.7f, 1.3f)), C바위, "바위",
                      w >= 막는돌지름 ? w * 0.5f : 0f, Random.value * 360f);
-
-            var hv = rock.AddComponent<Harvest>();
-            hv.kind = Stock.Kind.돌; hv.hits = Mathf.RoundToInt(3f + w); hv.perHit = 2; hv.blockAt = p;
+            바위채집(rock, p);
 
             밑동풀(p, w * 0.7f, Random.Range(1, 4));
         }
@@ -1012,9 +1013,11 @@ public class WorldGen : MonoBehaviour
                     if (Swap(바위프리팹, at, true, -1f)) continue;  // 큰 놈은 막고 작은 놈은 넘어간다
                     float w = Random.Range(0.5f, 1.8f);
                     float h = w * Random.Range(0.5f, 1.0f);
-                    Grey.Box(holder, at + Vector3.up * (h * 0.4f),
+                    var 돌알 = Grey.Box(holder, at + Vector3.up * (h * 0.4f),
                              new Vector3(w, h, w * Random.Range(0.7f, 1.3f)), C바위, "돌멩이",
                              w >= 막는돌지름 ? w * 0.4f : 0f, Random.value * 360f);
+                    // ★작은 돌멩이는 주울 수 있다 — 새로 깔지 않고 있던 것을 줍이로 (사용자 확정)
+                    if (w < 막는돌지름) 땅무더기.줍이(아이템표.찾기("돌"), 1, 돌알);
                 }
             }
     }
@@ -1053,6 +1056,16 @@ public class WorldGen : MonoBehaviour
 
         // ★나무가 750그루라 그루당 서너 포기면 2천 개가 넘는다 — 켤 때 그게 곧 렉이다
         if (!심지) 밑동풀(p, tr * 1.6f, Random.Range(0, 3));
+
+        // ★나무 밑에 나뭇가지가 떨어져 있다 — 주우면 나무 ×1 (줍기 부트스트랩)
+        if (!심지 && Random.value < 0.45f)
+        {
+            var 가지자리 = p + new Vector3(Random.Range(-1.8f, 1.8f), 0f, Random.Range(-1.8f, 1.8f));
+            var 막대 = Grey.Box(holder, 가지자리 + Vector3.up * 0.035f,
+                     new Vector3(0.08f, 0.06f, Random.Range(0.7f, 1.1f)),
+                     new Color(0.40f, 0.29f, 0.17f), "나뭇가지", 0f, Random.value * 360f);
+            땅무더기.줍이(아이템표.찾기("나무"), 1, 막대);
+        }
     }
 
     /// 프리팹 나무를 **요청한 키에 맞춰** 세운다. 프리팹이 없으면 null.
@@ -1142,10 +1155,14 @@ public class WorldGen : MonoBehaviour
     ///   벌판을 지뢰밭으로 만들었고, 반대로 그냥 0 으로 두면 **커다란 돌도 통과**해 버린다.
     ///   → 짐작 대신 **렌더러 바운즈를 재서** 정한다 (「그림 = 판정」).
     bool Swap(GameObject[] set, Vector3 pos, bool randomYaw, float blockR)
+        => Swap놈(set, pos, randomYaw, blockR) != null;
+
+    /// Swap 과 같되 **세운 놈을 돌려준다** — 채집을 붙이려면 손에 쥐어야 한다
+    GameObject Swap놈(GameObject[] set, Vector3 pos, bool randomYaw, float blockR)
     {
-        if (set == null || set.Length == 0) return false;
+        if (set == null || set.Length == 0) return null;
         var pf = set[Random.Range(0, set.Length)];
-        if (pf == null) return false;
+        if (pf == null) return null;
         var rot = randomYaw ? Quaternion.Euler(0f, Random.value * 360f, 0f) : Quaternion.identity;
         var inst = Instantiate(pf, pos, rot, holder);
         환경손질(inst);
@@ -1157,7 +1174,23 @@ public class WorldGen : MonoBehaviour
             r = 폭 >= 막는돌지름 ? 폭 * 0.4f : 0f;
         }
         if (r > 0f) Blocker.Add(pos, r);
-        return true;
+        return inst;
+    }
+
+    /// 바위에 채집을 단다 — 크기는 짐작하지 않고 렌더러로 잰다
+    static void 바위채집(GameObject g, Vector3 p)
+    {
+        float w = 2f;
+        var rs = g.GetComponentsInChildren<Renderer>();
+        if (rs.Length > 0)
+        {
+            var b = rs[0].bounds;
+            foreach (var r in rs) b.Encapsulate(r.bounds);
+            w = Mathf.Max(b.size.x, b.size.z);
+        }
+        var hv = g.AddComponent<Harvest>();
+        // ★perHit = 한 히트에 튀는 돌맹이 수 (돌은 인벤 직행이 아니라 튀어 떨어진다)
+        hv.kind = Stock.Kind.돌; hv.hits = Mathf.RoundToInt(3f + w); hv.perHit = 1; hv.blockAt = p;
     }
 
     static readonly Dictionary<GameObject, float> 폭캐시 = new Dictionary<GameObject, float>();

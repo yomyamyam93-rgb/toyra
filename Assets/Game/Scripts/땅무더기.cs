@@ -18,13 +18,20 @@ public class 땅무더기 : MonoBehaviour
     Transform 더미;
     int 지난개수 = -1;
 
+    /// ★프롭(막대·돌멩이)이 이미 모양이면 더미 상자를 안 얹는다
+    [HideInInspector] public bool 프롭모양;
+
     void OnEnable() { All.Add(this); }
     void OnDisable() { All.Remove(this); }
 
-    void Update()
+    // ★★`Update` 를 안 쓴다 — 줍이가 수백 개 깔리는데, 아무것도 안 하는 `Update` 도
+    //   수만 개면 렉이다 (toyrassic 실측 38.9ms). 내용이 바뀌는 순간(넣기·꺼내기·떨구기)에
+    //   부르는 쪽이 `갱신()` 을 부른다.
+    public void 갱신()
     {
         // 빈 무더기는 사라진다 (다 주워 갔으면 자리를 남길 이유가 없다)
         if (속.것들.Count == 0) { Destroy(gameObject); return; }
+        if (프롭모양) return;
         if (속.것들.Count != 지난개수) { 지난개수 = 속.것들.Count; 모양갱신(); }
     }
 
@@ -82,13 +89,23 @@ public class 땅무더기 : MonoBehaviour
     public static void 떨구기(아이템종 종, int 개수, Vector3 자리)
     {
         if (종 == null || 개수 <= 0) return;
-        여기(자리).속.넣기(종, 개수);
+        var 무 = 여기(자리); 무.속.넣기(종, 개수); 무.갱신();
     }
 
     /// 덩이 하나를 내려놓는다
     public static void 내려놓기(아이템 it, Vector3 자리)
     {
         if (it == null) return;
-        여기(자리).속.받기(it);
+        var 무 = 여기(자리); 무.속.받기(it); 무.갱신();
+    }
+
+    /// ★줍이 — 프롭(막대·돌멩이) 하나가 곧 무더기 하나다. 다 집으면 프롭째 사라진다
+    public static 땅무더기 줍이(아이템종 종, int 개수, GameObject 프롭)
+    {
+        if (종 == null || 프롭 == null) return null;
+        var p = 프롭.AddComponent<땅무더기>();
+        p.프롭모양 = true;
+        p.속.넣기(종, 개수);
+        return p;
     }
 }

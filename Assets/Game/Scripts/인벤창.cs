@@ -205,7 +205,7 @@ public class 인벤창 : MonoBehaviour
                 if (위에 && Event.current.type == EventType.MouseDown)
                 {
                     if (Event.current.button == 1) 메뉴열기(it, 것, 내것인가, 무더기);   // ★우클릭
-                    else 옮기기(it, 것, 내것인가, Event.current.shift);
+                    else { 옮기기(it, 것, 내것인가, Event.current.shift); if (무더기 != null) 무더기.갱신(); }
                     Event.current.Use();
                 }
                 yy += 26f;
