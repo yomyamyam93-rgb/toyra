@@ -38587,6 +38587,9 @@ MonoBehaviour:
   "\uC228\uB3CC\uB9AC\uAE30": 0.25
   stamina: 100
   MoveMul: 1
+  "\uC0DD\uC874\uC774\uC18D": 1
+  "\uC0DD\uC874\uD798": 1
+  "\uC0DD\uC874\uC9C0\uAD6C\uB825": 1
   "\uBB36\uC784": 0
 --- !u!4 &1648256978
 Transform:
