@@ -49,15 +49,25 @@ public class HUD : MonoBehaviour
             if (t != null)
             {
                 float bx = Screen.width * 0.5f - 90f;
-                Bar(bx, Screen.height - 110f, 180f, 10f, t.신뢰 / 100f, new Color(0.4f, 0.8f, 0.5f));
+                bool 내펫 = t.side == Critter.Side.내편;
+
+                // ★내 펫은 신뢰가 아니라 **자란 정도**를 본다 — 이제 관심사가 "크느냐"다
+                if (내펫)
+                    Bar(bx, Screen.height - 110f, 180f, 10f, t.자람, new Color(0.55f, 0.75f, 0.95f));
+                else
+                    Bar(bx, Screen.height - 110f, 180f, 10f, t.신뢰 / 100f, new Color(0.4f, 0.8f, 0.5f));
+
                 // 묶여 있으면 굶주림도 같이 — 안 먹이면 죽는다
                 if (t.묶임)
                     Bar(bx, Screen.height - 96f, 180f, 6f, 1f - t.굶주림,
                         Color.Lerp(new Color(0.85f, 0.25f, 0.2f), new Color(0.75f, 0.6f, 0.3f), 1f - t.굶주림));
+
                 var ns = new GUIStyle(GUI.skin.label) { fontSize = 14, alignment = TextAnchor.MiddleCenter };
                 ns.normal.textColor = Color.white;
+                string 값 = 내펫 ? (t.새끼 ? $"{Mathf.RoundToInt(t.자람 * 100f)}%" : "")
+                                 : $"{Mathf.RoundToInt(t.신뢰)}";
                 GUI.Label(new Rect(bx, Screen.height - 132f, 180f, 20f),
-                          $"{t.종.이름}  {Mathf.RoundToInt(t.신뢰)}", ns);
+                          $"{t.종.이름}  {값}", ns);
             }
             if (!string.IsNullOrEmpty(carry.알림))
             {

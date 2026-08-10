@@ -195,6 +195,9 @@ public class Wildlife : MonoBehaviour
     [Tooltip("스폰마다 콘솔에 무엇을 넣었는지 찍는다 — 모델이 잘못 들어가면 여기서 바로 보인다")]
     public bool 스폰로그 = true;
 
+    [Tooltip("★태생 종은 새끼를 데리고 나온다 (끄면 예전처럼 성체만 나온다)")]
+    public bool 어미새끼 = true;
+
     void 홀로생성(Vector3 heroPos)
     {
         // ★★**화면 밖에서 생긴다** (2026-08-07 사용자 "화면 안에서 생성되는 게 보이지 않게").
@@ -244,6 +247,22 @@ public class Wildlife : MonoBehaviour
         }
 
         var c = Make(s, at, Critter.Side.야생, null);   // 무리 없음 — 한 마리가 전부다
+
+        // ★★★**새끼가 어미 옆에 붙어 나온다** (기획 8장 2번 — "태생 + 어미+새끼 + 생포".
+        //   `새끼비율`·`새끼로()` 는 진작 있었는데 **아무도 안 불렀다** — 여태 성체만 나왔다).
+        //
+        //   ☆이게 길들이기의 문턱을 정한다: 성체는 먹이값 15 라 일곱 번을 먹여야 하고,
+        //     새끼는 34 라 세 번이면 된다. **"새끼를 노린다"는 사냥이 여기서 생긴다.**
+        //   ☆무리(`Pack`)를 되살리는 게 아니다 — 어미 하나와 새끼 하나뿐이다.
+        if (어미새끼 && s.번식 == SpeciesDef.번식식.태생 && Random.value < s.새끼비율)
+        {
+            var 애정의 = s.새끼로();
+            var 옆 = at + new Vector3(Random.Range(-2f, 2f), 0f, Random.Range(-2f, 2f));
+            var 애 = Make(애정의, 옆, Critter.Side.야생, null);
+            애.새끼로설정(s);                            // 다 크면 어미의 몸이 된다
+            if (스폰로그) Debug.Log($"[야생] {애정의.이름} ← 어미 {s.이름} 옆에");
+        }
+
         if (스폰로그)
             Debug.Log(string.Format("[야생] {0} ← 모델 {1} · 키 {2:F2}m · 자리 {3:F0},{4:F0} (화면반경 밖 {5:F0}m)",
                 s.이름, s.모델 != null ? s.모델.name : "★상자(모델없음)", s.키, at.x, at.z, 근));
@@ -254,6 +273,10 @@ public class Wildlife : MonoBehaviour
     {
         var home = WorldGrid.Center;
         if ((new Vector2(p.x - home.x, p.z - home.z)).sqrMagnitude < 집안전반경 * 집안전반경) return null;
+
+        // ★불 옆에는 생기지 않는다 — 생기자마자 놀라 달아나는 그림은 고장처럼 보인다.
+        //   (겁내는 건 `Critter.불에놀람` 이 하고, 여기서는 애초에 안 놓는다)
+        if (모닥불.무서운불(p) != null) return null;
 
         var land = world != null ? world.KindAt(p) : WorldGen.Land.빈들판;
 

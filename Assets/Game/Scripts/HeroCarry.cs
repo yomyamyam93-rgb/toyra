@@ -170,8 +170,8 @@ public class HeroCarry : MonoBehaviour
         Critter best = null; float bd = 먹이거리 * 먹이거리;
         foreach (var c in Critter.All)
         {
-            if (c == null || !c.Alive || c.side != Critter.Side.야생) continue;
-            if (!c.묶임 && !c.지침) continue;               // 멀쩡한 놈은 안 받아먹는다
+            if (c == null || !c.Alive) continue;
+            if (!먹일수있나(c)) continue;
             float d2 = (c.transform.position - transform.position).sqrMagnitude;
             if (d2 > bd) continue;
             bd = d2; best = c;
@@ -184,6 +184,15 @@ public class HeroCarry : MonoBehaviour
         if (!구움 && !Stock.Take(Stock.Kind.고기, 1)) { 띄움("고기가 없다"); return; }
 
         best.먹이받음(구움 ? 구운것배 : 1f);
+
+        // ★내 펫은 이미 내 것이다 — 먹이는 건 「기르는」 일이지 「길들이는」 일이 아니다
+        if (best.side == Critter.Side.내편)
+        {
+            띄움(best.새끼 ? $"{best.종.이름}  {Mathf.RoundToInt(best.자람 * 100f)}%"
+                           : best.종.이름);
+            return;
+        }
+
         if (best.신뢰 >= 100f)
         {
             best.묶임 = false;
@@ -193,14 +202,23 @@ public class HeroCarry : MonoBehaviour
         else 띄움($"{best.종.이름}  {Mathf.RoundToInt(best.신뢰)}");
     }
 
+    /// ★누구에게 먹일 수 있나
+    ///   · 야생 — **묶였거나 지친** 놈만. 멀쩡한 놈은 안 받아먹는다
+    ///   · 내 펫 — **아직 크는 중이거나 다친** 놈. 길들인 뒤에도 먹여야 큰다 (기획 5-2 2층)
+    bool 먹일수있나(Critter c)
+    {
+        if (c.side == Critter.Side.야생) return c.묶임 || c.지침;
+        return c.새끼 || c.hp < c.종.체력 * 0.99f;
+    }
+
     /// 가까이 있는 길들이는 중인 놈 — 화면에 신뢰를 띄우려고 찾는다
     public Critter 가까운대상()
     {
         Critter best = null; float bd = 먹이거리 * 먹이거리 * 2.2f;
         foreach (var c in Critter.All)
         {
-            if (c == null || !c.Alive || c.side != Critter.Side.야생) continue;
-            if (!c.묶임 && !c.지침) continue;
+            if (c == null || !c.Alive) continue;
+            if (!먹일수있나(c)) continue;
             float d2 = (c.transform.position - transform.position).sqrMagnitude;
             if (d2 > bd) continue;
             bd = d2; best = c;
