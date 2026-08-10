@@ -73,7 +73,7 @@ public class 모닥불 : MonoBehaviour
     public bool 섰다 => 지금 == 단계.섬;
 
     /// 굽는 중인 고기 — 개수와 지금 것의 남은 시간
-    public int 굽는중 { get; private set; }
+    public int 굽는중 => 굽는것.Count;
     public float 굽기남음 { get; private set; }
 
     /// 방금 벌어진 일 — 화면에 잠깐 띄운다
@@ -404,27 +404,39 @@ public class 모닥불 : MonoBehaviour
 
     // ────────────────────────────────────────── 요리
 
-    /// 생고기 하나를 불에 올린다
-    public bool 굽기시작()
+    /// ★인벤에서 우클릭으로 올린다 — 무엇이 되는지는 **아이템 표**가 정한다
+    ///   (`제작창` 에 "고기 굽기" 를 박아 두지 않는다)
+    public void 올리기(아이템종 될것)
     {
-        if (!탄다) { 띄움("불이 없다"); return false; }
-        if (!Stock.Take(Stock.Kind.고기, 1)) { 띄움("고기가 없다"); return false; }
-        if (굽는중 == 0) 굽기남음 = 굽는시간;
-        굽는중++;
-        return true;
+        if (!탄다 || 될것 == null) return;
+        굽는것.Add(될것);
+        if (굽는것.Count == 1) 굽기남음 = 굽는시간;
     }
+
+    /// ★인벤에서 우클릭으로 땔감을 넣는다 (재료는 부르는 쪽이 이미 뺐다)
+    public void 땔감받기()
+    {
+        bool 꺼져있었다 = 연료 <= 0f;
+        연료 = Mathf.Min(최대연료, 연료 + 나무당);
+        if (꺼져있었다) 불켬();
+        띄움($"{Mathf.CeilToInt(연료 / 60f)}분");
+    }
+
+    readonly List<아이템종> 굽는것 = new List<아이템종>();
+
 
     /// ★불이 꺼지면 굽던 것도 멈춘다 (인과) — 도로 타기 시작하면 이어서 구워진다
     void 굽기진행(float dt)
     {
-        if (굽는중 <= 0) return;
+        if (굽는것.Count == 0) return;
         굽기남음 -= dt;
         if (굽기남음 > 0f) return;
 
-        굽는중--;
-        Stock.Add(Stock.Kind.구운고기, 1);
-        굽기남음 = 굽는중 > 0 ? 굽는시간 : 0f;
-        띄움("구웠다");
+        var 된것 = 굽는것[0];
+        굽는것.RemoveAt(0);
+        인벤.어디든넣기(된것, 1);
+        굽기남음 = 굽는것.Count > 0 ? 굽는시간 : 0f;
+        띄움(된것.이름);
     }
 
     void 띄움(string s) { 알림 = s; 알림T = 2.2f; }

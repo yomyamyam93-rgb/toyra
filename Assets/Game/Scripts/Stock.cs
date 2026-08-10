@@ -25,7 +25,7 @@ public static class Stock
         }
     }
 
-    public static int Get(Kind k) => 인벤.내것.개수(이름(k));
+    public static int Get(Kind k) => 인벤.다합쳐개수(이름(k));
 
     /// ★넣는다. **한도를 넘어도 다 들어간다 — 대신 못 걷는다** (`인벤.짐배`).
     ///   무엇을 버릴지는 게임이 아니라 **내가 고른다**
@@ -33,11 +33,11 @@ public static class Stock
     {
         var 종 = 아이템표.찾기(이름(k));
         if (종 == null || n <= 0) return;
-        인벤.내것.넣기(종, n);
+        인벤.어디든넣기(종, n);
         Recent = k; RecentAt = Time.time;
     }
 
-    public static bool Take(Kind k, int n) => 인벤.내것.꺼내기(이름(k), n);
+    public static bool Take(Kind k, int n) => 인벤.다합쳐꺼내기(이름(k), n);
 
     public static void Clear() { 인벤.비우기(); }
 

@@ -18,11 +18,6 @@ public class 제작창 : MonoBehaviour
     [Tooltip("모닥불 터를 몸에서 얼마나 앞에 놓나 (m)")] public float 놓는거리 = 2.6f;
     [Tooltip("이 거리 안의 모닥불을 「앞에 있는 것」으로 본다 (m)")] public float 닿는거리 = 3f;
 
-    [Header("먹기")]
-    [Tooltip("구운 고기가 채워 주는 체력")] public float 구운것 = 26f;
-    [Tooltip("생고기가 채워 주는 체력 — 굽는 게 이득이어야 불을 땐다")] public float 날것 = 7f;
-    [Tooltip("구운 고기가 배고픔을 이만큼 내린다")] public float 구운것배부름 = 0.5f;
-    [Tooltip("생고기가 배고픔을 이만큼 내린다 — 굽는 게 이득이어야 한다")] public float 날것배부름 = 0.22f;
 
     public bool 열림 { get; private set; }
 
@@ -77,27 +72,11 @@ public class 제작창 : MonoBehaviour
         목록.Clear();
         var 불 = 모닥불.가까운것(transform.position, 닿는거리);
 
-        // ── 모닥불 앞
-        if (불 != null && 불.섰다)
-        {
-            int 나무 = Stock.Get(Stock.Kind.나무);
-            목록.Add(new 항목
-            {
-                제목 = "땔감 넣기",
-                곁들임 = 불.탄다 ? $"나무 {나무}   불 {Mathf.CeilToInt(불.연료 / 60f)}분" : $"나무 {나무}   꺼져 있다",
-                됨 = 나무 > 0,
-                하기 = () => 불.땔감넣기()
-            });
-
-            int 고기 = Stock.Get(Stock.Kind.고기);
-            목록.Add(new 항목
-            {
-                제목 = "고기 굽기",
-                곁들임 = 불.굽는중 > 0 ? $"고기 {고기}   굽는 중 {불.굽는중}" : $"고기 {고기}",
-                됨 = 고기 > 0 && 불.탄다,
-                하기 = () => 불.굽기시작()
-            });
-        }
+        // ★★불 앞의 행동(땔감·굽기·말리기)은 **여기 없다.**
+        //   2026-08-10 사용자 — *"특정 행동을 쳐넣지 말고, 좀보이드처럼 탬창 열어서
+        //   사용하는 방식으로 해야지"*. → 인벤(Tab)에서 그 물건을 **우클릭**하면 뜬다.
+        //   ☆제작창에 남는 것은 **재료를 써서 새로 만드는 것**뿐이다 (좀보이드도 그렇다)
+        if (불 != null && 불.섰다) { }
         // ── 짓다 만 터 앞 — 여기선 창에 할 일이 없다 (F 로 붓는다)
         else if (불 != null)
         {
@@ -121,51 +100,9 @@ public class 제작창 : MonoBehaviour
                 하기 = 터놓기
             });
 
-            // ★길 표식 — 나무 둘이면 박는다. **길은 저절로 안 생기고 내가 낸다**
-            목록.Add(new 항목
-            {
-                제목 = "표식",
-                곁들임 = $"나무 {나무}/{표식나무}",
-                됨 = 나무 >= 표식나무,
-                하기 = 표식박기
-            });
         }
 
         // ── 먹기 — 어디서든
-        // ★배가 부르거나 다쳤으면 먹을 값이 있다 — 둘 다 멀쩡하면 흐리게
-        var 삶 = GetComponent<생존>();
-        bool 배고프다 = 삶 != null && 삶.배고픔 > 0.02f;
-        bool 다쳤다 = hero.hp < hero.maxHp;
-
-        int 구움 = Stock.Get(Stock.Kind.구운고기);
-        if (구움 > 0)
-            목록.Add(new 항목
-            {
-                제목 = "구운 고기",
-                곁들임 = $"{구움}",
-                됨 = 배고프다 || 다쳤다,
-                하기 = () => 먹기(Stock.Kind.구운고기, 구운것, 구운것배부름)
-            });
-
-        int 날 = Stock.Get(Stock.Kind.고기);
-        if (날 > 0)
-            목록.Add(new 항목
-            {
-                제목 = "생고기",
-                곁들임 = $"{날}",
-                됨 = 배고프다 || 다쳤다,
-                하기 = () => 먹기(Stock.Kind.고기, 날것, 날것배부름)
-            });
-    }
-
-    [Tooltip("표식 하나에 드는 나무")] public int 표식나무 = 2;
-
-    /// ★길 표식을 앞에 박는다 — 이건 재료를 붓는 단계 없이 바로 선다.
-    ///   모닥불과 달리 **작고 값이 싸서** 여러 개를 빨리 박아야 길이 되기 때문이다
-    void 표식박기()
-    {
-        if (!Stock.Take(Stock.Kind.나무, 표식나무)) { 띄움("나무가 모자란다"); return; }
-        표식.박기(transform.position + transform.forward * 1.2f);
     }
 
     /// ★터만 놓는다. 재료는 그 앞에서 F 로 붓는다 — 저절로 서지 않는다
@@ -176,15 +113,6 @@ public class 제작창 : MonoBehaviour
 
         모닥불.터놓기(앞);
         열림 = false;
-    }
-
-    void 먹기(Stock.Kind 무엇, float 회복, float 배부름)
-    {
-        if (!Stock.Take(무엇, 1)) return;
-        hero.hp = Mathf.Min(hero.maxHp, hero.hp + 회복);
-        var 삶 = GetComponent<생존>();
-        if (삶 != null) 삶.먹었다(배부름);
-        띄움($"+{Mathf.RoundToInt(회복)}");
     }
 
     void 띄움(string s) { 알림 = s; 알림T = 2f; }

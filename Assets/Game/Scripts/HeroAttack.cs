@@ -320,6 +320,10 @@ public class HeroAttack : MonoBehaviour
         // 몸은 `HeroHold` 가 골반·척추로 돌린다 (여기서 또 돌리면 두 번 돈다)
     }
 
+    /// 지금 쥔 것의 사거리 (맨손이면 인스펙터 값)
+    public float 지금사거리 => 인벤.쥔것 != null && 인벤.쥔것.종.무기 && 인벤.쥔것.종.무기사거리 > 0f
+                              ? 인벤.쥔것.종.무기사거리 : 사거리;
+
     /// a→b 각도 구간을 쓸면서, 그 안에 든 놈을 한 번씩 맞힌다
     void Sweep(float a, float b)
     {
@@ -336,19 +340,27 @@ public class HeroAttack : MonoBehaviour
 
             var v = c.transform.position - p; v.y = 0f;
             float d = v.magnitude;
-            if (d > 사거리 + c.Radius) continue;
+            if (d > 지금사거리 + c.Radius) continue;
 
             // 내 시선을 0° 로 본 상대 각도
             float ang = Vector3.SignedAngle(look, d > 0.01f ? v / d : look, Vector3.up);
             if (ang < lo - 6f || ang > hi + 6f) continue;
 
             맞은것.Add(c);
-            c.TakeDamage(피해 * Mathf.Clamp(hero.생존힘, 0.2f, 1f));   // 굶으면 힘이 빠진다
+            // ★★수치는 **쥔 무기**에서 나온다 (`인벤.쥔것`) — 코드에 안 박는다.
+            //   맨손이면 인스펙터 기본값을 쓴다
+            var 쥠 = 인벤.쥔것;
+            float 낼피해 = (쥠 != null && 쥠.종.무기 ? 쥠.종.무기피해 : 피해)
+                          * Mathf.Clamp(hero.생존힘, 0.2f, 1f);       // 굶으면 힘이 빠진다
+            float 낼기절 = 쥠 != null && 쥠.종.무기 ? 쥠.종.무기기절 : (둔기 ? 기절력 : 0f);
+
+            c.TakeDamage(낼피해);
             if (c.Alive)
             {
                 c.Knock(v, 넉백, 비틀);
-                if (둔기) c.기절값먹임(기절력);      // ★뾰족한 무기면 이 줄이 안 돈다
+                if (낼기절 > 0f) c.기절값먹임(낼기절);   // ★뾰족한 무기(창)는 0 이라 안 돈다
             }
+            if (쥠 != null) 인벤.도구닳음쥔것();
             hit = true;
         }
 

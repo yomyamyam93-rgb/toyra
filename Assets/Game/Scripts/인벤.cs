@@ -20,24 +20,7 @@ public class 인벤
     public float 무게비 => 한도 <= 0f ? 0f : 무게 / 한도;
     public bool 넘침 => 한도 > 0f && 무게 > 한도;
 
-    /// ★★★**넘치면 못 걷는다 — 떨어뜨리지 않는다** (2026-08-10 사용자 —
-    ///   *"무게한도를 넘으면 떨어지게 하지 말고, 걷지 못하게 하면 되지"*).
-    ///
-    ///   전에는 한도를 넘으면 **못 줍거나 발밑에 떨어졌다.** 그건 게임이 대신 결정해
-    ///   버리는 것이다 — 무엇을 버릴지는 **내가 골라야** 한다.
-    ///   ☆기획의 태도 그대로다: *"규칙으로 막지 않고 대가로 정해지게 한다."*
-    ///     펫을 몇 마리 데려가든 자유인 것과 같다.
-    ///   ☆스스로 풀린다 — 못 걸으면 Tab 을 열어 뭘 버릴지 고르게 된다.
-    public float 짐배
-    {
-        get
-        {
-            if (한도 <= 0f) return 1f;
-            float r = 무게비;
-            if (r > 1f) return 0f;                                   // 넘치면 발이 안 나간다
-            return Mathf.Lerp(1f, 0.55f, Mathf.InverseLerp(0.6f, 1f, r));   // 무거우면 느려진다
-        }
-    }
+    // ★넘치면 못 걷는다 — 통 전부를 합쳐서 따진다 (아래 `짐배` 참고)
 
     // ══════════════════════════════════════════════════════════
 
@@ -142,7 +125,7 @@ public class 인벤
         for (int i = 0; i < 것들.Count; i++)
         {
             var it = 것들[i];
-            if (it.종 == null || it.종.쓰임 != 쓰임) continue;
+            if (it.종 == null || it.종.도구쓰임 != 쓰임) continue;
             if (it.종.내구 > 0f && it.내구 <= 0f) continue;      // 부러진 것은 안 쓴다
             if (best == null || it.종.성능 > best.종.성능) best = it;
         }
@@ -159,9 +142,115 @@ public class 인벤
 
     // ══════════════════════════════════════════════════════════
 
-    /// 사람이 지고 다니는 것
-    public static readonly 인벤 내것 = new 인벤 { 한도 = 14f };
+    /// 이 통이 어느 가방에서 나왔나 (주머니는 null)
+    public 아이템 가방아이템;
+    public string 이름 = "주머니";
+
+    // ══════════════════════════════════════════════════════════
+    //  ★★짐 — **통이 여럿이다** (2026-08-10 사용자 —
+    //  *"좀보이드는 어떤 가방을 가지고 있냐에 따라 가방마다 인벤토리가 생성되지 않음?"*)
+    //
+    //  맞다. 좀보이드는 왼쪽 패널 위에 **통 버튼 줄**이 있고, 착용한 가방마다
+    //  제 무게 한도를 가진 칸이 따로 생긴다. 그전까지 여기는 **통이 하나뿐**이었다.
+    // ══════════════════════════════════════════════════════════
+
+    /// 맨몸 주머니 — 가방이 없어도 조금은 들고 다닌다
+    public static readonly 인벤 주머니 = new 인벤 { 한도 = 6f, 이름 = "주머니" };
+
+    /// 지금 들고 다니는 통 전부 (주머니 + 착용한 가방들)
+    public static readonly List<인벤> 통들 = new List<인벤> { 주머니 };
+
+    /// ★손에 쥔 것 — `HeroAttack` 이 여기서 무기 수치를 읽는다
+    public static 아이템 쥔것;
+
+    /// 옛 이름 — 부르는 데가 많아 남겨 둔다. **주머니를 가리킨다** (9장 3조)
+    public static 인벤 내것 => 주머니;
+
+    /// 통 전부를 합친 무게·한도
+    public static float 총무게 { get { float w = 0f; for (int i = 0; i < 통들.Count; i++) w += 통들[i].무게; return w; } }
+    public static float 총한도 { get { float w = 0f; for (int i = 0; i < 통들.Count; i++) w += 통들[i].한도; return w; } }
+    public static bool 총넘침 => 총무게 > 총한도;
+    public static float 총무게비 => 총한도 <= 0f ? 0f : 총무게 / 총한도;
+
+    /// ★짐이 무거우면 느려지고, 넘으면 발이 안 나간다 (사용자 확정)
+    public static float 짐배
+    {
+        get
+        {
+            float r = 총무게비;
+            if (r > 1f) return 0f;
+            return Mathf.Lerp(1f, 0.55f, Mathf.InverseLerp(0.6f, 1f, r));
+        }
+    }
+
+    /// 어느 통에든 넣는다 — 빈자리가 있는 통부터
+    public static int 어디든넣기(아이템종 종, int 개수 = 1)
+    {
+        for (int i = 0; i < 통들.Count; i++)
+        {
+            int n = 통들[i].넣기(종, 개수);
+            if (n > 0) return n;
+        }
+        return 주머니.넣기(종, 개수);
+    }
+
+    /// 통 전부에서 개수를 센다
+    public static int 다합쳐개수(string 이름)
+    {
+        int n = 0;
+        for (int i = 0; i < 통들.Count; i++) n += 통들[i].개수(이름);
+        return n;
+    }
+
+    /// 통 전부에서 꺼낸다
+    public static bool 다합쳐꺼내기(string 이름, int 개수 = 1)
+    {
+        if (다합쳐개수(이름) < 개수) return false;
+        int 남음 = 개수;
+        for (int i = 0; i < 통들.Count && 남음 > 0; i++)
+        {
+            int 있음 = 통들[i].개수(이름);
+            if (있음 <= 0) continue;
+            int 뺄것 = Mathf.Min(남음, 있음);
+            if (통들[i].꺼내기(이름, 뺄것)) 남음 -= 뺄것;
+        }
+        return 남음 <= 0;
+    }
+
+    /// ★가방을 멘다 — **통이 하나 늘어난다**
+    public static void 가방메기(아이템 it, 인벤 있던통)
+    {
+        if (it == null || it.종 == null || it.종.가방 <= 0f) return;
+        if (있던통 != null) 있던통.빼기(it);
+        통들.Add(new 인벤 { 한도 = it.종.가방, 이름 = it.종.이름, 가방아이템 = it });
+    }
+
+    /// 가방을 벗는다 — 속에 든 것은 주머니로, 안 들어가면 그 자리에 남는다
+    public static void 가방벗기(인벤 통)
+    {
+        if (통 == null || 통.가방아이템 == null) return;
+        통들.Remove(통);
+        주머니.받기(통.가방아이템);
+        for (int i = 통.것들.Count - 1; i >= 0; i--) 주머니.받기(통.것들[i]);
+        통.것들.Clear();
+    }
+
+    /// 쥔 것이 닳는다 — 다 닳으면 부러져 사라진다
+    public static void 도구닳음쥔것(float 만큼 = 1f)
+    {
+        var it = 쥔것;
+        if (it == null || it.종.내구 <= 0f) return;
+        it.내구 -= 만큼;
+        if (it.내구 > 0f) return;
+        for (int i = 0; i < 통들.Count; i++) 통들[i].것들.Remove(it);
+        쥔것 = null;
+    }
 
     /// 판이 바뀌면 비운다 (`플레이초기화` 가 부른다 — 도메인 리로드를 껐기 때문)
-    public static void 비우기() { 내것.것들.Clear(); }
+    public static void 비우기()
+    {
+        주머니.것들.Clear();
+        통들.Clear(); 통들.Add(주머니);
+        쥔것 = null;
+    }
 }

@@ -136,7 +136,7 @@ public class Hero : MonoBehaviour, IHittable
         else if (지쳤다 && stamina >= maxStamina * 숨돌리기) 지쳤다 = false;
 
         // 짐이 넘치면 뛰기는커녕 걷지도 못한다 — 지구력만 축내지 않게 여기서 끊는다
-        Running = wantRun && mv.sqrMagnitude > 0.01f && !지쳤다 && !인벤.내것.넘침;
+        Running = wantRun && mv.sqrMagnitude > 0.01f && !지쳤다 && !인벤.총넘침;
         Sneaking = wantSneak && !Running;             // 뛰면서 웅크릴 수는 없다
         float spd = Running ? run : (wantSneak ? sneak : walk);
 
@@ -173,7 +173,7 @@ public class Hero : MonoBehaviour, IHittable
         spd *= Mathf.Clamp(생존이속, 0.2f, 1f);        // 굶고 목마르면 느려진다 (`생존`)
         // ★★짐이 무거우면 느려지고, **한도를 넘으면 발이 아예 안 나간다** (`인벤.짐배`).
         //   떨어뜨려 주지 않는다 — 무엇을 버릴지는 내가 고른다
-        spd *= 인벤.내것.짐배;
+        spd *= 인벤.짐배;
 
         // ── 이동 (화면 기준 — 카메라가 고정이라 항상 같다)
         var want = 갈방향;
