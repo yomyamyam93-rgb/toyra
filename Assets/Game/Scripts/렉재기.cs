@@ -45,10 +45,17 @@ public class 렉재기 : MonoBehaviour
     // ★스파이크는 창 밖에서도 오므로 **레코더를 항상 살려 둔다** — 튄 프레임에서
     //   어느 단계가 부풀었는지(스크립트냐 렌더냐)를 그 자리에서 알아야 정체가 나온다
     ProfilerRecorder 감시_행동, 감시_렌더, 감시_컬링;
+    // ★★스파이크 줄에 **LateUpdate 와 애니메이터가 빠져 있었다** (2026-08-11). 우리 시스템
+    //   상당수가 LateUpdate 에서 돈다(격자바닥·구름그림자·흩날림·IsoCam·대상표시·조준표시…).
+    //   그게 튀어도 로그에는 「스크립트」로 안 잡혀서 62ms 의 정체를 못 봤다.
+    ProfilerRecorder 감시_늦행동, 감시_애니, 감시_물리;
 
     void OnEnable()
     {
         감시_행동 = ProfilerRecorder.StartNew(ProfilerCategory.Internal, "BehaviourUpdate", 1);
+        감시_늦행동 = ProfilerRecorder.StartNew(ProfilerCategory.Internal, "LateBehaviourUpdate", 1);
+        감시_애니 = ProfilerRecorder.StartNew(ProfilerCategory.Internal, "Animators.Update", 1);
+        감시_물리 = ProfilerRecorder.StartNew(ProfilerCategory.Internal, "Physics.Processing", 1);
         감시_렌더 = ProfilerRecorder.StartNew(ProfilerCategory.Internal, "Camera.Render", 1);
         감시_컬링 = ProfilerRecorder.StartNew(ProfilerCategory.Internal, "Culling", 1);
         gc재개 = ProfilerRecorder.StartNew(ProfilerCategory.Memory, "GC Allocated In Frame", 1);
@@ -133,6 +140,9 @@ public class 렉재기 : MonoBehaviour
     void 감시끄기()
     {
         if (감시_행동.Valid) 감시_행동.Dispose();
+        if (감시_늦행동.Valid) 감시_늦행동.Dispose();
+        if (감시_애니.Valid) 감시_애니.Dispose();
+        if (감시_물리.Valid) 감시_물리.Dispose();
         if (감시_렌더.Valid) 감시_렌더.Dispose();
         if (감시_컬링.Valid) 감시_컬링.Dispose();
         if (gc재개.Valid) gc재개.Dispose();
@@ -167,9 +177,12 @@ public class 렉재기 : MonoBehaviour
                 if (c != null && c.side == Critter.Side.야생) 야생++;
             }
             double gcKB = gc재개.Valid ? gc재개.LastValue / 1024.0 : -1;
-            Debug.LogFormat("[렉스파이크] {0:F0}ms · 스크립트 {1:F0}ms · 렌더 {2:F0}ms · 컬링 {3:F0}ms · 야생 {4}마리({5}) · GC {6:F0}KB · t={7:F1}s",
+            Debug.LogFormat("[렉스파이크] {0:F0}ms · Update {1:F0} · LateUpdate {2:F0} · 애니 {3:F0} · 물리 {4:F0} · 렌더 {5:F0} · 컬링 {6:F0} · 야생 {7}마리({8}) · GC {9:F0}KB · t={10:F1}s",
                 ms,
                 감시_행동.Valid ? 감시_행동.LastValue * 1e-6 : -1,
+                감시_늦행동.Valid ? 감시_늦행동.LastValue * 1e-6 : -1,
+                감시_애니.Valid ? 감시_애니.LastValue * 1e-6 : -1,
+                감시_물리.Valid ? 감시_물리.LastValue * 1e-6 : -1,
                 감시_렌더.Valid ? 감시_렌더.LastValue * 1e-6 : -1,
                 감시_컬링.Valid ? 감시_컬링.LastValue * 1e-6 : -1,
                 야생, 지난야생 < 0 ? "?" : (야생 - 지난야생).ToString("+#;-#;0"), gcKB,
