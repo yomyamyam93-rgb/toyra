@@ -121,11 +121,17 @@ public class Harvest : MonoBehaviour
 
         var 끝 = transform.position + new Vector3(Random.Range(-1f, 1f), 0f, Random.Range(-1f, 1f)).normalized
                  * Random.Range(0.8f, 1.6f);
-        if (무 != null) 무.StartCoroutine(툭(돌알.transform, 끝 + Vector3.up * (s * 0.35f)));
+        if (무 != null) 무.StartCoroutine(툭(무, 돌알.transform, 끝 + Vector3.up * (s * 0.35f)));
     }
 
     /// 짧은 포물선 — 이펙트가 아니라 실제로 그 자리로 간다 (그림 = 판정)
-    static System.Collections.IEnumerator 툭(Transform t, Vector3 끝)
+    // ★★★★**날아간 뒤에 자리를 다시 기억시킨다** (2026-08-11 사용자 "바닥에 떨어진 작은
+    //   돌맹이 줍기가 안돼는게 버그좀고쳐줘").
+    //   `땅무더기` 는 값이 비싸서 **자리를 기억해 두고** 그걸로 찾는다(Transform 을 안 읽는다).
+    //   그런데 기억하는 시점이 **튀기 전**이라, 돌이 0.8~1.6m 날아가고 나면
+    //   **눈에 보이는 곳과 등록된 곳이 어긋난다** → 돌 위에 서 있어도 못 줍는다.
+    //   ☆같은 함정이 또 있을 수 있다 — 「자리를 기억하는 것」은 **움직이면 다시 기억시켜야** 한다.
+    static System.Collections.IEnumerator 툭(땅무더기 무, Transform t, Vector3 끝)
     {
         var 시작 = t.position;
         for (float u = 0f; u < 1f; u += Time.deltaTime / 0.38f)
@@ -136,7 +142,9 @@ public class Harvest : MonoBehaviour
             t.position = p;
             yield return null;
         }
-        if (t != null) t.position = 끝;
+        if (t == null) yield break;
+        t.position = 끝;
+        if (무 != null) 무.자리 = 끝;                  // ★도착한 자리로 고쳐 기억한다
     }
 
     /// 앞쪽 가장 가까운 자원을 한 번 캔다
