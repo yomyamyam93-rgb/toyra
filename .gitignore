@@ -49,3 +49,7 @@ Assets/Game/Resources/toys/
 # 확인용 스크린샷 — 올리지 않는다 (유니티가 만들 때마다 새로 생긴다)
 Assets/Screenshots/
 Assets/Screenshots.meta
+
+# 렉 진단 기록 — 굴러가면서 생기는 것이라 안 올린다
+렉_스파이크.txt
+렉_범인찾기.txt
