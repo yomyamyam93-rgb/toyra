@@ -46,7 +46,11 @@ public class 격자바닥 : MonoBehaviour
     //   판때기를 화면에 딱 맞는 크기로 잡으면, 주인공이 한 발짝만 옮겨도 곧바로
     //   「모자란다」가 되어 9.3ms 짜리 재건축이 끝없이 돈다.
     //   → 화면보다 이만큼 더 크게 지어 두고, 그 여윳돈을 다 쓸 때까지 안 짓는다.
-    [Tooltip("다시 짓기 전까지 걸어다닐 수 있는 거리 (m)")] public float 걸을여유 = 18f;
+    // ★★18 → 40 (2026-08-11). 이 값이 곧 **다시 짓는 주기**다: 걸으면 18/2.6 = 7초,
+    //   **뛰면 18/6 = 3초마다** 16만 정점짜리 메시를 다시 짓는다 — 사용자가 겪은
+    //   「걷거나 뛸 때 많이 렉먹네」의 주기와 정확히 맞는다. 40 이면 뛰어도 6.7초라 절반 이하다.
+    //   ☆판때기가 더 커지는 게 아니다 — **여유분**만 늘어난다 (화면 밖 가장자리).
+    [Tooltip("다시 짓기 전까지 걸어다닐 수 있는 거리 (m) — 클수록 덜 짓는다")] public float 걸을여유 = 40f;
     [Tooltip("칸수 상한 — 정점이 제곱으로 늘어난다")] public int 칸수상한 = 140;
 
     Mesh 메시;
@@ -170,17 +174,27 @@ public class 격자바닥 : MonoBehaviour
     System.Collections.IEnumerator 짓기천천히()
     {
         var e = 짓기속();
+        // ★★★**여기가 진짜 비용이 사는 자리다** (2026-08-11). LateUpdate 에 자체 계측을 달았더니
+        //   「다시지음=False · 짓는중=True」로 30ms 가 찍혔다 — 즉 LateUpdate 는 아무 일도 안 하는데
+        //   프레임은 길었다. 비용은 **코루틴 안**이라 그 계측에 안 잡혔던 것이다.
+        //   ☆한 조각(`MoveNext`)이 예산보다 크면 예산은 못 지킨다 — 특히 마지막 메시 올리기.
         while (true)
         {
             var 시계 = System.Diagnostics.Stopwatch.StartNew();
             bool 남음 = true;
-            // 한 프레임에 3ms 만 쓴다 — 60fps 의 16.7ms 중 5분의 1
             while (시계.Elapsed.TotalMilliseconds < 1.5 && (남음 = e.MoveNext())) { }
+            시계.Stop();
+            if (조각재기 > 0f && 시계.Elapsed.TotalMilliseconds >= 조각재기)
+                Debug.LogFormat("[격자바닥-조각] {0:F0}ms · 남음={1} · 칸수={2}",
+                                시계.Elapsed.TotalMilliseconds, 남음, 칸수);
             if (!남음) break;
             yield return null;
         }
         짓는중 = null;
     }
+
+    [Tooltip("코루틴 한 조각이 이보다 오래 걸리면 콘솔에 남긴다 (ms · 0 이면 안 남김)")]
+    public float 조각재기 = 8f;
 
     System.Collections.IEnumerator 짓기속()
     {
