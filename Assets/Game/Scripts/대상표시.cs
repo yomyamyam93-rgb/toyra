@@ -52,6 +52,7 @@ public class 대상표시 : MonoBehaviour
     // ★★진단 스위치 — 대상이 **바뀔 때만** 한 줄 찍는다 (매 프레임 로그는 그 자체가 렉이다 · 9-4)
     [Tooltip("외곽선이 왜 안 보이는지 콘솔에 남긴다 — 잡고 나면 끈다")]
     public bool 진단 = true;
+    float 진단마지막;
 
     void LateUpdate()
     {
@@ -69,6 +70,32 @@ public class 대상표시 : MonoBehaviour
         bool 바뀜 = 대상 != 지금대상;
         if (바뀜) { 치우기(); 지금대상 = 대상; if (대상 != null) 씌우기(대상, 색); }
         else if (껍데기 != null) 색칠(색);
+
+        // ★★진단 — **아무것도 안 잡혔는데 가까이 자원이 있으면** 왜 걸렸는지 찍는다.
+        //   (2026-08-11 사용자 "안생겨 나무.." — 로그가 안 뜬다는 건 `씌우기` 가 아예
+        //    안 불린다는 뜻이고, 그러면 `찾기` 가 null 을 돌려준 것이다)
+        //   ☆1초에 한 번만 — 매번 찍으면 그게 렉이다 (9-4)
+        if (진단 && 대상 == null && Time.time - 진단마지막 > 1f)
+        {
+            var p = transform.position;
+            Harvest 제일가까운 = null; float bd = 9999f;
+            foreach (var x in Harvest.All)
+            {
+                if (x == null) continue;
+                float d = (new Vector3(x.자리.x - p.x, 0f, x.자리.z - p.z)).magnitude;
+                if (d < bd) { bd = d; 제일가까운 = x; }
+            }
+            if (제일가까운 != null && bd < 8f)
+            {
+                진단마지막 = Time.time;
+                var v = 제일가까운.경계중심 - p; v.y = 0f;
+                float dot = v.sqrMagnitude > 0.01f ? Vector3.Dot(v.normalized, hero.LookDir) : 9f;
+                Debug.LogFormat("[대상표시-진단] 아무것도 안 잡힘 · 제일가까운={0}({1}) · 기억자리거리={2:F2}"
+                              + " · 경계거리={3:F2} · 반경={4:F2} · 방향무관={5} · dot={6:F2} · reach={7:F2}",
+                    제일가까운.name, 제일가까운.kind, bd, 제일가까운.수평거리(p), 제일가까운.반경,
+                    제일가까운.방향무관, dot, (손 != null ? 손.사거리 : 2.2f) + 0.6f);
+            }
+        }
 
         if (시계 != null)
         {
