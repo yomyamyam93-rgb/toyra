@@ -57,8 +57,18 @@ public class Boot : MonoBehaviour
         new 동행 { 이름 = "큰이", 모델 = "dino_tyranno_1", 키 = 2.8f, 체력 = 180f, 이속 = 3.0f, 피해 = 20f, 간격 = 1.8f, 반지름 = 0.9f,  무게 = 5f  },
     };
 
+    // ★★★**프레임을 화면 주사율에 맞춰 고르게 내보낸다** (2026-08-11 사용자 "두두둑 끊기는거").
+    //   실측: 평균 7.8ms(127fps) 인데 눈에는 덜컹거렸다. VSync 가 꺼져 있으면 127fps 를
+    //   그대로 쏟아내는데 화면은 60Hz 라 **받는 간격이 들쭉날쭉**해진다 —
+    //   숫자는 좋은데 움직임이 끊겨 보이는 정체가 이것이다 (화면 찢김도 같이 온다).
+    //   ☆예산에 여유가 크다(7.8ms < 16.7ms) — 성능을 깎지 않고 매끄러워진다.
+    [Header("화면")]
+    [Tooltip("프레임을 화면 주사율에 맞춘다 — 끄면 fps 는 높아도 움직임이 덜컹거린다")]
+    public bool 주사율맞추기 = true;
+
     void Start()
     {
+        if (주사율맞추기 && QualitySettings.vSyncCount == 0) QualitySettings.vSyncCount = 1;
         if (world == null) world = FindFirstObjectByType<WorldGen>();
         if (hero == null) hero = FindFirstObjectByType<Hero>();
 
