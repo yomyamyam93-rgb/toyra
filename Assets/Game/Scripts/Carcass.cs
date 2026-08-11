@@ -51,6 +51,11 @@ public class Carcass : MonoBehaviour
         //   옆에 붙어 서도 손이 안 닿는다 (`Harvest.반경` 참고).
         //   ☆종의 반지름이 아니라 **누운 몸의 실제 폭**을 쓴다 — 눕히면 키만큼 길어진다.
         h.반경 = Mathf.Max(c.Radius, c.종.키 * 0.45f);
+        // ★★★**사체는 방향을 안 본다** (2026-08-11 사용자 "시체 주변에 조금만 닿아있어도
+        //   갈무리가 가능하게해줘야하는데 아예 선택조차도안돼 방향도 맞춰야하고").
+        //   ☆앞서 `방향무관` 을 만들고 검사까지 넣어 놓고 **켜는 줄을 안 썼다** — 내 실수다.
+        //     갈무리는 쪼그려 앉아 뒤적이는 일이라 어느 쪽을 보는지가 상관없다.
+        h.방향무관 = true;
 
         var car = go.AddComponent<Carcass>();
         car.몸 = go.transform.childCount > 0 ? go.transform.GetChild(0) : null;
@@ -91,6 +96,8 @@ public class Carcass : MonoBehaviour
         h.hits = 3;                     // 세 번 갈라야 다 챙긴다
         h.perHit = 몫;
         h.장애물치우기 = false;          // 사체는 길을 막지 않는다
+        h.방향무관 = true;
+        h.반경 = Mathf.Max(c.Radius, c.종.키 * 0.45f);
 
         var car = go.AddComponent<Carcass>();
         car.몸 = go.transform.childCount > 0 ? go.transform.GetChild(0) : null;

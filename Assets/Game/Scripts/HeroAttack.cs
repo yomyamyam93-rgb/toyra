@@ -48,6 +48,7 @@ public class HeroAttack : MonoBehaviour
     [Tooltip("0 이면 누르는 즉시 캔다 — 굳이 늦추고 싶을 때만 올린다")]
     [Range(0f, 0.6f)] public float 채집지연 = 0f;
     [Tooltip("채집하는 동안의 걷는 속도 배")] [Range(0f, 1f)] public float 채집이속 = 0.3f;
+    [Tooltip("나무·돌을 팰 때 초당 몇 번 내려찍나")] [Range(0.5f, 4f)] public float 패는빠르기 = 1.6f;
     Harvest 채집대상;
     /// HUD 가 읽는다 — 상시로 안 띄우고 **캘 때만** 뜬다 (11장 · 기획 5-7)
     public static bool 채집중;
@@ -498,8 +499,9 @@ public class HeroAttack : MonoBehaviour
                 감은시간 = 좌 ? Mathf.Min(예비, 감은시간 + dt)
                              : Mathf.Max(0f, 감은시간 - dt * 2f);   // 놓으면 스르륵 풀린다
             bool 또칠건가 = (좌 || Time.time <= 공격예약) && state != State.채집;
-            // ★채집 중엔 팔을 들지 않는다 — 쪼그려 앉아 뒤적이는 것이라 손이 아래에 있다
-            bool 싸우는중 = 또칠건가 || (state != State.쉼 && state != State.채집);
+            // ★채집 중엔 팔을 들지 않는다 — 쪼그려 앉아 뒤적이는 것이라 손이 아래에 있다.
+            //   단 **나무·돌을 팰 때는 든다** — 도끼를 들어야 내려찍는 게 보인다
+            bool 싸우는중 = 또칠건가 || (state != State.쉼 && state != State.채집) || 채집팸;
             // ★클립이 꽂혀 있으면 **팔 자세 코드는 아예 안 돈다** — 같은 뼈를 놓고 다투면
             //   HeroHold 가 들어 올린 것을 클립이 다시 덮어써서 헛돌기만 한다.
             드는자세.목표 = 공격클립 != null ? 0f : (싸우는중 ? 1f : 0f);
@@ -517,6 +519,8 @@ public class HeroAttack : MonoBehaviour
             //     맨 아래 `1f` 가 그걸 하는데, **`cd <= 0f` 가지에만 그 조건이 빠져 있었다.**
             드는자세.침 = state == State.휘두름 ? u * u
                         : state == State.여운 ? 1f
+                        : 채집팸 ? Mathf.SmoothStep(0f, 1f, Mathf.PingPong(t * 패는빠르기, 1f))  // 도끼질
+                        : state == State.채집 ? 1f                // 뒤적임 — 손이 아래에
                         : state == State.예비 ? 0f                // 감는 중 — 머리 위로
                         : !또칠건가 ? 1f                          // ★안 칠 거면 내려친 자세 그대로 풀린다
                         : cd <= 0f ? 0f                           // 또 칠 사람에게만 = 든 자세
@@ -539,8 +543,8 @@ public class HeroAttack : MonoBehaviour
             {
                 t += dt;
                 채집중 = true;
-                // F 를 놓거나, 대상이 없어지거나, 멀어지면 끝난다
-                if (채집대상 == null || !F눌림) { 채집끝(); break; }
+                // 다 캤거나 · F 를 다시 눌렀거나 · 멀어지면 끝난다 (놓는다고 안 멈춘다)
+                if (채집대상 == null || F방금눌림) { 채집끝(); break; }
                 var v채 = 채집대상.transform.position - transform.position; v채.y = 0f;
                 if (v채.magnitude - 채집대상.반경 > 사거리 + 1.2f) { 채집끝(); break; }
                 hero.MoveMul = 채집이속;              // 쪼그려 앉아 뒤적이는 동안은 느리다
@@ -566,7 +570,7 @@ public class HeroAttack : MonoBehaviour
                 //   *"앞에 무엇이 있느냐가 정한다"* 는 상호작용 키로 적혀 있다.
                 //   ☆이렇게 가르면 **좌클릭 = 싸움 · F = 일** 이 되어 서로 안 싸운다.
                 //     좌클릭에 캐기를 얹었더니 "나무 옆에서 짐승을 못 때린다" 가 났었다.
-                if (F눌림 && cd <= 0f && !모닥불.F먹음)
+                if (F방금눌림 && cd <= 0f && !모닥불.F먹음)
                 {
                     var 대상 = Harvest.찾기(transform.position, hero.LookDir, 사거리 + 0.6f);
                     if (대상 != null)
@@ -662,19 +666,25 @@ public class HeroAttack : MonoBehaviour
         }
     }
 
-    /// F 를 누르고 있나 — 게이지가 차야 하므로 **누르는 동안** 을 본다
-    bool F눌림
+    /// ★★**F 는 한 번 누르면 다 캘 때까지 간다** (2026-08-11 사용자 "F를 누르면, 다캘때까지
+    ///   패는 모션이 나오는거야 누르고 있는게 아니라"). 누르고 있게 하면 손가락이 아프고,
+    ///   무엇보다 **다 캤는지 보려고 게이지를 계속 쳐다보게** 된다.
+    ///   ☆끝나는 조건: 다 캤다 / F 를 다시 눌렀다 / 멀어졌다 / 대상이 사라졌다.
+    bool F방금눌림
     {
         get
         {
 #if ENABLE_INPUT_SYSTEM
             var k = Keyboard.current;
-            return k != null && k.fKey.isPressed;
+            return k != null && k.fKey.wasPressedThisFrame;
 #else
-            return Input.GetKey(KeyCode.F);
+            return Input.GetKeyDown(KeyCode.F);
 #endif
         }
     }
+
+    /// 지금 캐는 것이 **패는 것**인가 (나무·돌) — 사체는 쪼그려 뒤적인다
+    bool 채집팸 => state == State.채집 && 채집대상 != null && 채집대상.kind != Stock.Kind.고기;
 
     /// ★F 를 채집이 가져갔나 — `HeroCarry`(붙잡기)가 같은 F 로 끼어들지 않게 알려 준다.
     ///   `모닥불.F먹음` 과 같은 방식이다.
@@ -990,14 +1000,30 @@ public class HeroAttack : MonoBehaviour
                 빠르기 = 40f;                             // 이 구간만은 즉각 따라붙는다
                 break;
             }
-            // ★쪼그려 앉아 뒤적인다 — 몸을 낮추고 앞으로 숙인 채, 손이 오르내린다
+            // ★★채집 — **무엇을 캐느냐로 몸짓이 갈린다** (2026-08-11 사용자
+            //   "다캘때까지 **패는** 모션" · "갈무리, 쪼그려앉아서 **뒤적이는** 모션").
             case State.채집:
             {
-                목표웅크림 = 1f;
-                목표무게 = 0.5f;
-                목표pitch = 16f + Mathf.Sin(t * 7f) * 4f;    // 뒤적이는 상하 움직임
-                목표yaw = Mathf.Sin(t * 3.1f) * 5f;          // 좌우로 조금씩 헤집는다
-                빠르기 = 12f;
+                if (채집팸)
+                {
+                    // 나무·돌 — 크게 내려찍는다. 오르내림이 곧 도끼질이다
+                    float 팸 = Mathf.PingPong(t * 패는빠르기, 1f);
+                    float e = Mathf.SmoothStep(0f, 1f, 팸);
+                    목표웅크림 = 0.25f + 0.35f * e;
+                    목표pitch = Mathf.Lerp(-8f, 24f, e);      // 젖혔다 내려찍는다
+                    목표yaw = Mathf.Lerp(-몸감기 * 0.5f, 몸치기 * 0.4f, e);
+                    목표무게 = Mathf.Lerp(0.3f, 0.85f, e);
+                    빠르기 = 24f;
+                }
+                else
+                {
+                    // 사체 — 쪼그려 앉아 뒤적인다
+                    목표웅크림 = 1f;
+                    목표무게 = 0.5f;
+                    목표pitch = 16f + Mathf.Sin(t * 7f) * 4f;    // 뒤적이는 상하 움직임
+                    목표yaw = Mathf.Sin(t * 3.1f) * 5f;          // 좌우로 조금씩 헤집는다
+                    빠르기 = 12f;
+                }
                 break;
             }
 
