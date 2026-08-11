@@ -32,6 +32,16 @@ public class VisionCone : MonoBehaviour
     [Range(0f, 0.6f)] [Tooltip("밤에 밝은 안쪽도 멀수록 어두워지는 정도 (낮엔 안 걸린다)")]
     public float falloff = 0.08f;
 
+    // ★★실내(동굴 속) — `굴가림` 이 매 틱 알려 준다. 0 이면 바깥, 1 이면 굴 속.
+    //   부드럽게 오가야 문턱에서 화면이 번쩍이지 않는다
+    [Header("실내 (동굴 속)")]
+    [Tooltip("굴 안에서 보이는 거리 (m) — 밤 시야와 비슷하게")] public float 실내거리 = 13f;
+    [Range(0f, 1f)] [Tooltip("굴 안의 어둠")] public float 실내어둠 = 0.82f;
+    [Tooltip("들어가고 나올 때 밝기가 바뀌는 빠르기")] public float 실내전환 = 3.5f;
+
+    public static float 실내목표;                 // 굴가림이 매 프레임 1 로 올린다
+    float 실내정도;
+
     Hero hero;
     Camera cam;
     Material mat;
@@ -82,6 +92,10 @@ public class VisionCone : MonoBehaviour
     {
         if (hero == null || mat == null) return;
 
+        // 굴가림이 이번 프레임에 1 로 올려 놓았나 — 읽고 나서 0 으로 되돌린다
+        실내정도 = Mathf.MoveTowards(실내정도, 실내목표, 실내전환 * Time.deltaTime);
+        실내목표 = 0f;
+
         var p = hero.transform.position + Vector3.up * (hero.height * 0.8f);
         var d = hero.LookDir;
 
@@ -91,6 +105,19 @@ public class VisionCone : MonoBehaviour
         float dark = day != null ? day.어둠() : 0f;
         // 감쇠도 어둠과 같은 곡선을 탄다 — 어둠이 0 인 낮엔 이것도 0 이어야 자국이 안 남는다
         float fall = day != null && day.밤어둠 > 1e-4f ? falloff * (dark / day.밤어둠) : falloff;
+
+        // ★★★**동굴 안은 낮이어도 어둡다** (2026-08-11 사용자 "동굴안에 들어가면 다른곳
+        //   시야가 막혀서 안보이지않나..? 좀보이드는?"). 맞는 지적이다 — 좀보이드는 내가
+        //   **있는 방만** 보이지 건물 전체가 투시되지 않는다.
+        //   그런데 이 시야는 **밤에만** 걸리게 만들어져 있어서, 낮에 굴에 들어가면 여전히
+        //   훤히 다 보인다. → 굴 안에서는 밤과 같은 규칙을 쓴다.
+        //   ☆실내 정도는 `굴가림` 이 알려 준다 (0 = 바깥 · 1 = 굴 속).
+        if (실내정도 > 0.001f)
+        {
+            dist = Mathf.Lerp(dist, 실내거리, 실내정도);
+            dark = Mathf.Max(dark, 실내어둠 * 실내정도);
+            fall = Mathf.Max(fall, falloff * 실내정도);
+        }
 
         Shader.SetGlobalVector("_VisionPos", p);
         Shader.SetGlobalVector("_VisionDir", new Vector4(d.x, 0f, d.z, 0f));
