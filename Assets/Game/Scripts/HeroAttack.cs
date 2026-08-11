@@ -50,6 +50,8 @@ public class HeroAttack : MonoBehaviour
     [Tooltip("채집하는 동안의 걷는 속도 배")] [Range(0f, 1f)] public float 채집이속 = 0.3f;
     [Tooltip("나무·돌을 팰 때 초당 몇 번 내려찍나")] [Range(0.5f, 4f)] public float 패는빠르기 = 1.6f;
     [Tooltip("(은퇴) 좌클릭 평타로도 캐진다 — 캐기는 F 로 갔다")] public bool 평타로도캐기 = false;
+    [Tooltip("갈무리할 때 얼마나 앉나 — 1 이면 공격 예비만큼(9cm), 2.6 이면 쪼그려 앉기")]
+    [Range(1f, 4f)] public float 앉기굽힘 = 2.6f;
     [Tooltip("걸으면 채집이 풀린다 — 이 속도를 넘으면 끊긴다 (m/s)")]
     [Range(0.05f, 2f)] public float 채집끊는속도 = 0.35f;
     Harvest 채집대상;
@@ -1059,12 +1061,17 @@ public class HeroAttack : MonoBehaviour
                 }
                 else
                 {
-                    // 사체 — 쪼그려 앉아 뒤적인다
-                    목표웅크림 = 1f;
+                    // ★★★★**진짜로 앉는다** (2026-08-11 사용자 "앉는게 아니라니까 지금?").
+                    //   `웅크림 = 1` 은 골반을 **9cm** 내릴 뿐이다 — 공격 예비 동작에 맞춰
+                    //   놓은 값이라 「살짝 굽힘」이다. 앉으려면 그 몇 배가 필요하다.
+                    //   ☆`웅크림` 은 곱해지는 값이라 1 을 넘겨도 된다 — 골반 내림과 무릎
+                    //     접힘이 **같은 비율로** 같이 커진다(다리굽히기가 이 값을 쓴다).
+                    //     실측 기준: 2.6 이면 골반 약 23cm · 허벅 −42° · 정강 +62° = 쪼그려 앉기.
+                    목표웅크림 = 앉기굽힘;
                     목표무게 = 0.5f;
-                    목표pitch = 16f + Mathf.Sin(t * 7f) * 4f;    // 뒤적이는 상하 움직임
-                    목표yaw = Mathf.Sin(t * 3.1f) * 5f;          // 좌우로 조금씩 헤집는다
-                    빠르기 = 12f;
+                    목표pitch = 22f + Mathf.Sin(t * 7f) * 5f;    // 앞으로 숙이고 상하로 뒤적인다
+                    목표yaw = Mathf.Sin(t * 3.1f) * 7f;          // 좌우로 헤집는다
+                    빠르기 = 9f;                                  // 앉는 데는 시간이 걸린다
                 }
                 break;
             }
@@ -1087,7 +1094,10 @@ public class HeroAttack : MonoBehaviour
         float v2 = dt > 1e-5f ? (지금p - 지난자리).magnitude / dt : 0f;
         지난자리 = 지금p;
         이동평활 = Mathf.Lerp(이동평활, v2, 1f - Mathf.Exp(-8f * dt));
-        목표웅크림 *= Mathf.Clamp01(1f - 이동평활 / 1.6f);
+        // ★앉아서 뒤적일 때는 이 억제를 안 건다 — 앉자마자 살짝 미끄러지기만 해도 벌떡 선다.
+        //   (움직이면 채집 자체가 끊기므로 여기서 또 막을 이유가 없다)
+        if (!(state == State.채집 && !채집팸))
+            목표웅크림 *= Mathf.Clamp01(1f - 이동평활 / 1.6f);
 
         float k2 = 1f - Mathf.Exp(-빠르기 * dt);
         몸yaw = Mathf.Lerp(몸yaw, 목표yaw, k2);
