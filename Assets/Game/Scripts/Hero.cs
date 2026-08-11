@@ -115,7 +115,16 @@ public class Hero : MonoBehaviour, IHittable
         ReadKeys(out Vector2 mv, out bool wantRun, out bool wantSneak);
 
         // ── 보는 방향 = 마우스
-        if (cam != null && cam.MouseGround(transform.position.y, out var g))
+        // ★★★★단 **일하는 동안은 대상을 본다** (2026-08-11 사용자 "대상을 향애서 패야하는데
+        //   나무 패면서도 내가 마우스 돌리면 그쪽 방향을 보네").
+        //   도끼를 휘두르면서 딴 데를 보면 「그림 = 판정」이 깨진다 — 패는 곳과 보는 곳이 달라진다.
+        //   ☆`HeroAttack` 이 채집을 시작할 때 켜고 끝낼 때 끈다. 끄면 즉시 마우스로 돌아온다.
+        if (시선고정)
+        {
+            var fd = 고정시선; fd.y = 0f;
+            if (fd.sqrMagnitude > 0.01f) LookDir = fd.normalized;
+        }
+        else if (cam != null && cam.MouseGround(transform.position.y, out var g))
         {
             var d = g - transform.position; d.y = 0f;
             if (d.sqrMagnitude > 0.01f) LookDir = d.normalized;
@@ -234,6 +243,10 @@ public class Hero : MonoBehaviour, IHittable
     [HideInInspector] public bool 걸어가는중;
     public void 걸어가기(Vector3 곳) { 걸어갈곳 = 곳; 걸어가는중 = true; }
     public void 걸음멈춤() { 걸어가는중 = false; }
+
+    // ★★일하는 동안은 마우스가 아니라 **대상**을 본다 (`HeroAttack` 이 켜고 끈다)
+    [HideInInspector] public bool 시선고정;
+    [HideInInspector] public Vector3 고정시선;
 
     /// 바라보는 방향을 16칸 중 하나로 — 결과를 밀지 않고 **목표를 끊는다**
     /// (`Critter.Face` 와 같은 규칙. 이유는 그쪽 주석 참고)

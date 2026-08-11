@@ -522,7 +522,7 @@ public class HeroAttack : MonoBehaviour
             //     맨 아래 `1f` 가 그걸 하는데, **`cd <= 0f` 가지에만 그 조건이 빠져 있었다.**
             드는자세.침 = state == State.휘두름 ? u * u
                         : state == State.여운 ? 1f
-                        : 채집팸 ? Mathf.SmoothStep(0f, 1f, Mathf.PingPong(t * 패는빠르기, 1f))  // 도끼질
+                        : 채집팸 ? Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(채집게이지))   // 게이지 = 도끼질 진행도
                         : state == State.채집 ? 1f                // 뒤적임 — 손이 아래에
                         : state == State.예비 ? 0f                // 감는 중 — 머리 위로
                         : !또칠건가 ? 1f                          // ★안 칠 거면 내려친 자세 그대로 풀린다
@@ -556,6 +556,9 @@ public class HeroAttack : MonoBehaviour
                 if (채집대상.수평거리(transform.position) > 사거리 + 1.2f) { 채집끝(); break; }
                 var v채 = 채집대상.transform.position - transform.position; v채.y = 0f;
                 hero.MoveMul = 채집이속;              // 쪼그려 앉아 뒤적이는 동안은 느리다
+                // ★일하는 동안은 대상을 본다 — 패는 곳과 보는 곳이 같아야 한다
+                var 볼방향 = 채집대상.경계중심 - transform.position; 볼방향.y = 0f;
+                if (볼방향.sqrMagnitude > 0.01f) { hero.시선고정 = true; hero.고정시선 = 볼방향; }
                 채집게이지 += 채집대상.캐는속도() * dt;
                 if (채집게이지 >= 1f)
                 {
@@ -720,9 +723,28 @@ public class HeroAttack : MonoBehaviour
     }
 
     /// 채집을 끝낸다 — 놓았거나, 멀어졌거나, 다 캤거나
+    /// 상체·하체 공격 레이어를 부드럽게 내린다 — 걷기(0층)가 다시 몸을 갖는다
+    void 상체층내리기()
+    {
+        if (애니 == null || !애니.isActiveAndEnabled) { 애니 = GetComponentInChildren<Animator>(); }
+        if (애니 == null) return;
+        if (공격층 < 0) 공격층 = 층찾기("공격층");
+        if (하체층 < 0) 하체층 = 층찾기("공격하체층");
+        if (공격층 > 0)
+            애니.SetLayerWeight(공격층, Mathf.MoveTowards(애니.GetLayerWeight(공격층), 0f, Time.deltaTime * 8f));
+        if (하체층 > 0)
+        {
+            하체무게 = Mathf.MoveTowards(하체무게, 0f, Time.deltaTime * 10f);
+            애니.SetLayerWeight(하체층, 하체무게);
+        }
+        하체정함 = false;
+        클립돌던중 = false;
+    }
+
     void 채집끝()
     {
         채집대상 = null; 채집게이지 = 0f; 채집중 = false; F먹음 = false;
+        if (hero != null) hero.시선고정 = false;      // 마우스로 되돌린다
         state = State.쉼; t = 0f; 감은시간 = 0f;
         공격예약 = 0f;                   // F 로 캐다 놓았다고 공격이 튀어나가면 안 된다
     }
@@ -1014,8 +1036,8 @@ public class HeroAttack : MonoBehaviour
             {
                 if (채집팸)
                 {
-                    // 나무·돌 — 크게 내려찍는다. 오르내림이 곧 도끼질이다
-                    float 팸 = Mathf.PingPong(t * 패는빠르기, 1f);
+                    // 나무·돌 — 크게 내려찍는다. **게이지가 곧 스윙 진행도**다
+                    float 팸 = Mathf.Clamp01(채집게이지);
                     float e = Mathf.SmoothStep(0f, 1f, 팸);
                     목표웅크림 = 0.25f + 0.35f * e;
                     목표pitch = Mathf.Lerp(-8f, 24f, e);      // 젖혔다 내려찍는다
@@ -1124,19 +1146,15 @@ public class HeroAttack : MonoBehaviour
             //   때리는 모션 넣어달라했는데 안넣었음"). 절차 자세(몸 숙임)만으로는
             //   **도끼질로 안 읽힌다** — 저작된 클립이 팔과 도구를 실제로 휘둘러야 한다.
             //   ☆클립의 예비~여운 구간만 되풀이한다. 꼬리(대기로 풀리는 구간)는 건너뛴다.
+            // ★★★★**게이지 한 칸 = 스윙 한 번** (2026-08-11 사용자 "게이지가 총 3번차는데
+            //   나무 팰때, 딱 그 팰때에 맞춰서 공격모션이 한번 들어가야하지않을까..?
+            //   계속 휘두르는게아니라").
+            //   맞다. 클립을 제 속도로 돌리면 **게이지와 따로 놀아서** 언제 한 칸이 들어가는지
+            //   손에 안 잡힌다. 게이지를 그대로 클립 시간으로 쓰면 **다 찬 순간이 곧 타격**이다.
+            //   ☆「그림 = 판정」의 자리다. 도끼가 닿는 순간과 자원이 깎이는 순간이 같아진다.
             case State.채집 when 채집팸:
-                초 = Mathf.Repeat(t * 패는빠르기, 1f) * (예비 + 휘두름 + 여운);
+                초 = Mathf.Clamp01(채집게이지) * (예비 + 휘두름 + 여운);
                 break;
-            // 사체를 뒤적일 때는 클립을 안 쓴다 — 쪼그린 자세는 절차 쪽이 그린다
-            case State.채집:
-                if (애니 != null && 공격층 > 0)
-                {
-                    float w채 = Mathf.MoveTowards(애니.GetLayerWeight(공격층), 0f, Time.deltaTime * 8f);
-                    애니.SetLayerWeight(공격층, w채);
-                    if (하체층 > 0) { 하체무게 = Mathf.MoveTowards(하체무게, 0f, Time.deltaTime * 10f); 애니.SetLayerWeight(하체층, 하체무게); }
-                }
-                클립돌던중 = false; return;
-
             default:
                 // ★★★**누르고 있는 동안(감는 중)도 클립이 그린다** (2026-08-09 사용자 "클릭하고
                 //   유지하고있을때의 모션이 안들어가네").
@@ -1278,8 +1296,19 @@ public class HeroAttack : MonoBehaviour
             무기자세();
             return;
         }
-        if (공격클립 != null) 클립으로그리기();
-        else 몸통스윙(Time.deltaTime);   // 척추를 먼저 돌리고 — 무기는 그 팔을 따라간다
+        // ★★★★**사체를 뒤적일 때는 클립을 내려놓고 절차 자세로 그린다** (2026-08-11 사용자
+        //   "갈무리 앉아서 하는 동작 왜 없어..?").
+        //   쪼그려 앉기는 `몸통스윙` 안에 있는데, **클립이 꽂혀 있으면 `몸통스윙` 이 아예
+        //   안 돌아서** 내가 넣은 자세가 한 번도 실행된 적이 없었다.
+        //   ☆나무·돌을 팰 때는 클립이 맞다 — 도끼질은 저작된 동작이라야 읽힌다.
+        //     사체 뒤적임은 저작된 클립이 없으므로 절차 쪽이 그린다.
+        bool 뒤적임 = state == State.채집 && !채집팸;
+        if (공격클립 != null && !뒤적임) 클립으로그리기();
+        else
+        {
+            if (뒤적임) 상체층내리기();       // 클립이 상체를 쥔 채면 쪼그림과 다툰다
+            몸통스윙(Time.deltaTime);        // 척추를 먼저 돌리고 — 무기는 그 팔을 따라간다
+        }
         주먹쥐기();
         무기자세();
         if (state != State.휘두름 || t < 휘두름 * 0.5f || 캤나) return;
