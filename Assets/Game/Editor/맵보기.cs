@@ -14,6 +14,29 @@ using UnityEngine;
 ///   임시 카메라를 하늘에 띄워 한 장 찍은 뒤 도로 치운다.
 ///   ☆플레이를 켤 필요가 없다. 다 찍고 나면 세계도 지운다 (씬이 안 더러워진다).
 ///   ☆잔디는 안 찍힌다 — 잔디는 매 프레임 그리는 방식이라 편집 중에는 안 돈다.
+/// ★★★**자가 치유 — 비동기 셰이더 컴파일이 꺼진 채 남아 있으면 되켠다** (2026-08-11).
+///
+///   이게 꺼져 있으면 처음 보는 재질이 화면에 들어올 때마다 **그 자리에서** 셰이더를 굽는다.
+///   실측: 팻이 스폰될 때마다 **570ms** 씩 멎었고, `Update 0 · 렌더 0 · 컬링 0` 이라
+///   CPU 마커 어디에도 안 잡혀 「설명안됨」으로만 나왔다 (지침 9-4).
+///   ☆이건 **에디터에서만** 생긴다 — 빌드한 게임엔 셰이더가 미리 구워져 들어간다.
+///
+///   `맵보기` 가 사진을 찍는 동안 잠깐 끄는데, 되돌리기 전에 예외가 나면 그대로 남았다.
+///   그 버그는 아래에서 고쳤지만(`finally`), **한 번 꺼지면 스스로 못 낫는 게** 더 무섭다.
+///   → 컴파일할 때마다 프로젝트 설정과 견줘 어긋나 있으면 되돌린다. 값이 맞으면 아무 일도 안 한다.
+[InitializeOnLoad]
+static class 비동기셰이더지킴이
+{
+    static 비동기셰이더지킴이()
+    {
+        if (EditorSettings.asyncShaderCompilation && !ShaderUtil.allowAsyncCompilation)
+        {
+            ShaderUtil.allowAsyncCompilation = true;
+            Debug.Log("[맵보기] 비동기 셰이더 컴파일이 꺼져 있어서 되켰다 — 이게 꺼지면 스폰마다 렉이 난다");
+        }
+    }
+}
+
 public class 맵보기 : EditorWindow
 {
     [MenuItem("Tools/토이라기/㉨ 맵 보기", priority = 8)]
@@ -23,6 +46,7 @@ public class 맵보기 : EditorWindow
     int 그림크기 = 1024;
     bool 찍고치우기 = true;
     bool 표시달기 = true;
+    bool 비동기껐음;      // ★찍는 동안만 비동기 셰이더를 끈다 — finally 에서 반드시 되돌린다
     Texture2D 그림;
     WorldGen.Land[,] 칸;
 
@@ -195,10 +219,16 @@ public class 맵보기 : EditorWindow
             // ★★셰이더가 준비되기를 기다렸다 찍는다 (2026-08-11 사용자 "검게 타서 오류난거같아").
             //   에디터는 셰이더를 뒤에서 천천히 굽는데, 안 구워진 첫 렌더는 **땅이 검게** 나온다.
             //   비동기를 끄면 이 렌더에서 다 구워질 때까지 기다린다. 한 번 구워지면 다음부턴 즉시다.
-            bool 옛비동기 = ShaderUtil.allowAsyncCompilation;
+            // ★★★**끈 것은 반드시 `finally` 에서 되돌린다** (2026-08-11 실측 사고).
+            //   되돌리는 줄이 `try` 안에 있으면 `Render()` 나 `ReadPixels` 가 한 번만 실패해도
+            //   **영영 꺼진 채로 남는다.** 실제로 그렇게 남아 있었고, 그 뒤로 게임을 켤 때마다
+            //   처음 보는 재질을 그 자리에서 굽느라 **스폰마다 570ms** 씩 멎었다.
+            //   (CPU 마커엔 하나도 안 잡혀서 「설명안됨」으로만 나온다 — 지침 9-4)
+            //   ☆되돌릴 값은 **프로젝트 설정**에서 가져온다. 옛 값을 물려받으면, 한 번 꺼진 뒤엔
+            //     그 「꺼짐」을 계속 되돌리게 되어 스스로 못 낫는다.
+            비동기껐음 = true;
             ShaderUtil.allowAsyncCompilation = false;
             눈.Render();
-            ShaderUtil.allowAsyncCompilation = 옛비동기;
 
             var 옛 = RenderTexture.active;
             RenderTexture.active = rt;
@@ -210,6 +240,12 @@ public class 맵보기 : EditorWindow
         }
         finally
         {
+            // ★비동기 셰이더를 **무조건** 되돌린다 — 여기 있어야 예외가 나도 살아난다
+            if (비동기껐음)
+            {
+                ShaderUtil.allowAsyncCompilation = EditorSettings.asyncShaderCompilation;
+                비동기껐음 = false;
+            }
             // 조명을 원래대로 — 플레이 중이면 DayNight 가 다음 틱에 어차피 되잡지만, 안 미룬다
             if (해 != null) { 해.transform.rotation = 해회전; 해.intensity = 해세기; 해.color = 해색; }
             RenderSettings.fog = 안개;

@@ -36,7 +36,11 @@ public class VisionCone : MonoBehaviour
     //   부드럽게 오가야 문턱에서 화면이 번쩍이지 않는다
     [Header("실내 (동굴 속)")]
     [Tooltip("굴 안에서 보이는 거리 (m) — 밤 시야와 비슷하게")] public float 실내거리 = 13f;
-    [Range(0f, 1f)] [Tooltip("굴 안의 어둠")] public float 실내어둠 = 0.82f;
+    // ★★★굴 안은 **완전 암흑**이다 (2026-08-11 사용자 "동굴안에 있을때, 주변이 진짜 아예
+    //   암흑시야였으면좋겠어"). 0.82 는 18% 가 남아 굴 안이 훤히 보였다.
+    //   ☆1.0 이면 굴 밖 풍경도 같이 사라진다 — `실내거리`(13m) 밖은 셰이더에서 lit=0 이 되고,
+    //     하늘도 같은 값으로 덮인다 (Vision.shader 49·63·74행). 값 하나가 둘 다 한다.
+    [Range(0f, 1f)] [Tooltip("굴 안의 어둠 — 1 이면 부채꼴 밖은 순수 검정")] public float 실내어둠 = 1f;
     [Tooltip("들어가고 나올 때 밝기가 바뀌는 빠르기")] public float 실내전환 = 3.5f;
 
     public static float 실내목표;                 // 굴가림이 매 프레임 1 로 올린다

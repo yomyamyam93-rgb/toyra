@@ -531,6 +531,12 @@ public class Wildlife : MonoBehaviour
         g.transform.position += Vector3.up * (parent.position.y - 밑);
 
         걷기물리기(parent, g, s);
+
+        // ★★★새 몸이 생겼다고 **아웃라인에 알려 준다** (2026-08-11 실측).
+        //   안 알려주면 아웃라인이 씬 전체를 `FindObjectsByType` 로 뒤져서 찾아낸다 —
+        //   세계 렌더러가 11만 개라 그게 **86ms · GC 1.7MB** 다. 야생이 2초마다 스폰되니
+        //   그 스파이크가 2초마다 왔다 (렉재기 로그로 확인). 알려주면 그 훑기가 아예 없다.
+        Outliner.새것(g);
     }
 
     /// ★★**리깅 모델에 걷기 애니메이션을 물린다** (2026-08-07 사용자 "팻 리깅 다 쳐넣고

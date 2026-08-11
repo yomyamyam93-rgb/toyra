@@ -39,12 +39,17 @@ public class WorldGen : MonoBehaviour
     //   ★새 테마 추가 = enum 한 자리 + 이 표 한 줄 + 소품 함수 한 개 (+ 서식 줄 하나)
     //   ★바닥·바닥세기: 그 권역의 **땅색** (2026-08-11 사용자 "바닥색은 그대로인데?") —
     //     소품만 바꾸면 바닥이 여전히 풀·흙이라 지역이 안 읽힌다. 셰이더가 이 색으로 물들인다
-    static readonly (Land 땅, int 칸수, float 먼곳부터, Color 바닥, float 바닥세기)[] 테마표 =
+    // ★★**권역수** — 테마마다 **몇 군데**에 나나 (2026-08-11 사용자 "테마가 너무 적지않나..?").
+    //   옛 코드는 테마마다 씨앗을 **딱 하나**만 심어서, 온 세상에 찰흙 지대가 한 군데뿐이었다.
+    //   그게 3칸이라 81칸 중 13칸(16%)이고 전부 집에서 멀어 **있어도 평생 못 보는** 상태였다.
+    //   → 13칸 → 27칸(33%). 걷다 보면 만나되, 바탕(숲·들판·바위)이 여전히 3분의 2다.
+    //   ★유리설원만 한 군데로 남긴다 — 제일 멀고 제일 낯선 데라 희소해야 값을 한다 (헌법 3).
+    static readonly (Land 땅, int 권역수, int 칸수, float 먼곳부터, Color 바닥, float 바닥세기)[] 테마표 =
     {
-        (Land.찰흙,     3, 0.20f, new Color(0.60f, 0.40f, 0.26f), 0.75f),
-        (Land.솜털실,   3, 0.30f, new Color(0.86f, 0.74f, 0.80f), 0.75f),
-        (Land.블록,     3, 0.45f, new Color(0.30f, 0.55f, 0.30f), 0.70f),   // 블록 바닥판의 초록
-        (Land.유리설원, 4, 0.60f, new Color(0.86f, 0.92f, 0.96f), 0.85f),
+        (Land.찰흙,     2, 4, 0.20f, new Color(0.60f, 0.40f, 0.26f), 0.75f),
+        (Land.솜털실,   2, 4, 0.30f, new Color(0.86f, 0.74f, 0.80f), 0.75f),
+        (Land.블록,     2, 3, 0.45f, new Color(0.30f, 0.55f, 0.30f), 0.70f),   // 블록 바닥판의 초록
+        (Land.유리설원, 1, 5, 0.60f, new Color(0.86f, 0.92f, 0.96f), 0.85f),
     };
 
     [Header("★교체 자리 — 프리팹을 넣으면 상자 대신 그게 나온다")]
@@ -98,7 +103,9 @@ public class WorldGen : MonoBehaviour
     //   → `PixelScreen` 과 같은 방식: **정본 번호**를 두고, 씬에 적힌 번호가 낮으면
     //     아래 값들을 코드 것으로 덮어쓴다. 숫자를 새로 정할 때 번호를 하나 올리면 된다.
     //   ★플레이 중 인스펙터로 만지는 건 그대로 먹는다 (그때는 이미 덮어쓴 뒤다).
-    const int 정본지금 = 21;
+    // ★★22 (2026-08-11) — 굴 수를 늘렸다. **값만 고치고 이 번호를 안 올리면 아무 일도 안 난다**
+    //   (실측: 씬 정본 21 == 정본지금 21 이라 111행에서 즉시 return, w동굴 3.2 가 한 번도 안 돌았다)
+    const int 정본지금 = 22;
     [Tooltip("코드가 정한 값으로 맞춘 번호 — 건드리지 않는다")] public int 정본 = 0;
 
     void 정본맞추기()
@@ -158,9 +165,29 @@ public class WorldGen : MonoBehaviour
         //   제일 작은 굴은 곁방 하나짜리, 제일 큰 굴은 한참 헤매는 크기가 되게
         굴조각최소 = 2;
         굴조각최대 = 60;
-        굴쏠림 = 2.6f;          // 작은 굴이 흔하고 큰 굴이 드물다
+        // ★★**작은 굴을 훨씬 많이** (2026-08-11 사용자 "작은 굴좀 수좀 많이 늘려줘").
+        //   두 손잡이가 같이 한다 — `w동굴` 은 **굴이 몇 개 나나**, `굴쏠림` 은 **그중 작은 게
+        //   몇이나**. 하나만 올리면 원하는 그림이 안 된다:
+        //     · w동굴만 올리면 → 큰 굴도 같이 늘어 세상이 굴 천지가 된다
+        //     · 굴쏠림만 올리면 → 굴 수는 그대로고 큰 굴만 사라진다
+        //   ☆9-4 「몇 개가 되나」 — 가중치 합 10.3 → 11.7 이라 굴 비율 17.5% → 27.4%.
+        //     81칸에 약 14개 → 약 22개. 대신 쏠림을 올려 **굴 하나가 작아지므로**
+        //     굴 하나당 상자 수는 줄어든다. 총량은 개수 증가분만큼 안 는다.
+        굴쏠림 = 3.4f;
         굴반경 = 80f;
-        w동굴 = 1.8f;
+        // ★★★굴을 **칸 룰렛에서 뺀다** — 이제 `굴흩기` 가 맵 전역에 개수만큼 판다.
+        //   룰렛에 두면 ①칸 81개에 갇히고 ②굴 칸이 맨땅이 되고 ③테마가 덮어써서 4개로 줄었다(실측).
+        w동굴 = 0f;
+        작은굴수 = 26;          // ★사용자 "작은 동굴은 적어도 20개는 있어야"
+        큰굴수 = 5;             // ★"큰것들도 좀 있고"
+        작은굴규모 = 7;         // ★크기도 좀 갈리게 (2~7). 성격 넷이 따로 흔들어 준다
+        큰굴규모최소 = 22;
+        굴높이배 = 2.1f;        // ★정본에 넣어 둔다 — 빠져 있으면 씬의 옛 값이 이긴다 (w동굴이 그랬다)
+        뚜껑잔디 = 0.55f;       // ★사용자 "그냥 잔디 재질만 좀 입혀줘, 불규칙하게"
+        뚜껑잔디얼룩 = 14f;
+        뚜껑나무 = 0f;          // ★사용자 "동굴 천장에 나무는 박지 말아줘"
+        굴가장자리 = 90f;
+        굴집비움 = 150f;
         정본 = 정본지금;
     }
 
@@ -220,27 +247,32 @@ public class WorldGen : MonoBehaviour
         for (int i = 0; i < 테마표.Length; i++)
         {
             var 테마 = 테마표[i];
-            Random.InitState(seed ^ (0x7e11 + i * 7919));
-
-            int sx = -1, sz = -1;
-            for (int t = 0; t < 60 && sx < 0; t++)
+            // ★한 테마가 **여러 군데** 난다 — 씨앗마다 난수를 갈라 서로 다른 자리에 앉는다.
+            //   `테마가능` 이 남의 테마 칸 위를 막으므로 권역끼리 겹치지 않는다
+            for (int g = 0; g < 테마.권역수; g++)
             {
-                int x = Random.Range(0, n), z = Random.Range(0, n);
-                if (테마가능(x, z, 테마.먼곳부터)) { sx = x; sz = z; }
-            }
-            if (sx < 0) continue;
+                Random.InitState(seed ^ (0x7e11 + i * 7919 + g * 104729));
 
-            kinds[sx, sz] = 테마.땅;
-            var 덩어리 = new List<(int x, int z)> { (sx, sz) };
-            // ★번질 때는 거리 문턱을 살짝 낮춘다 — 씨앗만 충분히 멀면 가장자리는 걸쳐도 된다
-            for (int t = 0; t < 80 && 덩어리.Count < 테마.칸수; t++)
-            {
-                var (bx, bz) = 덩어리[Random.Range(0, 덩어리.Count)];
-                int x = bx + Random.Range(-1, 2), z = bz + Random.Range(-1, 2);
-                if ((x == bx && z == bz) || !WorldGrid.InRange(x, z)) continue;
-                if (!테마가능(x, z, 테마.먼곳부터 * 0.75f)) continue;
-                kinds[x, z] = 테마.땅;
-                덩어리.Add((x, z));
+                int sx = -1, sz = -1;
+                for (int t = 0; t < 60 && sx < 0; t++)
+                {
+                    int x = Random.Range(0, n), z = Random.Range(0, n);
+                    if (테마가능(x, z, 테마.먼곳부터)) { sx = x; sz = z; }
+                }
+                if (sx < 0) continue;
+
+                kinds[sx, sz] = 테마.땅;
+                var 덩어리 = new List<(int x, int z)> { (sx, sz) };
+                // ★번질 때는 거리 문턱을 살짝 낮춘다 — 씨앗만 충분히 멀면 가장자리는 걸쳐도 된다
+                for (int t = 0; t < 80 && 덩어리.Count < 테마.칸수; t++)
+                {
+                    var (bx, bz) = 덩어리[Random.Range(0, 덩어리.Count)];
+                    int x = bx + Random.Range(-1, 2), z = bz + Random.Range(-1, 2);
+                    if ((x == bx && z == bz) || !WorldGrid.InRange(x, z)) continue;
+                    if (!테마가능(x, z, 테마.먼곳부터 * 0.75f)) continue;
+                    kinds[x, z] = 테마.땅;
+                    덩어리.Add((x, z));
+                }
             }
         }
     }
@@ -337,9 +369,11 @@ public class WorldGen : MonoBehaviour
                     case Land.솜털실: 솜털실터(c); break;
                     case Land.블록: 블록터(c); break;
                     case Land.유리설원: 유리설원터(c); break;
-                    case Land.동굴: 동굴터(c); break;
+                    case Land.동굴: 동굴터(c); break;      // (은퇴) w동굴 = 0 이라 안 온다
                 }
             }
+
+        굴흩기(seed);      // ★굴은 칸과 무관하게 맵 전역에 흩는다 — 테마가 덮어쓸 수 없다
     }
 
     public void Clear()
@@ -747,8 +781,21 @@ public class WorldGen : MonoBehaviour
     [Tooltip("큰 공간의 반지름 (m)")] [Range(4f, 40f)] public float 굴방크게 = 16f;
     [Tooltip("제일 큰 굴의 천장이 작은 굴의 몇 배인가 — 1 이면 다 같은 높이")]
     [Range(1f, 3f)] public float 굴높이배 = 2.1f;
-    [Tooltip("뚜껑 위 칸 중 잔디가 덮인 비율")] [Range(0f, 1f)] public float 뚜껑잔디 = 0.25f;
-    [Tooltip("뚜껑 위 칸 중 나무가 박힌 비율")] [Range(0f, 0.3f)] public float 뚜껑나무 = 0.07f;
+    // ★★맵 전역에 흩는 굴 — **개수를 여기서 바로 정한다** (칸 룰렛 `w동굴` 은 0 으로 은퇴)
+    [Tooltip("맵 전역에 흩는 작은 굴의 수")] [Range(0, 80)] public int 작은굴수 = 26;
+    [Tooltip("맵 전역에 흩는 큰 굴의 수")] [Range(0, 20)] public int 큰굴수 = 5;
+    [Tooltip("작은 굴의 최대 조각 수 — 작을수록 아담하다")] [Range(3, 20)] public int 작은굴규모 = 9;
+    [Tooltip("큰 굴의 최소 조각 수")] [Range(10, 50)] public int 큰굴규모최소 = 22;
+    [Tooltip("맵 가장자리에서 이만큼 안쪽에만 판다 (m)")] public float 굴가장자리 = 90f;
+    [Tooltip("집 둘레 이 반경 안엔 안 판다 (m) — 집 앞은 트여 있어야 한다")] public float 굴집비움 = 150f;
+    // ★★뚜껑 위엔 **나무를 안 심는다** (2026-08-11 사용자 "동굴 천장에 나무는 박지 말아줘,
+    //   그냥 잔디 재질만 좀 입혀줘, 불규칙하게"). 나무는 굴 뚜껑을 「언덕」이 아니라
+    //   「나무 심은 상자」로 읽히게 했다. 잔디만 **얼룩덜룩** 입힌다.
+    //   ☆비율을 올리되 노이즈로 뭉치게 한다 — 칸마다 동전 던지면 소금후추가 되고,
+    //     노이즈를 쓰면 덮인 데와 드러난 바위가 **덩어리로** 갈린다.
+    [Tooltip("뚜껑 위 잔디가 덮인 비율 — 노이즈로 얼룩덜룩하게")] [Range(0f, 1f)] public float 뚜껑잔디 = 0.55f;
+    [Tooltip("잔디 얼룩의 크기 (m) — 클수록 넓게 뭉친다")] [Range(3f, 40f)] public float 뚜껑잔디얼룩 = 14f;
+    [Tooltip("(은퇴) 뚜껑 위 나무 — 사용자가 빼라고 했다. 0 이면 안 심는다")] [Range(0f, 0.3f)] public float 뚜껑나무 = 0f;
     [Tooltip("★비우면 상자로 짓는다")] public GameObject[] 굴조각_방, 굴조각_통로, 굴조각_잡동사니;
 
     List<직소.주머니> 굴주머니()
@@ -772,9 +819,81 @@ public class WorldGen : MonoBehaviour
     ///     · **곁가지·막다른 끝** — 전부 이어진 격자가 아니라 나뭇가지다
     ///     · 넓은 데는 **천장도 높다.** 겉의 바위 살이 그 위를 덮는다
     ///   ☆직소 굴 조각(직소상자)은 안 부르게 됐지만 지우지 않는다 (은퇴는 스위치)
-    void 동굴터(Vector3 c)
+    /// ★★★**굴은 칸에 묶이지 않는다 — 맵 전역에 흩는다** (2026-08-11 사용자 "동굴은 그냥
+    ///   맵전역에 좀 분포되게해줘,, 여러개 좀많이 왜케 없어").
+    ///
+    ///   옛 방식은 칸 룰렛(`w동굴`)이었다. 그게 왜 못 늘렸나 — **실측으로 확인한 것**:
+    ///     ① 칸이 81개뿐이라 굴 20개면 세상의 4분의 1을 굴 칸으로 써야 한다
+    ///     ② 굴 칸엔 흩뿌리기가 안 돈다(323행) → 굴을 늘릴수록 **맨땅이 넓어진다**
+    ///     ③ `테마깔기` 가 **나중에** 27칸을 덮어써서 굴을 먹는다 → 실측 **4개**만 남았다
+    ///   → 칸과 무관하게 좌표를 찍어 판다. **개수를 숫자로 바로 정하는 게** 유일하게 확실하다.
+    ///   ☆이게 원래 적혀 있던 설계다 (17행 "동굴은 독립 랜드마크 — 어디든 난다").
+    ///     구현만 룰렛에 묶여 있었다 — 9-2 패턴(자산은 앞서고 배선이 뒤처진다) 그대로.
+    ///
+    ///   ★9-4 「몇 개가 되나」: 작은 굴 26 × 약 60상자 + 큰 굴 5 × 약 400상자 ≒ 3,500 렌더러.
+    ///     전부 정적 상자라 매 프레임 도는 것은 없다. 굴가림은 굴마다 범위 비교 한 번뿐(31번/프레임).
+    // ★굴이 파낸 칸 (2m 격자) — 굴을 다 판 뒤 **그 자리의 나무·돌을 치우는** 데 쓴다
+    readonly HashSet<(int ix, int iz)> 굴판칸 = new HashSet<(int ix, int iz)>();
+
+    void 굴흩기(int seed)
     {
-        int 규모 = 절차.정수(Random.value, 굴조각최소, 굴조각최대, 굴쏠림);      // 3~40 · 작은 굴이 흔하다
+        Random.InitState(seed ^ 0x9d51);
+        굴판칸.Clear();
+        var 집 = WorldGrid.Center;
+        int 못앉음 = 0;
+        for (int i = 0; i < 작은굴수 + 큰굴수; i++)
+        {
+            bool 큰가 = i >= 작은굴수;
+            Vector3 p = Vector3.zero;
+            bool 됐나 = false;
+            for (int t = 0; t < 24 && !됐나; t++)
+            {
+                p = new Vector3(Random.Range(굴가장자리, WorldGrid.Size - 굴가장자리), 0f,
+                                Random.Range(굴가장자리, WorldGrid.Size - 굴가장자리));
+                if (물인가(p)) continue;                                  // 호수 위엔 안 판다
+                float dx = p.x - 집.x, dz = p.z - 집.z;
+                if (dx * dx + dz * dz < 굴집비움 * 굴집비움) continue;      // 집 둘레는 트여 있어야 한다
+                됐나 = true;
+            }
+            if (!됐나) { 못앉음++; continue; }
+            동굴터(p, 큰가 ? 절차.정수(Random.value, 큰굴규모최소, 굴조각최대, 1.2f)
+                          : 절차.정수(Random.value, 굴조각최소, 작은굴규모, 1.6f));
+        }
+        // ★9-4 「없앤 것은 말한다」 — 자리를 못 잡아 조용히 빠진 굴이 있으면 알린다
+        if (못앉음 > 0) Debug.Log("[세계] 굴 " + 못앉음 + "개는 자리를 못 잡았다 (물·집 둘레를 피하다가)");
+        굴안치우기();
+    }
+
+    /// ★★★**굴 안에 박힌 나무·돌을 치운다** (2026-08-11 사용자 "동굴안쪽에,, 이렇게 나무를
+    ///   쳐박으면 안돼지"). 옛날엔 굴이 **칸 종류**였고 굴 칸엔 흩뿌리기를 안 돌렸다(323행).
+    ///   굴을 칸에서 떼어 맵 전역에 흩으면서 그 보호가 무력해졌다 — 나무가 먼저 심기고
+    ///   굴이 나중에 그 밑을 판다. **내가 만든 문제다.**
+    ///   ☆굴이 다 파인 **뒤에 한 번만** 훑는다. 굴마다 훑으면 31번 도는 셈이라 비싸다 (9-4 ②).
+    void 굴안치우기()
+    {
+        if (holder == null || 굴판칸.Count == 0) return;
+        const float 칸 = 2f;
+        var 지울것 = new List<GameObject>();
+        for (int i = 0; i < holder.childCount; i++)
+        {
+            var t = holder.GetChild(i);
+            if (t.name == "동굴") continue;                       // 굴 자신은 둔다
+            var p = t.position;
+            if (굴판칸.Contains((Mathf.RoundToInt(p.x / 칸), Mathf.RoundToInt(p.z / 칸))))
+                지울것.Add(t.gameObject);
+        }
+        foreach (var g in 지울것)
+        {
+            if (Application.isPlaying) Destroy(g); else DestroyImmediate(g);
+        }
+        if (지울것.Count > 0) Debug.Log("[세계] 굴 안에 박힌 소품 " + 지울것.Count + "개를 치웠다");
+    }
+
+    /// `규모고정` 을 주면 그 크기로 판다 (안 주면 제 손으로 굴린다)
+    void 동굴터(Vector3 c, int 규모고정 = -1)
+    {
+        int 규모 = 규모고정 > 0 ? 규모고정
+                 : 절차.정수(Random.value, 굴조각최소, 굴조각최대, 굴쏠림);      // 3~40 · 작은 굴이 흔하다
         var 루트 = new GameObject("동굴");
         루트.transform.SetParent(holder, false);
 
@@ -785,6 +904,21 @@ public class WorldGen : MonoBehaviour
         //   지금 값을 **작은 굴의 높이**로 삼고, 규모에 따라 위로만 늘린다
         float 규모비0 = Mathf.InverseLerp(굴조각최소, 굴조각최대, 규모);
         float 높이배 = Mathf.Lerp(1f, 굴높이배, 규모비0);
+
+        // ★★★**굴마다 성격이 다르다** (2026-08-11 사용자 "동굴 모양이 다 쳐똑같은데").
+        //   크기만 갈리면 전부 **같은 굴의 확대·축소판**이다 — 실측에서도 작은 굴들이
+        //   렌더러 185·187·191·192·195, 천장 6.1·6.2·6.2m 로 거의 판박이였다.
+        //   갈려야 하는 건 크기가 아니라 **비율**이다. 넷을 굴마다 새로 뽑는다:
+        //     · 굽이   — 곧게 뻗는 굴 ↔ 뱀처럼 감기는 굴
+        //     · 가지끼 — 외길 굴 ↔ 갈래가 많아 헤매는 굴
+        //     · 방끼   — 통로뿐인 굴 ↔ 방이 자꾸 열리는 굴
+        //     · 길이배 — 같은 규모라도 짧고 굵은 굴 ↔ 길고 가는 굴
+        //   ☆옛 고정값은 각각 1.5 · 0.045 · 0.045 · 1.0 이었다 (그래서 다 같았다).
+        float 굽이 = Random.Range(0.55f, 2.7f);
+        float 가지끼 = Random.Range(0f, 0.11f);
+        float 방끼 = Random.Range(0.008f, 0.10f);
+        float 길이배 = Random.Range(0.7f, 1.6f);
+        int 가지한계 = Mathf.Max(1, Mathf.RoundToInt(규모 * Random.Range(0.12f, 0.45f)));
 
         void 새기기(Vector3 p, float r, float 높이)
         {
@@ -804,9 +938,13 @@ public class WorldGen : MonoBehaviour
         {
             // ★★규모가 공간 크기도 정한다 (2026-08-11) — 곁방 하나짜리 작은 굴에 20m 짜리
             //   홀이 있으면 어색하다. 큰 굴일수록 큰 방이 나올 수 있게 위쪽을 연다
+            //   ★★★**아래 한계도 같이 줄여야 한다** (2026-08-11 실측). 옛 코드는 하한이
+            //     `굴방작게`(7m = 지름 14m)로 **고정**이라, 규모 9짜리 작은 굴에도 14m 홀이
+            //     들어갔다 → 굴 하나가 **렌더러 765개**. 방 넓이는 반지름의 제곱으로 든다.
             float 규모비 = Mathf.InverseLerp(굴조각최소, 굴조각최대, 규모);
-            float 위한계 = Mathf.Lerp(굴방작게 + 2f, 굴방크게, 규모비);
-            float 큰r = Random.Range(굴방작게, Mathf.Max(굴방작게 + 0.5f, 위한계));
+            float 아래한계 = Mathf.Lerp(3.5f, 굴방작게, 규모비);        // 작은 굴은 방도 아담하다
+            float 위한계 = Mathf.Lerp(아래한계 + 2f, 굴방크게, 규모비);
+            float 큰r = Random.Range(아래한계, Mathf.Max(아래한계 + 0.5f, 위한계));
             int 원수 = Random.Range(3, 7);
             for (int i = 0; i < 원수; i++)
             {
@@ -827,7 +965,7 @@ public class WorldGen : MonoBehaviour
         var 입구p = c + new Vector3(Mathf.Cos(입구각), 0f, Mathf.Sin(입구각)) * Mathf.Min(굴반경 * 0.45f, 26f);
         새기기(입구p, Mathf.Max(굴길좁게, 2.2f), 3.2f * 높이배);   // ★입구 자리를 확실히 판다
         var 줄기들 = new Stack<(Vector3 p, float dir, int 걸음)>();
-        줄기들.Push((입구p, 입구각 + Mathf.PI, 규모 * 3 + 8));
+        줄기들.Push((입구p, 입구각 + Mathf.PI, Mathf.RoundToInt((규모 * 3 + 8) * 길이배)));
         float 씨 = Random.value * 512f;
         int 가지 = 0;
         while (줄기들.Count > 0)
@@ -837,18 +975,20 @@ public class WorldGen : MonoBehaviour
             for (int i = 0; i < 걸음; i++)
             {
                 t += 1f;
-                dir += (Mathf.PerlinNoise(씨, t * 0.13f) - 0.5f) * 1.5f;             // 구불구불
+                dir += (Mathf.PerlinNoise(씨, t * 0.13f) - 0.5f) * 굽이;             // 구불구불 (굴마다 다르다)
                 p += new Vector3(Mathf.Cos(dir), 0f, Mathf.Sin(dir)) * 1.5f;
                 p.x = Mathf.Clamp(p.x, 8f, WorldGrid.Size - 8f);
                 p.z = Mathf.Clamp(p.z, 8f, WorldGrid.Size - 8f);
                 if ((p - c).magnitude > 굴반경 * 0.62f)                              // 제 칸을 벗어나지 않게
                     dir = Mathf.Atan2(c.z - p.z, c.x - p.x) + Random.Range(-0.6f, 0.6f);
-                float 폭 = Mathf.Lerp(굴길좁게, Mathf.Max(굴길좁게 + 0.3f, 굴길넓게),
+                // ★작은 굴은 **넓어지는 상한도 낮다** — 길 넓이도 폭의 제곱으로 든다
+                float 폭상한 = Mathf.Lerp(굴길좁게 + 0.8f, 굴길넓게, 규모비0);
+                float 폭 = Mathf.Lerp(굴길좁게, Mathf.Max(굴길좁게 + 0.3f, 폭상한),
                                       Mathf.PerlinNoise(씨 + 31f, t * 0.08f));   // 길 두께가 변한다
                 새기기(p, 폭, (2.7f + 폭 * 0.35f) * 높이배);
-                if (가지 < 규모 / 5 && 걸음 - i > 10 && Random.value < 0.045f)      // 곁가지
+                if (가지 < 가지한계 && 걸음 - i > 10 && Random.value < 가지끼)       // 곁가지
                 { 가지++; 줄기들.Push((p, dir + Random.Range(1.1f, 2.1f) * (Random.value < 0.5f ? 1f : -1f), (걸음 - i) / 2)); }
-                if (Random.value < 0.045f) 방파기(p);                                // 가다 불쑥 열리는 공간
+                if (Random.value < 방끼) 방파기(p);                                  // 가다 불쑥 열리는 공간
             }
             방파기(p);                                                               // 막다른 끝은 공간이다
         }
@@ -912,8 +1052,18 @@ public class WorldGen : MonoBehaviour
 
         foreach (var kv in 천장)
         {
-            var p2 = new Vector3(kv.Key.ix * 칸, 0f, kv.Key.iz * 칸);
-            격자상자(p2 + Vector3.up * 0.08f, new Vector3(칸 * 1.03f, 0.16f, 칸 * 1.03f), 직소상자.C굴바닥, "바닥", 0f);
+            // ★★★굴 바닥은 **땅격자 위에 얹는다** (2026-08-11 사용자 "동굴안에 있을때 발이
+            //   땅에 박히는버그가있어"). 옛 코드는 y 를 `0f` 로 박고 바닥 상자를 0.08 에 두어
+            //   **윗면이 0.16m** 였는데, 사람은 `땅격자.걷는높이` 를 딛는다 (Hero.cs:207).
+            //   → 발이 정확히 16cm 묻혔다.
+            //   ☆Hero.cs:205 에 **이미 적힌 사고의 재발**이다 — "`땅격자` 가 그림과 판정의
+            //     단 하나뿐인 출처다. 여기서 안 물으면 발이 묻힌다" (2026-08-09).
+            //     고치는 방향은 **그림을 출처에 맞추는 것** — 반대로 하면 그 규칙이 또 깨진다.
+            //   ☆윗면을 걷는높이에 딱 맞추면 땅과 z파이팅이 난다 → 2cm 만 띄운다.
+            //     상자 반높이가 0.08 이므로 중심은 걷는높이 + 0.02 - 0.08.
+            굴판칸.Add((kv.Key.ix, kv.Key.iz));      // ★나중에 이 자리의 나무·돌을 치운다
+            var p2 = new Vector3(kv.Key.ix * 칸, 땅격자.걷는높이(kv.Key.ix * 칸, kv.Key.iz * 칸), kv.Key.iz * 칸);
+            격자상자(p2 + Vector3.up * (0.02f - 0.08f), new Vector3(칸 * 1.03f, 0.16f, 칸 * 1.03f), 직소상자.C굴바닥, "바닥", 0f);
             격자상자(p2 + Vector3.up * (kv.Value + 0.2f), new Vector3(칸 * 1.03f, 0.4f, 칸 * 1.03f), 직소상자.C굴덮개, "덮개", 0f);
             // 높은 공간엔 가끔 돌기둥 — 빈 방이 심심하지 않게, 몸을 숨길 데가 생기게
             if (kv.Value > 4f && Random.value < 0.035f)
@@ -927,6 +1077,7 @@ public class WorldGen : MonoBehaviour
         //     큰 굴의 살이 1,500칸이면 나무 100그루쯤 — 세계 전체 2만 6천 그루에 견주면 작다.
         var 장식 = new GameObject("덮개장식");
         장식.transform.SetParent(루트.transform, false);
+        float 잔디씨 = Random.value * 997f;      // 굴마다 잔디 얼룩 무늬가 다르게
 
         foreach (var k in 살)
         {
@@ -935,8 +1086,12 @@ public class WorldGen : MonoBehaviour
             격자상자(p2 + Vector3.up * (h * 0.5f - 0.2f), new Vector3(칸 * 1.04f, h, 칸 * 1.04f), 직소상자.C굴덮개, "덮개산", 칸 * 0.52f);
 
             float 꼭대기 = h - 0.2f;
-            // 잔디 — 바위 위에 얇게 덮인 흙·풀
-            if (Random.value < 뚜껑잔디)
+            // ★★잔디 — **노이즈로 뭉친다** (2026-08-11 사용자 "잔디 재질만 좀 입혀줘, 불규칙하게").
+            //   칸마다 `Random.value` 로 동전을 던지면 **소금후추**가 된다 — 한 칸 걸러 한 칸이라
+            //   「얼룩」이 아니라 「점무늬」로 읽힌다. 노이즈를 쓰면 덮인 데와 드러난 바위가
+            //   **덩어리로** 갈려서 진짜 언덕처럼 보인다.
+            float n잔디 = Mathf.PerlinNoise((p2.x + 잔디씨) / 뚜껑잔디얼룩, (p2.z + 잔디씨) / 뚜껑잔디얼룩);
+            if (n잔디 < 뚜껑잔디)
             {
                 var 풀 = Grey.Box(장식.transform, p2 + Vector3.up * (꼭대기 + 0.12f),
                                   new Vector3(칸 * 1.02f, 0.24f, 칸 * 1.02f),

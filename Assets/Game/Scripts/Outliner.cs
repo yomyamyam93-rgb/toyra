@@ -79,7 +79,98 @@ public class Outliner : MonoBehaviour
     float cd;
     readonly HashSet<int> 처리됨 = new HashSet<int>();
 
+    void Awake() { Me = this; }
     void Start() { 층가리기(); 훑기(); }
+
+    // ★★★★**만든 쪽이 알려준다 — 찾으러 가지 않는다** (2026-08-11 실측).
+    //
+    //   `훑기()` 는 `FindObjectsByType<MeshRenderer>` 로 **씬 전체를 뒤진다.** 세계 렌더러가
+    //   113,445개라 한 번에 **86ms · GC 1.7MB** 다 (렉재기 로그에 2초마다 그 스파이크).
+    //   위의 문(`자식수합`)은 「아무것도 안 생겼을 때」는 완벽히 막는다 — 그런데
+    //   **야생이 2초마다 한 마리씩 스폰**되니 자식 수가 매번 바뀌어 문이 매번 열렸다.
+    //   즉 그 문은 **뭔가가 계속 생기는 상황**을 못 덮는다.
+    //
+    //   → 새로 생긴 것은 **그것만** 처리한다. 찾을 일이 없으니 스캔도 없다.
+    //     ☆전체 훑기는 은퇴시키지 않는다 — 아무도 안 알려준 것(직접 만든 물건 따위)을
+    //       `강제훑기` 가 가끔 주워 준다. 푸시가 빠져도 20초 뒤엔 선이 붙는다.
+    public static Outliner Me;
+
+    /// 새로 만든 것에 테두리를 붙인다 — **만든 쪽에서 부른다** (전체 스캔 없음)
+    public static void 새것(GameObject go)
+    {
+        if (Me == null || go == null) return;
+        Me.하나붙이기(go);
+    }
+
+    public void 하나붙이기(GameObject go)
+    {
+        if (!재질챙기기()) return;
+        foreach (var r in go.GetComponentsInChildren<MeshRenderer>(true)) 정적하나(r);
+        foreach (var r in go.GetComponentsInChildren<SkinnedMeshRenderer>(true)) 뼈하나(r);
+        // ★이걸로 처리했으니 자식 수를 맞춰 둔다 — 안 그러면 다음 틱에 문이 헛되이 열린다
+        지난자식수 = 씬바뀜.자식수합();
+    }
+
+    bool 재질챙기기()
+    {
+        if (mat != null) return true;
+        var sh = Shader.Find("Toyra/Outline");
+        if (sh == null) { Debug.LogError("[실루엣] Outline.shader 를 못 찾았다"); enabled = false; return false; }
+        mat = new Material(sh) { name = "실루엣" };
+        mat.SetFloat("_Expand", 밀거리());
+        return true;
+    }
+
+    /// 정적인 몸 하나에 테두리 — 만들었으면 true
+    bool 정적하나(MeshRenderer r)
+    {
+        int id = r.GetInstanceID();
+        if (처리됨.Contains(id)) return false;
+        처리됨.Add(id);
+
+        // ★이름(문자열) 비교는 7만 개에서 31ms 다 — 층(정수) 비교로 바꿨다
+        if (r.gameObject.layer == 층) return false;
+        if (건너뜀(r.transform)) return false;
+
+        var mf = r.GetComponent<MeshFilter>();
+        if (mf == null || mf.sharedMesh == null) return false;
+
+        var go = new GameObject(이름) { layer = 층 };
+        go.transform.SetParent(r.transform, false);
+        go.transform.localPosition = Vector3.zero;
+        go.transform.localRotation = Quaternion.identity;
+        go.transform.localScale = Vector3.one;
+
+        go.AddComponent<MeshFilter>().sharedMesh = mf.sharedMesh;
+        꾸미기(go.AddComponent<MeshRenderer>(), r.transform);
+        return true;
+    }
+
+    /// 뼈 있는 몸 하나에 테두리 — 같은 메시·같은 뼈를 쓰는 복사본이라 동작까지 따라온다
+    bool 뼈하나(SkinnedMeshRenderer r)
+    {
+        int id = r.GetInstanceID();
+        if (처리됨.Contains(id)) return false;
+        처리됨.Add(id);
+
+        if (r.gameObject.layer == 층) return false;
+        if (건너뜀(r.transform)) return false;
+        if (r.sharedMesh == null) return false;
+
+        var go = new GameObject(이름) { layer = 층 };
+        go.transform.SetParent(r.transform.parent, false);   // 형제로 (뼈를 그대로 쓴다)
+        go.transform.localPosition = r.transform.localPosition;
+        go.transform.localRotation = r.transform.localRotation;
+        go.transform.localScale = r.transform.localScale;
+
+        var sk = go.AddComponent<SkinnedMeshRenderer>();
+        sk.sharedMesh = r.sharedMesh;
+        sk.bones = r.bones;
+        sk.rootBone = r.rootBone;
+        sk.updateWhenOffscreen = true;
+        꾸미기(sk, r.transform);
+        return true;
+    }
 
     /// ★★★**실루엣 복사본은 본 카메라에 절대 안 보여야 한다** (2026-08-06 사용자 —
     ///   "모델링이 두겹이라고", "두개가 겹쳐서 각각 따로 움직인다고").
@@ -162,26 +253,7 @@ public class Outliner : MonoBehaviour
         foreach (var r in FindObjectsByType<MeshRenderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
         {
             if (만든수 >= 한번에) break;      // 나머지는 다음 훑기에 (렉 방지)
-            int id = r.GetInstanceID();
-            if (처리됨.Contains(id)) continue;
-            처리됨.Add(id);
-
-            // ★이름(문자열) 비교는 7만 개에서 31ms 다 — 층(정수) 비교로 바꿨다
-            if (r.gameObject.layer == 층) continue;
-            if (건너뜀(r.transform)) continue;
-
-            var mf = r.GetComponent<MeshFilter>();
-            if (mf == null || mf.sharedMesh == null) continue;
-
-            var go = new GameObject(이름) { layer = 층 };
-            go.transform.SetParent(r.transform, false);
-            go.transform.localPosition = Vector3.zero;
-            go.transform.localRotation = Quaternion.identity;
-            go.transform.localScale = Vector3.one;
-
-            go.AddComponent<MeshFilter>().sharedMesh = mf.sharedMesh;
-            꾸미기(go.AddComponent<MeshRenderer>(), r.transform);
-            만든수++;
+            if (정적하나(r)) 만든수++;
         }
 
         훑기_뼈();
@@ -207,28 +279,7 @@ public class Outliner : MonoBehaviour
         foreach (var r in FindObjectsByType<SkinnedMeshRenderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
         {
             if (만든수 >= 한번에) break;
-            int id = r.GetInstanceID();
-            if (처리됨.Contains(id)) continue;
-            처리됨.Add(id);
-
-            // ★이름(문자열) 비교는 7만 개에서 31ms 다 — 층(정수) 비교로 바꿨다
-            if (r.gameObject.layer == 층) continue;
-            if (건너뜀(r.transform)) continue;
-            if (r.sharedMesh == null) continue;
-
-            var go = new GameObject(이름) { layer = 층 };
-            go.transform.SetParent(r.transform.parent, false);   // 형제로 (뼈를 그대로 쓴다)
-            go.transform.localPosition = r.transform.localPosition;
-            go.transform.localRotation = r.transform.localRotation;
-            go.transform.localScale = r.transform.localScale;
-
-            var sk = go.AddComponent<SkinnedMeshRenderer>();
-            sk.sharedMesh = r.sharedMesh;
-            sk.bones = r.bones;
-            sk.rootBone = r.rootBone;
-            sk.updateWhenOffscreen = true;
-            꾸미기(sk, r.transform);
-            만든수++;
+            if (뼈하나(r)) 만든수++;
         }
     }
 
