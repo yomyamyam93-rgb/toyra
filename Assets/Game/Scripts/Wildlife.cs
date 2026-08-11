@@ -179,7 +179,30 @@ public class Wildlife : MonoBehaviour
         Debug.Log($"[야생] 미리 읽기 끝 — 모델 {모델수}개 · 동작 {클립수}개 · {시계.ElapsedMilliseconds}ms");
     }
 
+    // ★★스스로 시간을 잰다 (2026-08-11) — 스파이크에 「Update 72ms」 라고만 찍히면
+    //   **어느 코드인지** 알 수가 없다. 오래 걸린 프레임에 무엇을 했는지 같이 남긴다.
+    [Tooltip("Wildlife 가 이보다 오래 걸린 프레임을 콘솔에 남긴다 (ms · 0 이면 안 남김)")]
+    public float 스스로재기 = 12f;
+
     void Update()
+    {
+        var 시계 = 스스로재기 > 0f ? System.Diagnostics.Stopwatch.StartNew() : null;
+        int 지운수기록 = 0, 만든수기록 = 0;
+        try { 실제Update(ref 지운수기록, ref 만든수기록); }
+        finally
+        {
+            if (시계 != null)
+            {
+                시계.Stop();
+                double ms = 시계.Elapsed.TotalMilliseconds;
+                if (ms >= 스스로재기)
+                    Debug.LogFormat("[야생-느림] {0:F0}ms · 지움 {1} · 만듦 {2} · 지금 {3}마리",
+                                    ms, 지운수기록, 만든수기록, Critter.All.Count);
+            }
+        }
+    }
+
+    void 실제Update(ref int 지운수기록, ref int 만든수기록)
     {
         var hero = Hero.Me;
         if (hero == null) return;
@@ -194,6 +217,7 @@ public class Wildlife : MonoBehaviour
             if (Flat(c.transform.position, hero.transform.position) > 지우는거리)
             { Destroy(c.gameObject); 지운수++; }
         }
+        지운수기록 = 지운수;
 
         cd -= Time.deltaTime;
         if (cd > 0f) return;
@@ -207,6 +231,7 @@ public class Wildlife : MonoBehaviour
         if (wild < 목표마릿수 / 2) cd = 채우는간격 * 0.2f;
 
         홀로생성(hero.transform.position);
+        만든수기록 = 1;
     }
 
     [Tooltip("한 프레임에 몇 마리까지 치우나")]
