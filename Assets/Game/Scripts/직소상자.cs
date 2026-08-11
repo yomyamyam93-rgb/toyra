@@ -366,6 +366,19 @@ public static class 직소상자
     static void 창고정리()
     {
         if (창고 != null) return;
+        // ★★★**에디터에서는 스크립트를 다시 컴파일할 때마다 `static` 이 날아간다** (2026-08-11 실측).
+        //   그때마다 창고를 새로 만들면 **옛 창고가 씬에 그대로 남는다.** 하루 작업 뒤
+        //   실측: 창고 10개 · 오브젝트 14,267개 · 씬 파일 **59MB**.
+        //   ☆꺼져 있어서(SetActive(false)) 화면엔 안 나오지만, 씬에는 통째로 저장된다.
+        //     지침 9장 2번(「씬에는 오브젝트 몇 개뿐」)이 여기서 깨지고 있었다.
+        //   → 만들기 전에 **씬에 이미 있는 창고를 찾아 쓴다.** 꺼진 것도 찾아야 하므로
+        //     `GameObject.Find` 는 못 쓴다 (그건 켜진 것만 본다).
+        foreach (var go in Object.FindObjectsByType<GameObject>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (go.name != "직소_상자창고" || go.transform.parent != null) continue;
+            창고 = go.transform;
+            return;
+        }
         var g = new GameObject("직소_상자창고");
         g.SetActive(false);                       // 통째로 꺼 둔다
         창고 = g.transform;
