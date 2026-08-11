@@ -42,17 +42,27 @@ public class Harvest : MonoBehaviour
     ///   전에는 맞을 때마다 세로 1.12배·가로 0.89배로 늘렸다 줄였다 했는데,
     ///   `Harvest` 는 나무·바위만이 아니라 **사체에도 붙는다** — 리깅된 몸이 늘어나면 흉하다.
     ///   → 크기 대신 **기울여서** 흔든다. 리깅이든 아니든 형태가 안 망가진다.
+    // ★★★**휘는 게 아니라 「진동」이다** (2026-08-11 사용자 "나무 스쿼시? 적용된거같은데..
+    //   제발 다 빼줘, 그냥 진동 효과를 넣어줘").
+    //   옛 코드는 **회전**을 3.5° 흔들었다. 나무가 9~15m 라 밑동에서 3.5° 면 **꼭대기가
+    //   0.6m 넘게 휜다** — 그게 스쿼시(짜부)로 읽혔다.
+    //   ☆이 프로젝트는 짜부를 두 번 걷어냈다 (8/3 "짜부되는 건 좀 아닌 거 같고",
+    //     8/9 "팻 쳐맞는 모션 만들고 왜 이상한걸 쓰냐"). 같은 잘못을 또 한 셈이다.
+    //   → **자리를 파르르 떤다.** 크기도 회전도 안 건드린다 — 나무는 나무 모양 그대로다.
+    [Tooltip("맞았을 때 떠는 폭 (m)")] [Range(0f, 0.2f)] public float 흔들폭 = 0.045f;
+
     System.Collections.IEnumerator 흔들기()
     {
-        var 기본회전 = transform.localRotation;
+        var 기본자리 = transform.localPosition;
         while (shake > 0f)
         {
             shake = Mathf.Max(0f, shake - Time.deltaTime * 5f);
-            float a = Mathf.Sin(Time.time * 34f) * shake * 3.5f;      // 3.5° 안쪽으로 파르르
-            transform.localRotation = 기본회전 * Quaternion.Euler(a, 0f, a * 0.6f);
+            float a = Mathf.Sin(Time.time * 46f) * shake * 흔들폭;
+            transform.localPosition = 기본자리 + new Vector3(a, 0f, a * 0.55f);
             yield return null;
         }
-        transform.localRotation = 기본회전;
+        transform.localPosition = 기본자리;
+        자리 = transform.position;      // 떨고 나서 기억해 둔 자리를 바로잡는다
     }
 
     [Tooltip("다 캐면 이 자리의 장애물도 지운다 (안 지우면 보이지 않는 벽이 남는다)")]
@@ -174,7 +184,10 @@ public class Harvest : MonoBehaviour
 
     void 경계확인()
     {
-        if (경계잼 && transform.position == 잰자리 && transform.rotation == 잰돌기) return;
+        // ☆진동(4~5cm)으로는 다시 재지 않는다 — 매 프레임 재면 그게 렉이다.
+        //   나무가 쓰러지면 **회전**이 크게 바뀌므로 그건 걸린다.
+        if (경계잼 && (transform.position - 잰자리).sqrMagnitude < 0.01f
+                   && Quaternion.Angle(transform.rotation, 잰돌기) < 1f) return;
         잰자리 = transform.position; 잰돌기 = transform.rotation; 경계잼 = true;
 
         var rs = GetComponentsInChildren<Renderer>(true);

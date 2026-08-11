@@ -53,6 +53,7 @@ public class HeroAttack : MonoBehaviour
     [Tooltip("걸으면 채집이 풀린다 — 이 속도를 넘으면 끊긴다 (m/s)")]
     [Range(0.05f, 2f)] public float 채집끊는속도 = 0.35f;
     Harvest 채집대상;
+    bool 이번칸때림;              // 이번 게이지 한 바퀴에서 이미 때렸나
     /// HUD 가 읽는다 — 상시로 안 띄우고 **캘 때만** 뜬다 (11장 · 기획 5-7)
     public static bool 채집중;
     public static float 채집게이지;
@@ -560,12 +561,23 @@ public class HeroAttack : MonoBehaviour
                 var 볼방향 = 채집대상.경계중심 - transform.position; 볼방향.y = 0f;
                 if (볼방향.sqrMagnitude > 0.01f) { hero.시선고정 = true; hero.고정시선 = 볼방향; }
                 채집게이지 += 채집대상.캐는속도() * dt;
-                if (채집게이지 >= 1f)
+
+                // ★★★★**도끼가 닿는 순간에 나무가 흔들린다** (2026-08-11 사용자 "패는것과
+                //   나무가 피격되는 동작을 딱 맞추라는거야").
+                //   게이지 1.0 에서 때리면 **스윙이 다 끝난 뒤**에 나무가 흔들린다 —
+                //   클립의 타격은 중간(예비 끝 + 휘두름의 58%)에 있기 때문이다.
+                //   → 게이지가 그 몫을 지나는 순간 때린다. 나머지 게이지는 여운이다.
+                //   ☆「그림 = 판정」 — 도끼가 닿는 프레임과 자원이 깎이는 프레임이 같아진다.
+                float 타격몫 = 채집팸
+                    ? (예비 + 휘두름 * 0.58f) / Mathf.Max(0.01f, 예비 + 휘두름 + 여운)
+                    : 1f;                                   // 뒤적임은 다 차면
+                if (!이번칸때림 && 채집게이지 >= 타격몫)
                 {
-                    채집게이지 = 0f;
+                    이번칸때림 = true;
                     var 방향 = v채.sqrMagnitude > 1e-4f ? v채.normalized : transform.forward;
-                    if (!채집대상.한칸(방향)) 채집끝();      // 다 캐서 사라졌다
+                    if (!채집대상.한칸(방향)) { 채집끝(); break; }   // 다 캐서 사라졌다
                 }
+                if (채집게이지 >= 1f) { 채집게이지 = 0f; 이번칸때림 = false; }
                 break;
             }
 
@@ -586,7 +598,7 @@ public class HeroAttack : MonoBehaviour
                     var 대상 = Harvest.찾기(transform.position, hero.LookDir, 사거리 + 0.6f);
                     if (대상 != null)
                     {
-                        채집대상 = 대상; 채집게이지 = 0f; 공격예약 = 0f;
+                        채집대상 = 대상; 채집게이지 = 0f; 이번칸때림 = false; 공격예약 = 0f;
                         state = State.채집; t = 0f; 채집중 = true; F먹음 = true;
                         break;
                     }
