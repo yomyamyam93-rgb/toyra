@@ -389,6 +389,19 @@ public class Critter : MonoBehaviour, IHittable
     Vector3 wander, 집;
     bool 대표;                     // 무리에서 한 마리만 무리 냉각을 돌린다
 
+    // ★★**시야 밖이면 안 그린다** — `VisionCone` 이 부른다 (2026-08-11).
+    //   ☆`forceRenderingOff` 를 쓴다 — 렌더러를 끄지 않으므로 **애니메이션은 계속 돈다.**
+    //     끄면 다시 켤 때 자세가 튀고, 스키닝이 멎어 뼈 판정(실루엣판정)도 낡은 값이 된다.
+    //   ☆렌더러 목록은 **보임이 바뀔 때만** 읽는다. 매 프레임 읽으면 그게 렉이다 (9-4).
+    bool 보임 = true;
+    public void 보이기(bool 봄)
+    {
+        if (보임 == 봄) return;
+        보임 = 봄;
+        foreach (var r in GetComponentsInChildren<Renderer>(true))
+            if (r != null) r.forceRenderingOff = !봄;
+    }
+
     void OnEnable() { All.Add(this); }
     void OnDisable() { All.Remove(this); if (무리 != null) 무리.나감(this); }
 

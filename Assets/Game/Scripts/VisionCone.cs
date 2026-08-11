@@ -132,5 +132,59 @@ public class VisionCone : MonoBehaviour
         Shader.SetGlobalVector("_VisionDist",
             new Vector4(dist, Mathf.Max(0.5f, distSoft), nearRadius, Mathf.Max(0.5f, nearSoft)));
         Shader.SetGlobalVector("_VisionDark", new Vector4(dark, fall, 0f, 0f));
+
+        생물가리기(p, d, dist, dark);
     }
+
+    // ★★★★**시야 밖의 생물은 「어둡게」가 아니라 「안 보이게」** (2026-08-11 사용자
+    //   "내 시야에 보이는게 아니면 밖에 돌아다니는 팻은 보이면안돼지").
+    //
+    //   시야는 화면을 **덮어서 어둡게 하는** 방식이라, 어둠이 0.93 이면 밖의 것도 7% 로
+    //   남는다. 지형은 그 7% 가 있어야 길을 안 잃는데(그래서 1.0 을 안 쓴다),
+    //   **생물은 그 7% 로도 눈에 띈다** — 어두운 바탕에 밝은 몸이라 더 그렇다.
+    //   → 지형은 그대로 두고 **생물만** 문턱 아래면 안 그린다. 좀보이드가 그렇다:
+    //     본 적 있는 건물 구조는 기억으로 남지만 좀비는 눈에 들어와야 보인다.
+    //
+    //   ☆셰이더와 **같은 식**을 쓴다 (부채꼴·거리 감쇠·코앞) — 안 그러면 화면의 밝기와
+    //     보임/안보임이 어긋나서 "밝은데 안 보인다"가 난다.
+    //   ☆몸 반지름을 얹는다 — 큰 놈은 가장자리가 걸치기만 해도 보여야 한다.
+    //   ☆9-4: 야생은 스무 마리 남짓이라 매 프레임 돌아도 싸다. 렌더러 목록은
+    //     **보임이 바뀔 때만** 읽는다 (매 프레임 `GetComponentsInChildren` 는 금지).
+    [Header("★시야 밖 생물 가리기")]
+    [Tooltip("시야 밖의 생물을 아예 안 그린다")] public bool 생물숨김 = true;
+    [Tooltip("이 밝기 아래면 안 그린다 (0 = 전부 보임 · 1 = 부채꼴 안만)")]
+    [Range(0f, 1f)] public float 숨김문턱 = 0.35f;
+    [Tooltip("어둠이 이보다 옅으면(=대낮 바깥) 아무도 안 숨긴다")]
+    [Range(0f, 1f)] public float 숨김최소어둠 = 0.25f;
+
+    void 생물가리기(Vector3 p, Vector3 look, float dist, float dark)
+    {
+        if (!생물숨김 || dark < 숨김최소어둠)
+        {
+            if (가린적있음) { foreach (var c in Critter.All) if (c != null) c.보이기(true); 가린적있음 = false; }
+            return;
+        }
+        가린적있음 = true;
+        for (int i = 0; i < Critter.All.Count; i++)
+        {
+            var c = Critter.All[i];
+            if (c == null) continue;
+            var v = c.transform.position - p; v.y = 0f;
+            float dd = v.magnitude;
+            float r = c.Radius;
+
+            // ① 거리 — 끝에서 부드럽게 사라진다 (셰이더 62~63행과 같은 식)
+            float far = 1f - Mathf.SmoothStep(dist - distSoft, dist, Mathf.Max(0f, dd - r));
+            // ② 코앞은 등 뒤라도 안다
+            float near = 1f - Mathf.SmoothStep(nearRadius, nearRadius + nearSoft, Mathf.Max(0f, dd - r));
+            // ③ 각도 — 몸 반지름만큼 부채꼴을 더 연다
+            float 옆각 = dd > 0.01f ? Mathf.Atan2(r, Mathf.Max(0.3f, dd)) * Mathf.Rad2Deg : 90f;
+            float ang = dd > 0.01f ? Vector3.Angle(look, v / dd) : 0f;
+            float cone = 1f - Mathf.SmoothStep(halfAngle + 옆각, halfAngle + 옆각 + Mathf.Max(0.5f, edgeSoft), ang);
+
+            float lit = Mathf.Max(cone * far, near);
+            c.보이기(lit >= 숨김문턱);
+        }
+    }
+    bool 가린적있음;
 }
