@@ -21,7 +21,11 @@ public class 땅무더기 : MonoBehaviour
     /// ★프롭(막대·돌멩이)이 이미 모양이면 더미 상자를 안 얹는다
     [HideInInspector] public bool 프롭모양;
 
-    void OnEnable() { All.Add(this); }
+    // ★자리를 기억해 둔다 — `Harvest.자리` 와 같은 이유 (2026-08-11).
+    //   땅에 떨군 것은 안 움직인다. 세계에 9,882개가 깔려 있어 매번 훑으면 비싸다
+    [HideInInspector] public Vector3 자리;
+
+    void OnEnable() { All.Add(this); 자리 = transform.position; }
     void OnDisable() { All.Remove(this); }
 
     // ★★`Update` 를 안 쓴다 — 줍이가 수백 개 깔리는데, 아무것도 안 하는 `Update` 도
@@ -77,7 +81,7 @@ public class 땅무더기 : MonoBehaviour
         {
             var p = All[i];
             if (p == null) continue;
-            var v = p.transform.position - 자리; v.y = 0f;
+            var v = p.자리 - 자리; v.y = 0f;      // ★기억해 둔 자리 (Transform 을 안 읽는다)
             float d2 = v.sqrMagnitude;
             if (d2 > bd) continue;
             bd = d2; best = p;

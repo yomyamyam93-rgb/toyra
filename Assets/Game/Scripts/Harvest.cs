@@ -16,7 +16,17 @@ public class Harvest : MonoBehaviour
     Vector3 baseScale;
     float shake;
 
-    void OnEnable() { All.Add(this); baseScale = transform.localScale; }
+    // ★★★**자리를 기억해 둔다** (2026-08-11 실측 — 이동 중 렉의 정체였다).
+    //   `대상표시.찾기()` 가 0.08초마다 이 목록을 **전부** 훑는데, 세계에는 나무·바위가
+    //   2만 6천 개 있다. 그때마다 `transform.position` 을 읽는 게 문제였다 —
+    //   그건 그냥 값 읽기가 아니라 **엔진 안쪽으로 들어갔다 나오는 호출**이라 하나에
+    //   0.6마이크로초쯤 든다. 3만 6천 번이면 22ms 다 (실측 `[대상표시-느림] 22.5ms`).
+    //   → 캘 것은 **움직이지 않는다.** 등록할 때 한 번 적어 두고 그 값을 읽는다.
+    //   ☆움직일 일이 생기면(나무가 쓰러진다) `자리갱신()` 을 부른다.
+    [HideInInspector] public Vector3 자리;
+    public void 자리갱신() { 자리 = transform.position; }
+
+    void OnEnable() { All.Add(this); baseScale = transform.localScale; 자리 = transform.position; }
     void OnDisable() { All.Remove(this); }
 
     // ★★★**`Update` 를 없앴다** (2026-08-06 실측 — 이게 렉의 정체였다).

@@ -132,11 +132,14 @@ public class 대상표시 : MonoBehaviour
         // ⑤ 캘 것 (`Harvest.TryHarvest` 와 같은 잣대)
         float 닿음 = (손 != null ? 손.사거리 : 2.2f) + 0.4f;
         Harvest hb = null; float hd = 닿음 * 닿음;
+        // ★★`transform.position` 이 아니라 **기억해 둔 자리**를 읽는다 (2026-08-11).
+        //   실측: 2만 6천 개를 Transform 으로 읽으면 22.5ms · 기억한 값이면 0.1ms 안쪽.
+        //   Transform 읽기는 엔진 안쪽을 오가는 호출이라 개수가 많으면 그게 곧 렉이다.
         for (int i = Harvest.All.Count - 1; i >= 0; i--)
         {
             var h = Harvest.All[i];
             if (h == null) continue;
-            var v = h.transform.position - p; v.y = 0f;
+            var v = h.자리 - p; v.y = 0f;
             float d2 = v.sqrMagnitude;
             if (d2 > hd) continue;
             if (d2 > 0.01f && Vector3.Dot(v.normalized, look) < 0.2f) continue;
