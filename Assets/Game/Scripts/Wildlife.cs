@@ -124,12 +124,53 @@ public class Wildlife : MonoBehaviour
     [Tooltip("애니메이터 연결까지 미리 시킨다 — 첫 스폰 11~15ms 가 1ms 로 떨어진다")]
     public bool 예열 = true;
 
+    // ★★★★**셰이더도 미리 굽는다** (2026-08-11 사용자 "1. 셰이더 미리굽기로 해봐").
+    //
+    //   에디터에는 손잡이가 둘뿐인 줄 알았는데 셋이었다:
+    //     · 비동기 끔 → 새 재질이 화면에 들 때마다 **그 자리에서 570ms 멈춤**
+    //     · 비동기 켬 → 안 멈추는 대신 굽는 동안 **회색으로 보임** (사용자가 본 「텍스처 날아감」)
+    //     · **미리 굽기** → 로딩 때 다 구워 두면 **둘 다 없다** ← 이것
+    //
+    //   ★셰이더는 **실제로 화면에 그려져야** 구워진다. 여태 예열은 렌더러를 꺼 둔 채
+    //     (`r.enabled = false`) 애니메이터만 물렸다 — 그래서 **뼈만** 예열되고 셰이더는 안 됐다.
+    //   → 조그만 임시 카메라를 예열 자리에 두고, 렌더러를 켠 채 **한 번 그린다.**
+    //   ☆굽는 동안은 **비동기를 꺼야** 한다. 켜 두면 그 자리에서 안 굽고 미루므로 헛일이다.
+    //     끈 것은 `finally` 에서 되돌린다 (오늘 맵보기가 이걸 안 해서 하루를 잡아먹었다).
+    [Tooltip("시작할 때 셰이더까지 미리 구워 둔다 — 켜면 로딩이 길어지고 게임 중 회색·멈춤이 없다")]
+    public bool 셰이더예열 = true;
+
     System.Collections.IEnumerator 미리읽기속()
     {
         var 시계 = System.Diagnostics.Stopwatch.StartNew();
         int 모델수 = 0, 클립수 = 0, 센것 = 0;
         var 동작 = 동작진열.동작들;
 
+        // ── 셰이더 예열용 임시 눈
+        Camera 예열눈 = null;
+        RenderTexture 예열천 = null;
+        var 예열자리 = new Vector3(0f, -2000f, 0f);
+#if UNITY_EDITOR
+        bool 옛비동기 = UnityEditor.ShaderUtil.allowAsyncCompilation;
+#endif
+        if (예열 && 셰이더예열)
+        {
+            var 눈통 = new GameObject("셰이더예열눈");
+            눈통.transform.position = 예열자리 + new Vector3(0f, 2.5f, -7f);
+            눈통.transform.LookAt(예열자리 + Vector3.up * 1.2f);
+            예열눈 = 눈통.AddComponent<Camera>();
+            예열눈.enabled = false;                       // 우리가 부를 때만 그린다
+            예열눈.clearFlags = CameraClearFlags.SolidColor;
+            예열눈.backgroundColor = Color.black;
+            예열눈.nearClipPlane = 0.1f; 예열눈.farClipPlane = 40f;
+            예열천 = RenderTexture.GetTemporary(64, 64, 16);
+            예열눈.targetTexture = 예열천;
+#if UNITY_EDITOR
+            UnityEditor.ShaderUtil.allowAsyncCompilation = false;   // 그 자리에서 굽게
+#endif
+        }
+
+        try
+        {
         foreach (var v in 변형표)
         {
             // 모델뽑기 가 `변형캐시` 에 담아 둔다 — 같은 앞머리는 한 번만 읽는다
@@ -160,15 +201,19 @@ public class Wildlife : MonoBehaviour
                 if (예열)
                 {
                     var 통 = new GameObject("예열_" + nm);
-                    통.transform.position = new Vector3(0f, -2000f, 0f);   // 화면 밖(땅 아래)
+                    통.transform.position = 예열자리;                      // 화면 밖(땅 아래)
                     var 몸 = Instantiate(g, 통.transform);
                     몸.name = "Armature";
-                    foreach (var r in 몸.GetComponentsInChildren<Renderer>(true)) r.enabled = false;
+                    // ★셰이더를 구우려면 **켜 둬야** 한다 — 꺼 두면 안 그려지고 안 구워진다.
+                    //   땅 밑 2000m 라 본 카메라엔 어차피 안 들어온다.
+                    bool 켜둘까 = 예열눈 != null;
+                    foreach (var r in 몸.GetComponentsInChildren<Renderer>(true)) r.enabled = 켜둘까;
                     var an = 통.AddComponent<Animator>();
                     var 짓 = 통.AddComponent<몸짓>();
                     짓.준비(an, nm);
                     짓.enabled = false;              // Critter 없이 Update 가 돌면 안 된다
                     an.Update(0f);                   // ★여기서 바인딩이 실제로 일어난다
+                    if (예열눈 != null) 예열눈.Render();   // ★여기서 셰이더가 실제로 구워진다
                     Destroy(통);
                 }
 
@@ -176,7 +221,21 @@ public class Wildlife : MonoBehaviour
             }
             모델뽑기(v.모델);       // 캐시 채우기
         }
-        Debug.Log($"[야생] 미리 읽기 끝 — 모델 {모델수}개 · 동작 {클립수}개 · {시계.ElapsedMilliseconds}ms");
+        }
+        finally
+        {
+            // ★끈 것은 무슨 일이 있어도 되돌린다 (오늘 맵보기가 이걸 안 해서 하루를 잡아먹었다)
+#if UNITY_EDITOR
+            if (예열 && 셰이더예열) UnityEditor.ShaderUtil.allowAsyncCompilation = 옛비동기;
+#endif
+            if (예열눈 != null)
+            {
+                예열눈.targetTexture = null;
+                Destroy(예열눈.gameObject);
+            }
+            if (예열천 != null) RenderTexture.ReleaseTemporary(예열천);
+        }
+        Debug.Log($"[야생] 미리 읽기 끝 — 모델 {모델수}개 · 동작 {클립수}개 · 셰이더예열 {(셰이더예열 ? "켬" : "끔")} · {시계.ElapsedMilliseconds}ms");
     }
 
     // ★★스스로 시간을 잰다 (2026-08-11) — 스파이크에 「Update 72ms」 라고만 찍히면

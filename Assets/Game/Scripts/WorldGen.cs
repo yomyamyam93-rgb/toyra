@@ -186,6 +186,12 @@ public class WorldGen : MonoBehaviour
         뚜껑잔디 = 0.55f;       // ★사용자 "그냥 잔디 재질만 좀 입혀줘, 불규칙하게"
         뚜껑잔디얼룩 = 14f;
         뚜껑나무 = 0f;          // ★사용자 "동굴 천장에 나무는 박지 말아줘"
+        // ★두껍게 그대로 둔다 (2026-08-11 사용자 "아냐 그냥 두껍게 해두고, 벽을 부술 수
+        //   있도록 하는건 어때?"). 코드로 얇게 만드는 건 9장 0번의 반대편이다 —
+        //   좁으면 **내가 부수는 행위**로 넓히는 게 이 게임의 방식이다.
+        //   ☆손잡이는 지우지 않고 옛 값으로 되돌려 둔다 (은퇴는 삭제가 아니라 스위치).
+        살두께 = 2;
+        안쪽벽깎기 = 0;
         굴가장자리 = 90f;
         굴집비움 = 150f;
         정본 = 정본지금;
@@ -786,6 +792,10 @@ public class WorldGen : MonoBehaviour
     [Tooltip("맵 전역에 흩는 큰 굴의 수")] [Range(0, 20)] public int 큰굴수 = 5;
     [Tooltip("작은 굴의 최대 조각 수 — 작을수록 아담하다")] [Range(3, 20)] public int 작은굴규모 = 9;
     [Tooltip("큰 굴의 최소 조각 수")] [Range(10, 50)] public int 큰굴규모최소 = 22;
+    // ★★벽 두께 (2026-08-11 사용자 "동굴벽이 너무 두꺼운거아냐?") — 옛 코드는 2 로 박혀 있었다.
+    //   한 칸이 2m 라 2 면 **사방 4m 짜리 바위**가 굴을 감쌌다. 1 이면 2m 다.
+    [Tooltip("굴을 감싸는 바위의 두께 (칸 · 한 칸 2m)")] [Range(1, 4)] public int 살두께 = 1;
+    [Tooltip("나란한 길 사이에 낀 얇은 벽을 몇 번 깎나 — 클수록 굴이 넓어진다")] [Range(0, 4)] public int 안쪽벽깎기 = 2;
     [Tooltip("맵 가장자리에서 이만큼 안쪽에만 판다 (m)")] public float 굴가장자리 = 90f;
     [Tooltip("집 둘레 이 반경 안엔 안 판다 (m) — 집 앞은 트여 있어야 한다")] public float 굴집비움 = 150f;
     // ★★뚜껑 위엔 **나무를 안 심는다** (2026-08-11 사용자 "동굴 천장에 나무는 박지 말아줘,
@@ -1008,11 +1018,11 @@ public class WorldGen : MonoBehaviour
             방파기(p);                                                               // 막다른 끝은 공간이다
         }
 
-        // ── ② 살 — 판 자리를 두 칸(4m) 두께의 바위가 감싼다
+        // ── ② 살 — 판 자리를 바위가 감싼다 (두께는 `살두께` 칸 · 한 칸이 2m)
         var 살 = new HashSet<(int, int)>();
         foreach (var k in 천장.Keys)
-            for (int dx = -2; dx <= 2; dx++)
-                for (int dz = -2; dz <= 2; dz++)
+            for (int dx = -살두께; dx <= 살두께; dx++)
+                for (int dz = -살두께; dz <= 살두께; dz++)
                 {
                     var k2 = (k.ix + dx, k.iz + dz);
                     if (!천장.ContainsKey(k2)) 살.Add(k2);
@@ -1056,6 +1066,38 @@ public class WorldGen : MonoBehaviour
         for (int ix = bxMin; ix <= bxMax; ix++)
             for (int iz = bzMin; iz <= bzMax; iz++)
                 if (빈칸(ix, iz) && !닿음[ix - bxMin, iz - bzMin]) 살.Add((ix, iz));
+
+        // ── ②-2 ★★★**안쪽의 얇은 벽을 깎는다** (2026-08-11 사용자 "동굴벽이 너무 두꺼운거
+        //   아냐? 안쪽벽을 좀 없애서 더 넓게해줘야할거같은데").
+        //   나란히 지나간 두 길 사이에 낀 바위가 **지느러미**처럼 남아 굴을 좁게 만든다.
+        //   ☆판 자리를 두 방향 이상 접한 살은 지느러미다 → 파낸 자리로 바꾼다 (굴이 넓어진다).
+        //   ★★**바깥에 닿은 살은 절대 안 건드린다** — 건드리면 굴 옆구리에 구멍이 뚫려
+        //     바깥 들판이 들여다보인다. 「굴도 살도 아닌 이웃」이 있으면 그건 바깥이다.
+        var 옆넷 = new (int, int)[] { (1, 0), (-1, 0), (0, 1), (0, -1) };
+        for (int 회 = 0; 회 < 안쪽벽깎기; 회++)
+        {
+            var 없앨 = new List<(int, int)>();
+            foreach (var s in 살)
+            {
+                int 판이웃 = 0; bool 바깥닿음 = false; float 높이합 = 0f;
+                foreach (var d in 옆넷)
+                {
+                    var k2 = (s.Item1 + d.Item1, s.Item2 + d.Item2);
+                    if (천장.TryGetValue(k2, out var h)) { 판이웃++; 높이합 += h; }
+                    else if (!살.Contains(k2)) { 바깥닿음 = true; break; }
+                }
+                if (!바깥닿음 && 판이웃 >= 2) 없앨.Add(s);
+            }
+            if (없앨.Count == 0) break;
+            foreach (var s in 없앨)
+            {
+                float 높이합2 = 0f; int 셈 = 0;
+                foreach (var d in 옆넷)
+                    if (천장.TryGetValue((s.Item1 + d.Item1, s.Item2 + d.Item2), out var h)) { 높이합2 += h; 셈++; }
+                살.Remove(s);
+                천장[(s.Item1, s.Item2)] = 셈 > 0 ? 높이합2 / 셈 : 3f;   // 이웃 천장 높이를 물려받는다
+            }
+        }
 
         // ── ③ 짓는다 — 전부 격자 재질 (바닥이고 벽이고 모두 격자형식으로)
         GameObject 격자상자(Vector3 pos, Vector3 size, Color col, string name, float blockR)
