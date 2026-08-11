@@ -6,38 +6,49 @@ using UnityEngine;
 /// 절차적으로 생성해서, 쪼그려 앉은다음 손으로 갈무리하는 동작으로 그냥 휘젓는 게 아니라
 /// 갈무리하듯").
 ///
-/// ★★`공격클립굽기` 와 다른 점 — 그쪽은 **이미 있는 절차 모션을 프레임마다 떠서** 굽는다.
-///   갈무리는 절차 모션이 없다(있는 건 「살짝 굽힘」뿐이라 뜰 게 없다). 그래서 여기서는
-///   **커브를 직접 쓴다.** 굽고 나면 애니메이션 창에서 손으로 고칠 수 있다 — 그게 목적이다.
+/// ★★★**뼈 각도를 지어내지 않는다** (2026-08-11 사용자 "이건좀 아니지않냐").
+///   첫 판은 내가 이 리그의 회전 규약을 모르면서 숫자를 감으로 넣었고, 결과가 바닥에
+///   널브러진 기괴한 자세였다. 손으로 쓴 각도는 **뼈의 축·부호를 모르면 반드시 틀린다.**
 ///
-/// ★동작 (1.30초 · 앞 0.30초는 앉는 구간 · 나머지 1초가 되풀이되는 갈무리)
-///     0.00  서 있다
-///     0.30  **쪼그려 앉는다** — 골반이 내려가고 무릎이 접히고 상체가 앞으로
-///     0.30~1.30  **한 번의 갈무리** — 오른손이 몸 앞으로 들어가 아래로 눌러 썰고,
-///                안쪽으로 당겨 뜯고, 다시 올린다. 왼손은 잡아 누른 채 조금씩 따라 움직인다.
-///                ☆휘젓는 게 아니라 **누른다 → 썬다 → 당긴다** 의 세 박자다.
+///   → **이미 제대로 앉아 있는 클립을 그대로 뜬다.** 프로젝트에 `웅크린정지` 가 있다.
+///     다리·골반·척추는 거기서 **베끼므로 틀릴 수가 없다.** 내가 손대는 것은 **팔뿐**이고,
+///     그것도 앉은 자세의 팔을 **기준으로 얹는 덧각**이라 몸이 무너지지 않는다.
+///   ☆이게 `공격클립굽기` 와 같은 사상이다 — 맨바닥에서 그리지 않고 **있는 것을 떠서** 시작한다.
+///   ☆9-2 의 교훈이기도 하다: 새로 만들기 전에 **이미 있는 것**을 먼저 찾는다.
 ///
-/// ★뼈 부호는 이 리그의 실측을 따른다 (`HeroAttack.몸통스윙` 주석):
-///   허벅(UpLeg) −X = 엉덩이가 굽는다 · 정강(Leg) +X = 무릎이 접힌다 → 발이 제자리에 남는다.
-///   골반 로컬 1단위 = **0.0143m** (2026-08-09 실측).
+/// ★동작 (앉기 0.30초 + 갈무리 1.00초)
+///     0.00        `정지` 자세 (서 있다)
+///     0.30        `웅크린정지` 자세 (앉았다)
+///     0.30~1.30   앉은 자세 그대로, **팔만** — 누른다 → 썬다 → 당겨 뜯는다
 ///
-/// ★길이·경로 규칙은 공격 클립과 같다:
-///   · 경로는 **애니메이터가 붙은 몸 기준** (`Armature/…`) — 캐릭터 뿌리 기준이면 창이 못 잡는다
-///   · 회전은 `localEulerAnglesRaw` (도 단위라야 사람이 고친다. 쿼터니언이면 못 만진다)
+/// ★굽고 나면 애니메이션 창에서 고칠 수 있다 — 회전은 도(°) 단위(`localEulerAnglesRaw`).
+/// ★경로는 **애니메이터가 붙은 몸 기준**(`Armature/…`) — 캐릭터 뿌리 기준이면 창이 못 잡는다.
 public static class 갈무리클립굽기
 {
-    const float 앉는데 = 0.30f;      // 서 있다 → 앉기까지
-    const float 한바퀴 = 1.00f;      // 갈무리 한 번
-    const float 길이 = 앉는데 + 한바퀴;
-
-    // 골반 로컬 1단위 = 0.0143m (실측) — 미터로 쓰고 여기서 바꾼다
-    const float 단위 = 0.0143f;
+    const float 앉는데 = 0.30f;
+    const float 한바퀴 = 1.00f;
 
     static readonly string[] 뼈들 = {
         "Hips", "Spine", "Spine01", "Spine02", "Head",
         "LeftUpLeg", "LeftLeg", "LeftFoot", "RightUpLeg", "RightLeg", "RightFoot",
         "LeftShoulder", "LeftArm", "LeftForeArm",
         "RightShoulder", "RightArm", "RightForeArm",
+    };
+
+    /// 팔에 얹는 **덧각** — 앉은 자세의 팔에서 이만큼 더 돌린다.
+    /// 바탕이 이미 옳으므로 여기 숫자가 좀 틀려도 몸이 무너지지 않는다 (팔만 어색해진다).
+    struct 덧 { public float 초, 팔x, 팔y, 팔뚝x, 어깨x; }
+    static readonly 덧[] 오른팔 = {
+        new 덧 { 초 = 0.00f, 팔x =   0, 팔y =   0, 팔뚝x =  0, 어깨x =  0 },  // 앉은 그대로
+        new 덧 { 초 = 0.28f, 팔x = -24, 팔y =  10, 팔뚝x = 20, 어깨x = -5 },  // 손을 넣어 누른다
+        new 덧 { 초 = 0.55f, 팔x = -34, 팔y =   4, 팔뚝x =  6, 어깨x = -8 },  // 아래로 썬다
+        new 덧 { 초 = 0.80f, 팔x = -16, 팔y =  -6, 팔뚝x = 38, 어깨x = -3 },  // 몸쪽으로 당겨 뜯는다
+        new 덧 { 초 = 1.00f, 팔x =   0, 팔y =   0, 팔뚝x =  0, 어깨x =  0 },  // 되돌아온다
+    };
+    static readonly 덧[] 왼팔 = {
+        new 덧 { 초 = 0.00f, 팔x =  0, 팔y =  0, 팔뚝x =  0, 어깨x = 0 },
+        new 덧 { 초 = 0.55f, 팔x = -8, 팔y = -4, 팔뚝x = 10, 어깨x = 2 },   // 잡아 누른 채 조금만
+        new 덧 { 초 = 1.00f, 팔x =  0, 팔y =  0, 팔뚝x =  0, 어깨x = 0 },
     };
 
     [MenuItem("Tools/토이라/갈무리 모션을 클립으로 굽기")]
@@ -51,78 +62,140 @@ public static class 갈무리클립굽기
         string 뒷말 = an.transform.name.Contains("여자") ? "여자" : "남자";
         string 경로 = $"Assets/Game/Animations/갈무리_{뒷말}.anim";
 
-        // ★이미 있으면 한 번 물어본다 — 손으로 고친 것이 다 날아간다 (공격 클립과 같은 규칙)
-        if (AssetDatabase.LoadAssetAtPath<AnimationClip>(경로) != null &&
-            !EditorUtility.DisplayDialog("갈무리 클립 다시 굽기",
-                $"갈무리_{뒷말}.anim 이 이미 있다.\n\n다시 구우면 애니메이션 창에서 손으로 고친 것이 **전부 사라진다.**",
-                "굽는다 (수정 버림)", "그만둔다"))
-            return;
+        var 섬 = 클립찾기($"정지_{뒷말}");
+        var 앉음 = 클립찾기("웅크린정지");
+        if (섬 == null) { Debug.LogError($"[갈무리클립] 정지_{뒷말} 이 없다."); return; }
+        if (앉음 == null) { Debug.LogError("[갈무리클립] 웅크린정지 가 없다 — 앉은 자세를 뜰 데가 없다."); return; }
 
-        // 뼈 경로 잡기 — 애니메이터가 붙은 몸 기준이어야 애니메이션 창이 잡는다
+        var 뼈 = new Dictionary<string, Transform>();
         var 길 = new Dictionary<string, string>();
         foreach (var t in an.GetComponentsInChildren<Transform>(true))
-            if (System.Array.IndexOf(뼈들, t.name) >= 0 && !길.ContainsKey(t.name))
-                길[t.name] = 뼈길(an.transform, t);
-        if (길.Count == 0) { Debug.LogError("[갈무리클립] 뼈를 하나도 못 찾았다."); return; }
+            if (System.Array.IndexOf(뼈들, t.name) >= 0 && !뼈.ContainsKey(t.name))
+            { 뼈[t.name] = t; 길[t.name] = 뼈길(an.transform, t); }
+        if (뼈.Count == 0) { Debug.LogError("[갈무리클립] 뼈를 하나도 못 찾았다."); return; }
+
+        // ── ① 두 자세를 떠 둔다 (샘플 → 로컬값 읽기). **여기서 뜬 값은 틀릴 수가 없다**
+        var 선자세 = 자세뜨기(섬, an.gameObject, 뼈, 0f);
+        var 앉은자세 = 자세뜨기(앉음, an.gameObject, 뼈, 0f);
+
+        // ── ② 키 시각
+        var 키 = new List<float> { 0f, 앉는데 };
+        foreach (var d in 오른팔) if (d.초 > 0f) 키.Add(앉는데 + d.초);
+        foreach (var d in 왼팔) if (d.초 > 0f && !키.Contains(앉는데 + d.초)) 키.Add(앉는데 + d.초);
+        키.Sort();
+
+        var 회전 = new Dictionary<string, AnimationCurve[]>();
+        var 위치 = new Dictionary<string, AnimationCurve[]>();
+        foreach (var n in 뼈.Keys)
+        {
+            회전[n] = new[] { new AnimationCurve(), new AnimationCurve(), new AnimationCurve() };
+            위치[n] = new[] { new AnimationCurve(), new AnimationCurve(), new AnimationCurve() };
+        }
+
+        // ★오일러 연속성 — ±180 을 넘을 때 튀면 그 프레임에 뼈가 한 바퀴 돈다
+        var 지난각 = new Dictionary<string, Vector3>();
+
+        foreach (var 초 in 키)
+        {
+            bool 서있나 = 초 <= 0.0001f;
+            var 바탕 = 서있나 ? 선자세 : 앉은자세;
+            float 팔때 = Mathf.Max(0f, 초 - 앉는데);
+
+            foreach (var n in 뼈.Keys)
+            {
+                var (pos, eul) = 바탕[n];
+                if (!서있나) eul += 팔덧각(n, 팔때);
+                if (지난각.TryGetValue(n, out var 앞)) eul = 잇기(앞, eul);
+                지난각[n] = eul;
+
+                위치[n][0].AddKey(초, pos.x); 위치[n][1].AddKey(초, pos.y); 위치[n][2].AddKey(초, pos.z);
+                회전[n][0].AddKey(초, eul.x); 회전[n][1].AddKey(초, eul.y); 회전[n][2].AddKey(초, eul.z);
+            }
+        }
 
         var clip = new AnimationClip { frameRate = 30f };
-
-        // ── 키 시각. 사이는 이징이 채운다 (키를 촘촘히 박으면 손으로 못 고친다)
-        float A = 0f;                     // 서 있다
-        float B = 앉는데;                 // 앉았다
-        float C = 앉는데 + 한바퀴 * 0.28f; // 손을 넣어 누른다
-        float D = 앉는데 + 한바퀴 * 0.55f; // 썬다 (아래로)
-        float E = 앉는데 + 한바퀴 * 0.80f; // 당겨 뜯는다 (몸쪽으로)
-        float F = 길이;                    // 다시 올린다 = B 자세로 이어진다
-
-        // ── 하체: 앉는다. 앉은 뒤로는 그대로 (갈무리는 상체가 한다)
-        //    허벅 −55 · 정강 +85 · 발목 −30 이면 발이 제자리에 남으면서 엉덩이가 내려간다
-        곡선(clip, 길, "Hips", "m_LocalPosition.y", (A, 0f), (B, -0.26f / 단위 * 단위), (F, -0.26f));
-        각(clip, 길, "Hips",       (A, 0, 0, 0), (B, 6, 0, 0), (F, 6, 0, 0));
-        각(clip, 길, "LeftUpLeg",  (A, 0, 0, 0), (B, -55, 0, 4), (F, -55, 0, 4));
-        각(clip, 길, "RightUpLeg", (A, 0, 0, 0), (B, -52, 0, -4), (F, -52, 0, -4));
-        각(clip, 길, "LeftLeg",    (A, 0, 0, 0), (B, 85, 0, 0), (F, 85, 0, 0));
-        각(clip, 길, "RightLeg",   (A, 0, 0, 0), (B, 82, 0, 0), (F, 82, 0, 0));
-        각(clip, 길, "LeftFoot",   (A, 0, 0, 0), (B, -30, 0, 0), (F, -30, 0, 0));
-        각(clip, 길, "RightFoot",  (A, 0, 0, 0), (B, -28, 0, 0), (F, -28, 0, 0));
-
-        // ── 상체: 앞으로 숙이고, 써는 박자에 맞춰 조금씩 같이 움직인다
-        //    (상체가 안 따라가면 팔만 도는 「휘젓기」가 된다 — 그게 지금 문제였다)
-        각(clip, 길, "Spine",   (A, 0, 0, 0), (B, 16, 0, 0), (C, 20, 3, 0), (D, 24, 0, 0), (E, 17, -4, 0), (F, 16, 0, 0));
-        각(clip, 길, "Spine01", (A, 0, 0, 0), (B, 10, 0, 0), (C, 13, 4, 0), (D, 16, 0, 0), (E, 11, -5, 0), (F, 10, 0, 0));
-        각(clip, 길, "Spine02", (A, 0, 0, 0), (B, 8, 0, 0),  (C, 10, 4, 0), (D, 12, 0, 0), (E, 8, -5, 0),  (F, 8, 0, 0));
-        각(clip, 길, "Head",    (A, 0, 0, 0), (B, 14, 0, 0), (C, 16, -2, 0), (D, 18, 0, 0), (E, 15, 2, 0), (F, 14, 0, 0));
-
-        // ── 오른팔: **누른다 → 썬다 → 당긴다**. 이게 「갈무리하듯」의 알맹이다
-        //    어깨는 조금만, 팔이 크게, 팔뚝이 접혔다 펴진다
-        각(clip, 길, "RightShoulder", (A, 0, 0, 0), (B, -6, 0, 0), (C, -12, 0, -4), (D, -14, 0, -6), (E, -8, 0, -2), (F, -6, 0, 0));
-        각(clip, 길, "RightArm",      (A, 0, 0, 0), (B, -28, 6, 0), (C, -52, 12, 0), (D, -64, 6, 0), (E, -44, -4, 0), (F, -28, 6, 0));
-        각(clip, 길, "RightForeArm",  (A, 0, 0, 0), (B, 34, 0, 0), (C, 58, 0, 0), (D, 44, 0, 0), (E, 72, 0, 0), (F, 34, 0, 0));
-
-        // ── 왼팔: 사체를 **잡아 누른 채** 조금씩만 따라간다 (양손이 똑같이 움직이면 춤이 된다)
-        각(clip, 길, "LeftShoulder", (A, 0, 0, 0), (B, -5, 0, 0), (D, -8, 0, 3), (F, -5, 0, 0));
-        각(clip, 길, "LeftArm",      (A, 0, 0, 0), (B, -34, -8, 0), (D, -40, -6, 0), (F, -34, -8, 0));
-        각(clip, 길, "LeftForeArm",  (A, 0, 0, 0), (B, 46, 0, 0), (D, 52, 0, 0), (F, 46, 0, 0));
+        foreach (var n in 뼈.Keys)
+        {
+            string p = 길[n];
+            for (int i = 0; i < 3; i++) { 부드럽게(회전[n][i]); 부드럽게(위치[n][i]); }
+            clip.SetCurve(p, typeof(Transform), "localEulerAnglesRaw.x", 회전[n][0]);
+            clip.SetCurve(p, typeof(Transform), "localEulerAnglesRaw.y", 회전[n][1]);
+            clip.SetCurve(p, typeof(Transform), "localEulerAnglesRaw.z", 회전[n][2]);
+            // ★자리는 **골반만** — 다른 뼈의 자리를 건드리면 몸이 늘어난다
+            if (n == "Hips")
+            {
+                clip.SetCurve(p, typeof(Transform), "m_LocalPosition.x", 위치[n][0]);
+                clip.SetCurve(p, typeof(Transform), "m_LocalPosition.y", 위치[n][1]);
+                clip.SetCurve(p, typeof(Transform), "m_LocalPosition.z", 위치[n][2]);
+            }
+        }
 
         var 설정 = AnimationUtility.GetAnimationClipSettings(clip);
-        설정.loopTime = false;              // 되풀이는 코드가 시간으로 돌린다(앞 0.3초는 한 번만)
+        설정.loopTime = false;              // 되풀이는 코드가 시간으로 돌린다 (앞 0.3초는 한 번만)
         AnimationUtility.SetAnimationClipSettings(clip, 설정);
 
-        AssetDatabase.CreateAsset(clip, 경로);
+        섬.SampleAnimation(an.gameObject, 0f);      // 뜨느라 만진 몸을 되돌린다
+
+        var 있던 = AssetDatabase.LoadAssetAtPath<AnimationClip>(경로);
+        if (있던 != null) { EditorUtility.CopySerialized(clip, 있던); clip = 있던; }
+        else AssetDatabase.CreateAsset(clip, 경로);
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        // 씬의 HeroAttack 에 바로 꽂아 준다 — 꽂는 걸 잊어서 "안 나온다" 가 되는 걸 막는다
         var so = new SerializedObject(hero);
-        var p = so.FindProperty("갈무리클립");
-        if (p != null) { p.objectReferenceValue = clip; so.ApplyModifiedProperties(); }
+        var pr = so.FindProperty("갈무리클립");
+        if (pr != null) { pr.objectReferenceValue = clip; so.ApplyModifiedProperties(); }
 
-        Debug.Log($"[갈무리클립] {경로} 를 구웠다 · 길이 {길이:F2}초 (앉기 {앉는데:F2} + 갈무리 {한바퀴:F2})"
-                + " · 애니메이션 창에서 고칠 수 있다");
+        Debug.Log($"[갈무리클립] {경로} · 길이 {앉는데 + 한바퀴:F2}초 · 뼈 {뼈.Count} · 키 {키.Count}"
+                + " — 다리·골반·척추는 「웅크린정지」에서 그대로 떴다");
         Selection.activeObject = clip;
     }
 
-    // ── 아래는 커브를 쓰는 잔손질
+    // ── 잔손질
+
+    static AnimationClip 클립찾기(string 이름)
+    {
+        foreach (var g in AssetDatabase.FindAssets("t:AnimationClip", new[] { "Assets/Game/Animations" }))
+        {
+            var c = AssetDatabase.LoadAssetAtPath<AnimationClip>(AssetDatabase.GUIDToAssetPath(g));
+            if (c != null && c.name == 이름) return c;
+        }
+        return null;
+    }
+
+    /// 클립을 몸에 씌워 **그때의 로컬 자리·각도를 읽어 둔다**
+    static Dictionary<string, (Vector3 pos, Vector3 eul)> 자세뜨기(
+        AnimationClip c, GameObject 몸, Dictionary<string, Transform> 뼈, float 초)
+    {
+        c.SampleAnimation(몸, 초);
+        var d = new Dictionary<string, (Vector3, Vector3)>();
+        foreach (var kv in 뼈) d[kv.Key] = (kv.Value.localPosition, kv.Value.localEulerAngles);
+        return d;
+    }
+
+    /// 앞 키와 이어지게 각도를 고른다 (±360 을 더해 제일 가까운 쪽으로)
+    static Vector3 잇기(Vector3 앞, Vector3 지금)
+    {
+        return new Vector3(Mathf.Repeat(지금.x - 앞.x + 180f, 360f) - 180f + 앞.x,
+                           Mathf.Repeat(지금.y - 앞.y + 180f, 360f) - 180f + 앞.y,
+                           Mathf.Repeat(지금.z - 앞.z + 180f, 360f) - 180f + 앞.z);
+    }
+
+    /// 그 뼈에 얹을 덧각 — 팔이 아니면 0
+    static Vector3 팔덧각(string 뼈, float 초)
+    {
+        if (!뼈.EndsWith("Shoulder") && !뼈.EndsWith("Arm") && !뼈.EndsWith("ForeArm")) return Vector3.zero;
+        var 표 = 뼈.StartsWith("Right") ? 오른팔 : 왼팔;
+
+        var a = 표[0]; var b = 표[표.Length - 1];
+        for (int i = 0; i < 표.Length - 1; i++)
+            if (초 >= 표[i].초 && 초 <= 표[i + 1].초) { a = 표[i]; b = 표[i + 1]; break; }
+        float u = b.초 > a.초 ? Mathf.SmoothStep(0f, 1f, (초 - a.초) / (b.초 - a.초)) : 0f;
+
+        if (뼈.EndsWith("ForeArm")) return new Vector3(Mathf.Lerp(a.팔뚝x, b.팔뚝x, u), 0f, 0f);
+        if (뼈.EndsWith("Shoulder")) return new Vector3(Mathf.Lerp(a.어깨x, b.어깨x, u), 0f, 0f);
+        return new Vector3(Mathf.Lerp(a.팔x, b.팔x, u), Mathf.Lerp(a.팔y, b.팔y, u), 0f);
+    }
 
     static string 뼈길(Transform 뿌리, Transform t)
     {
@@ -131,35 +204,6 @@ public static class 갈무리클립굽기
         return s;
     }
 
-    static void 곡선(AnimationClip clip, Dictionary<string, string> 길, string 뼈, string 속성,
-                     params (float 초, float 값)[] 키들)
-    {
-        if (!길.TryGetValue(뼈, out var path)) return;
-        var c = new AnimationCurve();
-        foreach (var k in 키들) c.AddKey(new Keyframe(k.초, k.값));
-        부드럽게(c);
-        clip.SetCurve(path, typeof(Transform), 속성, c);
-    }
-
-    /// 세 축을 한 번에 — 도(°) 단위라 애니메이션 창에서 그대로 만져진다
-    static void 각(AnimationClip clip, Dictionary<string, string> 길, string 뼈,
-                   params (float 초, float x, float y, float z)[] 키들)
-    {
-        if (!길.TryGetValue(뼈, out var path)) return;
-        var cx = new AnimationCurve(); var cy = new AnimationCurve(); var cz = new AnimationCurve();
-        foreach (var k in 키들)
-        {
-            cx.AddKey(new Keyframe(k.초, k.x));
-            cy.AddKey(new Keyframe(k.초, k.y));
-            cz.AddKey(new Keyframe(k.초, k.z));
-        }
-        부드럽게(cx); 부드럽게(cy); 부드럽게(cz);
-        clip.SetCurve(path, typeof(Transform), "localEulerAnglesRaw.x", cx);
-        clip.SetCurve(path, typeof(Transform), "localEulerAnglesRaw.y", cy);
-        clip.SetCurve(path, typeof(Transform), "localEulerAnglesRaw.z", cz);
-    }
-
-    /// 키 사이를 부드럽게 — 뚝뚝 끊기면 로봇이 된다
     static void 부드럽게(AnimationCurve c)
     {
         for (int i = 0; i < c.length; i++) c.SmoothTangents(i, 0f);
