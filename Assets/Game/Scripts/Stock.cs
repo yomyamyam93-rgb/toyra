@@ -25,6 +25,9 @@ public static class Stock
         }
     }
 
+    /// 이 갈래에 해당하는 아이템종 — **인벤 말고 다른 데 담을 때** 쓴다 (사체에 쌓기)
+    public static 아이템종 종(Kind k) => 아이템표.찾기(이름(k));
+
     public static int Get(Kind k) => 인벤.다합쳐개수(이름(k));
 
     /// ★넣는다. **한도를 넘어도 다 들어간다 — 대신 못 걷는다** (`인벤.짐배`).

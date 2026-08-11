@@ -21,6 +21,18 @@ public class 땅무더기 : MonoBehaviour
     /// ★프롭(막대·돌멩이)이 이미 모양이면 더미 상자를 안 얹는다
     [HideInInspector] public bool 프롭모양;
 
+    // ★★★**사체 같은 「제 자리를 가진 통」** (2026-08-12 — 갈무리한 것이 사체에 쌓인다).
+    //   그냥 땅무더기는 비면 사라지는 게 맞지만, 사체는 **아직 갈무리가 남았을 수 있다.**
+    //   비었다고 몸이 사라지면 「다 가져갔더니 시체가 증발」이 된다 → 파괴는 `Carcass` 가 정한다.
+    [HideInInspector] public bool 안사라짐;
+
+    /// 창에 뭐라고 뜨나 — 비어 있으면 「땅바닥」
+    [HideInInspector] public string 이름표;
+
+    // ★★몸집을 재서 넣는다 — 누운 티라는 4.5m 라 **중심 한 점**으로 재면 옆에 붙어 서도
+    //   창에 안 잡힌다 (`Harvest.반경` 이 겪은 것과 같은 함정, 2026-08-11).
+    [HideInInspector] public float 반경;
+
     // ★자리를 기억해 둔다 — `Harvest.자리` 와 같은 이유 (2026-08-11).
     //   땅에 떨군 것은 안 움직인다. 세계에 9,882개가 깔려 있어 매번 훑으면 비싸다
     [HideInInspector] public Vector3 자리;
@@ -34,7 +46,8 @@ public class 땅무더기 : MonoBehaviour
     public void 갱신()
     {
         // 빈 무더기는 사라진다 (다 주워 갔으면 자리를 남길 이유가 없다)
-        if (속.것들.Count == 0) { Destroy(gameObject); return; }
+        // ★단 사체처럼 「제 몸을 가진 통」은 제가 정한다 (`안사라짐`)
+        if (속.것들.Count == 0) { if (!안사라짐) Destroy(gameObject); return; }
         if (프롭모양) return;
         if (속.것들.Count != 지난개수) { 지난개수 = 속.것들.Count; 모양갱신(); }
     }
@@ -64,9 +77,11 @@ public class 땅무더기 : MonoBehaviour
     // ══════════════════════════════════════════════════════════
 
     /// 그 자리의 무더기를 찾거나 새로 만든다
+    /// ★사체 같은 「제 몸을 가진 통」에는 안 섞는다 — 옆에 내려놓은 짐이 시체 속으로
+    ///   들어가 버리면, 시체가 썩을 때 내 짐도 같이 사라진다
     public static 땅무더기 여기(Vector3 자리)
     {
-        var 가까운 = 가까운것(자리, 뭉치는거리);
+        var 가까운 = 가까운것(자리, 뭉치는거리, true);
         if (가까운 != null) return 가까운;
 
         var go = new GameObject("땅무더기");
@@ -74,17 +89,20 @@ public class 땅무더기 : MonoBehaviour
         return go.AddComponent<땅무더기>();
     }
 
-    public static 땅무더기 가까운것(Vector3 자리, float 거리)
+    /// ★몸집을 봐 준다 — 누운 사체는 중심이 멀어도 옆구리가 코앞이다
+    public static 땅무더기 가까운것(Vector3 자리, float 거리, bool 땅만 = false)
     {
-        땅무더기 best = null; float bd = 거리 * 거리;
+        땅무더기 best = null; float bd = 거리;
         for (int i = All.Count - 1; i >= 0; i--)
         {
             var p = All[i];
-            if (p == null) continue;
+            if (p == null || (땅만 && p.안사라짐)) continue;
             var v = p.자리 - 자리; v.y = 0f;      // ★기억해 둔 자리 (Transform 을 안 읽는다)
-            float d2 = v.sqrMagnitude;
-            if (d2 > bd) continue;
-            bd = d2; best = p;
+            float 여유 = 거리 + p.반경;
+            if (v.sqrMagnitude > 여유 * 여유) continue;          // ①싼 거르개 (제곱끼리)
+            float d = Mathf.Max(0f, v.magnitude - p.반경);       // ②후보만 제대로 잰다
+            if (d > bd) continue;
+            bd = d; best = p;
         }
         return best;
     }

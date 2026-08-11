@@ -36,6 +36,15 @@ public class 인벤창 : MonoBehaviour
     아이템 메뉴대상; 인벤 메뉴통; Vector2 메뉴자리;
     readonly List<(string 이름, System.Action 하기)> 메뉴 = new List<(string, System.Action)>();
 
+    // ★★★**끌어다 놓기** (2026-08-12 사용자 — 기획 5-7 의 「드래그 없음」을 갱신했다).
+    //   클릭 한 번으로 옮기는 길은 **그대로 둔다** — 끌기는 더한 것이지 바꾼 게 아니다.
+    //   ☆그래서 누르는 순간이 아니라 **손을 뗄 때** 판정한다. 안 끌었으면 옛 클릭 그대로다.
+    //   ☆끌기가 여는 것 하나: **어느 통에 넣을지 콕 집을 수 있다** (가방 버튼 위에 놓기).
+    아이템 끈것; 인벤 끈통; bool 끈내것; 땅무더기 끈무더기;
+    Vector2 누른자리; bool 끄는중;
+    Rect 왼칸, 오른칸;
+    readonly List<Rect> 통칸 = new List<Rect>();
+
     string 알림; float 알림T;
 
     void Awake() { hero = GetComponent<Hero>(); 손 = GetComponent<HeroAttack>(); 삶 = GetComponent<생존>(); }
@@ -54,6 +63,7 @@ public class 인벤창 : MonoBehaviour
         if (토글) { 열림 = !열림; 메뉴닫기(); }
         if (닫기) { if (메뉴대상 != null) 메뉴닫기(); else 열림 = false; }
         if (!hero.Alive) 열림 = false;
+        if (!열림 && 끈것 != null) { 끈것 = null; 끈통 = null; 끈무더기 = null; 끄는중 = false; }
 
         if (손 != null)
         {
@@ -96,8 +106,10 @@ public class 인벤창 : MonoBehaviour
 
         var 무더기 = 땅무더기.가까운것(transform.position, 닿는거리);
 
-        왼쪽패널(new Rect(x, y, w, h));
-        오른쪽패널(new Rect(x + w + 틈, y, w, h), 무더기);
+        왼칸 = new Rect(x, y, w, h);
+        오른칸 = new Rect(x + w + 틈, y, w, h);
+        왼쪽패널(왼칸);
+        오른쪽패널(오른칸, 무더기);
 
         if (!string.IsNullOrEmpty(알림))
         {
@@ -107,6 +119,81 @@ public class 인벤창 : MonoBehaviour
         }
 
         메뉴그리기();
+        끌기그리기();
+    }
+
+    // ══════════════════════════════════════════════════════════ 끌어다 놓기
+
+    /// 누르는 순간엔 **잡아만 둔다** — 옮길지 말지는 손을 뗄 때 정한다
+    void 집기(아이템 it, 인벤 통, bool 내것인가, 땅무더기 무더기)
+    {
+        끈것 = it; 끈통 = 통; 끈내것 = 내것인가; 끈무더기 = 무더기;
+        누른자리 = Event.current.mousePosition; 끄는중 = false;
+    }
+
+    void 끌기그리기()
+    {
+        var e = Event.current;
+        if (끈것 == null) return;
+
+        // 조금이라도 움직였으면 그때부터 「끄는 중」이다 (손떨림으로 끌리지 않게 5px)
+        if (!끄는중 && e.type == EventType.MouseDrag
+            && (e.mousePosition - 누른자리).sqrMagnitude > 25f) 끄는중 = true;
+
+        if (끄는중)
+        {
+            // 놓을 수 있는 데를 테두리로 알려 준다
+            for (int i = 0; i < 통칸.Count; i++)
+                if (통칸[i].Contains(e.mousePosition)) 테두리(통칸[i], new Color(0.95f, 0.85f, 0.45f));
+            if (왼칸.Contains(e.mousePosition)) 테두리(왼칸, new Color(0.5f, 0.7f, 0.95f, 0.7f));
+            else if (오른칸.Contains(e.mousePosition)) 테두리(오른칸, new Color(0.5f, 0.7f, 0.95f, 0.7f));
+
+            // 끌고 다니는 것 — 이름표 하나면 충분하다 (11장: 화면에 설명문을 안 쓴다)
+            var r = new Rect(e.mousePosition.x + 12f, e.mousePosition.y - 10f, 150f, 22f);
+            GUI.color = new Color(0.12f, 0.13f, 0.15f, 0.95f);
+            GUI.DrawTexture(r, px);
+            GUI.color = 끈것.종 != null ? 끈것.종.색 : Color.gray;
+            GUI.DrawTexture(new Rect(r.x + 5f, r.y + 4f, 14f, 14f), px);
+            GUI.color = Color.white;
+            var s = new GUIStyle(GUI.skin.label) { fontSize = 12 };
+            s.normal.textColor = Color.white;
+            GUI.Label(new Rect(r.x + 25f, r.y + 2f, r.width - 30f, 18f),
+                      끈것.종 != null ? 끈것.종.이름 : "", s);
+        }
+
+        if (e.type == EventType.MouseUp && e.button == 0) 놓기(e.mousePosition, e.shift);
+    }
+
+    /// ★**어디에 놓았느냐가 정한다** — 4장의 좌클릭 원리와 같은 길이다
+    void 놓기(Vector2 p, bool 전부)
+    {
+        var it = 끈것; var 출처 = 끈통; bool 내것 = 끈내것; var 무 = 끈무더기;
+        bool 끌었다 = 끄는중;
+        끈것 = null; 끈통 = null; 끈무더기 = null; 끄는중 = false;
+        if (it == null || 출처 == null) return;
+
+        // 안 끌었으면 그냥 클릭이다 — 옛 동작 그대로
+        if (!끌었다) { 옮기기(it, 출처, 내것, 전부); if (무 != null) 무.갱신(); return; }
+
+        // ① 가방 버튼 위 — 그 통에 콕 집어 넣는다
+        for (int i = 0; i < 통칸.Count && i < 인벤.통들.Count; i++)
+            if (통칸[i].Contains(p)) { 옮기기(it, 출처, 내것, 전부, 인벤.통들[i]); if (무 != null) 무.갱신(); return; }
+
+        // ② 왼쪽 — 지금 보고 있는 통으로
+        if (왼칸.Contains(p)) { 옮기기(it, 출처, 내것, 전부, 인벤.통들[고른통]); if (무 != null) 무.갱신(); return; }
+
+        // ③ 오른쪽 — 앞에 있는 것(땅·사체) 속으로. 이미 거기 있던 것은 그대로 둔다
+        if (오른칸.Contains(p) && 내것) { 옮기기(it, 출처, true, 전부, null, 무); if (무 != null) 무.갱신(); }
+    }
+
+    void 테두리(Rect r, Color c)
+    {
+        GUI.color = c;
+        GUI.DrawTexture(new Rect(r.x, r.y, r.width, 2f), px);
+        GUI.DrawTexture(new Rect(r.x, r.yMax - 2f, r.width, 2f), px);
+        GUI.DrawTexture(new Rect(r.x, r.y, 2f, r.height), px);
+        GUI.DrawTexture(new Rect(r.xMax - 2f, r.y, 2f, r.height), px);
+        GUI.color = Color.white;
     }
 
     void 왼쪽패널(Rect r)
@@ -115,10 +202,12 @@ public class 인벤창 : MonoBehaviour
 
         // ── ★통 버튼 줄 (좀보이드) — 주머니 + 착용한 가방들
         float bx = r.x + 8f, by = r.y + 6f;
+        통칸.Clear();
         for (int i = 0; i < 인벤.통들.Count; i++)
         {
             var 통 = 인벤.통들[i];
             var br = new Rect(bx, by, 94f, 22f);
+            통칸.Add(br);                        // ★끌어다 놓을 자리로 기억해 둔다
             bool 고름 = i == 고른통;
             GUI.color = 고름 ? new Color(0.34f, 0.37f, 0.42f) : new Color(0.17f, 0.18f, 0.2f);
             GUI.DrawTexture(br, px);
@@ -164,8 +253,12 @@ public class 인벤창 : MonoBehaviour
         바탕(r);
         var 제목투 = new GUIStyle(GUI.skin.label) { fontSize = 14 };
         제목투.normal.textColor = new Color(0.85f, 0.85f, 0.88f);
+        // ★이름표가 있으면 그것이 제목이다 (사체 — 「사슴 사체」)
+        string 곳 = 무더기 != null && !string.IsNullOrEmpty(무더기.이름표) ? 무더기.이름표 : "땅바닥";
         GUI.Label(new Rect(r.x + 12f, r.y + 6f, r.width - 24f, 22f),
-                  무더기 != null ? $"땅바닥  {무더기.속.무게:F1}kg" : "땅바닥 (비어 있음)", 제목투);
+                  무더기 == null ? "땅바닥 (비어 있음)"
+                  : 무더기.속.것들.Count == 0 ? $"{곳} (비어 있음)"
+                  : $"{곳}  {무더기.속.무게:F1}kg", 제목투);
 
         if (무더기 == null) return;
         목록(new Rect(r.x + 8f, r.y + 32f, r.width - 16f, r.height - 40f),
@@ -198,8 +291,10 @@ public class 인벤창 : MonoBehaviour
                 var 행 = new Rect(0f, yy, 안.width - 18f, 24f);
                 bool 위에 = 행.Contains(Event.current.mousePosition);
                 bool 쥔것 = 내것인가 && it == 인벤.쥔것;
+                bool 끄는행 = 끄는중 && it == 끈것;
 
-                GUI.color = 쥔것 ? new Color(0.32f, 0.30f, 0.16f)
+                GUI.color = 끄는행 ? new Color(0.20f, 0.22f, 0.26f)      // 끌고 나간 자리는 옅게
+                          : 쥔것 ? new Color(0.32f, 0.30f, 0.16f)
                           : 위에 ? new Color(0.28f, 0.3f, 0.34f) : new Color(0.13f, 0.14f, 0.16f);
                 GUI.DrawTexture(행, px);
                 GUI.color = it.종.색;
@@ -218,7 +313,7 @@ public class 인벤창 : MonoBehaviour
                 if (위에 && Event.current.type == EventType.MouseDown)
                 {
                     if (Event.current.button == 1) 메뉴열기(it, 것, 내것인가, 무더기);   // ★우클릭
-                    else { 옮기기(it, 것, 내것인가, Event.current.shift); if (무더기 != null) 무더기.갱신(); }
+                    else 집기(it, 것, 내것인가, 무더기);        // ★잡아만 둔다 — 판정은 손 뗄 때
                     Event.current.Use();
                 }
                 yy += 26f;
@@ -359,17 +454,37 @@ public class 인벤창 : MonoBehaviour
         띄움(인벤.쥔것 != null ? $"{it.종.이름} 을(를) 쥐었다" : "손을 비웠다");
     }
 
-    void 옮기기(아이템 it, 인벤 통, bool 내것에서, bool 전부)
+    /// ★`받을통`·`받을무더기` 는 **끌어다 놓았을 때** 채워진다 — 비면 옛 길(발밑·고른통) 그대로다
+    void 옮기기(아이템 it, 인벤 통, bool 내것에서, bool 전부, 인벤 받을통 = null, 땅무더기 받을무더기 = null)
     {
         var 자리 = transform.position + transform.forward * 0.9f;
         if (내것에서)
         {
+            // 내 통 → 내 다른 통 (가방 버튼 위에 놓기). 같은 통이면 아무 일도 없다
+            if (받을통 != null)
+            {
+                if (받을통 == 통) return;
+                if (인벤.쥔것 == it) 인벤.쥔것 = null;
+                if (it.뭉치나 && !전부 && it.개수 > 1) { if (받을통.넣기(it.종, 1) > 0) it.개수--; return; }
+                if (받을통.받기(it)) 통.빼기(it);
+                return;
+            }
+
             if (인벤.쥔것 == it) 인벤.쥔것 = null;
+
+            // 앞에 있는 무더기(땅·사체) 속으로
+            if (받을무더기 != null)
+            {
+                if (it.뭉치나 && !전부 && it.개수 > 1) { it.개수--; 받을무더기.속.넣기(it.종, 1); return; }
+                if (통.빼기(it)) 받을무더기.속.받기(it);
+                return;
+            }
+
             if (it.뭉치나 && !전부 && it.개수 > 1) { it.개수--; 땅무더기.여기(자리).속.넣기(it.종, 1); return; }
             if (통.빼기(it)) 땅무더기.내려놓기(it, 자리);
             return;
         }
-        var 넣을통 = 인벤.통들[고른통];
+        var 넣을통 = 받을통 ?? 인벤.통들[고른통];
         if (it.뭉치나 && !전부 && it.개수 > 1) { if (넣을통.넣기(it.종, 1) > 0) it.개수--; return; }
         if (넣을통.받기(it)) 통.빼기(it);
     }

@@ -56,11 +56,25 @@ public class Carcass : MonoBehaviour
         //   ☆앞서 `방향무관` 을 만들고 검사까지 넣어 놓고 **켜는 줄을 안 썼다** — 내 실수다.
         //     갈무리는 쪼그려 앉아 뒤적이는 일이라 어느 쪽을 보는지가 상관없다.
         h.방향무관 = true;
+        // ★★갈무리한 것은 **여기 쌓인다** — 인벤으로 순간이동하지 않는다 (2026-08-12).
+        //   뒤적여서 꺼내 놓는 것과, 그것을 챙기는 것은 다른 행위다 (9-0).
+        h.그자리에쌓기 = true;
+
+        // 통을 미리 달아 둔다 — 갈무리 전에 Tab 을 열어도 「사슴 사체 (비어 있음)」이 보인다.
+        // 뒤적여야 뭔가 생긴다는 것이 창에서 그대로 읽힌다
+        var 통 = go.AddComponent<땅무더기>();
+        통.프롭모양 = true;                    // 누운 몸이 곧 모양이다 — 상자를 얹지 않는다
+        통.안사라짐 = true;                    // 파괴는 아래 `Update` 가 정한다
+        통.이름표 = go.name;
+        통.반경 = h.반경;
 
         var car = go.AddComponent<Carcass>();
         car.몸 = go.transform.childCount > 0 ? go.transform.GetChild(0) : null;
         car.처음자리 = go.transform.position;
+        car.갈무리 = h; car.통 = 통;
     }
+
+    Harvest 갈무리; 땅무더기 통;
 
     /// (은퇴) 몸을 뜯어다 코드로 눕히던 옛길 — 상자 몸일 때만 맞았다. 지금은 `전환` 이 정본.
     public static void 남기다(Critter c, int 고기량)
@@ -104,8 +118,32 @@ public class Carcass : MonoBehaviour
         car.처음자리 = go.transform.position;
     }
 
+    // ★★**사라질 때 면이 지워진다** (2026-08-12 사용자 "마자 메시면이 지워지면서 사라지게").
+    //   옛 프로젝트에서 쓰던 그 연출이다 — `디졸브` 가 그린다.
+    [Tooltip("사라질 때 면이 지워지는 데 걸리는 시간 (초) — 0 이면 그냥 사라진다")]
+    public float 지워지는데 = 0.9f;
+
+    // ☆(은퇴) 끝물에 땅으로 가라앉던 것 — 「사라지는 게 눈에 보이게」 하려던 것인데
+    //   이제 디졸브가 그 일을 한다. 지우지 않고 스위치로 남긴다 (9장 3조)
+    [Tooltip("끝물에 땅으로 가라앉는다 — 디졸브가 대신하므로 꺼 둔다")]
+    public bool 가라앉기 = false;
+
+    bool 지우는중;
+
+    /// 사라진다 — 면이 지워지고 나서 없어진다
+    void 사라져(float 시간)
+    {
+        if (지우는중) return;
+        지우는중 = true;
+        if (갈무리 != null) Destroy(갈무리);            // 더는 뒤적일 수 없다
+        if (통 != null) 통.enabled = false;             // 창·외곽선이 더는 안 잡는다
+        if (시간 <= 0f) { Destroy(gameObject); return; }
+        디졸브.시작(gameObject, 시간);
+    }
+
     void Update()
     {
+        if (지우는중) return;
         t += Time.deltaTime;
 
         // ★튕겨나가는 중 — 처음엔 훅, 착지로 갈수록 잦아든다 (남은 비율의 제곱)
@@ -117,11 +155,16 @@ public class Carcass : MonoBehaviour
             처음자리 = transform.position;          // 썩어 가라앉는 기준도 따라 옮긴다
         }
 
+        // ★★**다 뒤적이고 다 가져갔으면 그때 사라진다** (2026-08-12).
+        //   갈무리가 끝나도(`Harvest` 가 지워져도) 꺼내 놓은 것이 남아 있으면 몸이 남는다.
+        //   ☆썩는 것은 그대로다 — 안 챙기고 놔두면 쌓아 둔 것까지 같이 썩는다
+        if (갈무리 == null && 통 != null && 통.속.것들.Count == 0) { 사라져(지워지는데); return; }
+
         float u = t / Mathf.Max(1f, 썩는시간);
-        if (u >= 1f) { Destroy(gameObject); return; }
+        if (u >= 1f) { 사라져(지워지는데); return; }
 
         // 끝물에는 땅으로 가라앉는다 — 사라지는 게 눈에 보이게
-        if (몸 != null && u > 0.85f)
+        if (가라앉기 && 몸 != null && u > 0.85f)
         {
             float k = (u - 0.85f) / 0.15f;
             transform.position = 처음자리 - Vector3.up * k * 1.2f;

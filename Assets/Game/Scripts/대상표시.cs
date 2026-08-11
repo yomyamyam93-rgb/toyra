@@ -142,8 +142,11 @@ public class 대상표시 : MonoBehaviour
         if (불 != null) { 색 = 만질것; return 불.transform; }
 
         // ③ 땅 무더기
+        // ★★아직 **뒤적일 게 남은 사체**는 여기서 잡지 않는다 (2026-08-12).
+        //   사체도 이제 통(`땅무더기`)을 갖는데, 이 검사가 ⑤(캘 것)보다 앞이라
+        //   갈무리가 남았는데도 「만질 것」 색으로 떠 버린다. 갈무리가 끝나야 짐이다
         var 짐 = 땅무더기.가까운것(p, 2.6f);
-        if (짐 != null) { 색 = 만질것; return 짐.transform; }
+        if (짐 != null && 짐.GetComponent<Harvest>() == null) { 색 = 만질것; return 짐.transform; }
 
         // ④ 앞쪽의 살아 있는 야생 (`HeroAttack.Sweep` 과 같은 잣대)
         if (손 != null && 손.enabled)

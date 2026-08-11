@@ -318,7 +318,11 @@ public class 격자바닥 : MonoBehaviour
             }
         }
 
-        if (메시 == null) 메시 = new Mesh { name = "격자바닥" };
+        // ★★★**씬에 저장되지 않게 한다** (2026-08-12 실측 — 씬 파일 58MB 중 **32MB 가 이것**이었다).
+        //   이 메시는 `OnEnable` 에서 매번 새로 짓는다. 그런데 에디터에서 지어 놓은 것이
+        //   씬에 통째로 직렬화돼(정점 315,368개 · `_typelessdata` 28.9MB) 따라다녔다.
+        //   ☆9장 2조 그대로다 — **세상은 코드가 만든다. 씬에 담지 않는다.**
+        if (메시 == null) 메시 = new Mesh { name = "격자바닥", hideFlags = HideFlags.DontSave };
         메시.Clear();
         메시.indexFormat = 정점.Count > 65000
             ? UnityEngine.Rendering.IndexFormat.UInt32 : UnityEngine.Rendering.IndexFormat.UInt16;

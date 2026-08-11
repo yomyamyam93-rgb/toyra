@@ -316,49 +316,84 @@ public class Wildlife : MonoBehaviour
     //   다이어울프·스테고가 나왔다.** 기본종은 이미 거리로 골라지는데(종고르기의 멂)
     //   변형만 거리를 안 봤던 것 — 같은 자(멂재기, 0~1)로 문턱을 건다.
     //   0 = 어디서나 · 0.35 ≈ 집에서 315m · 0.5 ≈ 380m. 걸러진 몫은 기본형이 가져간다.
-    static readonly (string 기본종, string 모델, float 키, float 확률, float 먼곳부터, string 이름)[] 변형표 =
+    // ★★★★**번호 변형도 「노멀 위주」다** (2026-08-12 사용자 "노멀한 팻들 위주로 스폰되게좀
+    //   해줘 사슴도 모든종류가 싹다 나오는데, 다람쥐도 그렇고 그런건 특정 지역이나 맵에").
+    //   `사슴_1~6` 은 **서로 다른 모델**이다 (정점 10,362~12,742 — 색만 다른 게 아니다).
+    //   그런데 `모델뽑기` 가 **균등 무작위**로 뽑아서, 집 앞에서 여섯 종류가 다 튀어나왔다.
+    //   → 대표 하나(`노멀번호`)가 위주고, 나머지는 **번호 순서대로 멀어야** 나온다.
+    //     계열 변형(검치다람쥐·트리케)이 쓰던 `먼곳부터` 와 **같은 자**(멂재기 0~1)다.
+    //   ☆`노멀번호` 는 「그 종의 대표로 보이는 모델」이다 — 눈으로 보고 정할 값이라(6장)
+    //     일단 전부 1로 뒀다. F1 진열에서 보고 다른 게 대표면 이 숫자만 바꾸면 된다.
+    static readonly (string 기본종, string 모델, float 키, float 확률, float 먼곳부터, string 이름, int 노멀번호)[] 변형표 =
     {
         // 다람쥐 계열
-        ("다람쥐", "다람쥐_",     1.62f, 0.90f, 0f,    "다람쥐"),
-        ("다람쥐", "검치다람쥐",  1.98f, 0.10f, 0.35f, "검치다람쥐"),
+        ("다람쥐", "다람쥐_",     1.62f, 0.90f, 0f,    "다람쥐",     1),
+        ("다람쥐", "검치다람쥐",  1.98f, 0.10f, 0.35f, "검치다람쥐", 1),
         // 늑대 계열
-        ("늑대",   "늑대_",       2.04f, 0.88f, 0f,    "늑대"),
-        ("늑대",   "다이어울프",  2.28f, 0.12f, 0.40f, "다이어울프"),
+        ("늑대",   "늑대_",       2.04f, 0.88f, 0f,    "늑대",       1),
+        ("늑대",   "다이어울프",  2.28f, 0.12f, 0.40f, "다이어울프", 1),
         // 사슴 계열 — 초식 대형들이 여기서 갈라진다
-        ("사슴",   "사슴_",       3.12f, 0.55f, 0f,    "사슴"),
-        ("사슴",   "큰뿔사슴",    3.60f, 0.10f, 0.35f, "큰뿔사슴"),
-        ("사슴",   "트리케_",     3.40f, 0.20f, 0.45f, "트리케"),
-        ("사슴",   "스테고_",     3.60f, 0.15f, 0.50f, "스테고"),
+        ("사슴",   "사슴_",       3.12f, 0.55f, 0f,    "사슴",       1),
+        ("사슴",   "큰뿔사슴",    3.60f, 0.10f, 0.35f, "큰뿔사슴",   1),
+        ("사슴",   "트리케_",     3.40f, 0.20f, 0.45f, "트리케",     1),
+        ("사슴",   "스테고_",     3.60f, 0.15f, 0.50f, "스테고",     1),
         // 랩터 계열
-        ("랩터",   "랩터_",       2.60f, 0.75f, 0f,    "랩터"),
-        ("랩터",   "테러버드_",   2.40f, 0.25f, 0.30f, "테러버드"),
+        ("랩터",   "랩터_",       2.60f, 0.75f, 0f,    "랩터",       1),
+        ("랩터",   "테러버드_",   2.40f, 0.25f, 0.30f, "테러버드",   1),
         // 티라노 계열 — 기본종 자체가 먼 데서만 나온다 (종고르기)
-        ("티라노", "티라노_",     4.80f, 1.00f, 0f,    "티라노"),
+        ("티라노", "티라노_",     4.80f, 1.00f, 0f,    "티라노",     1),
     };
 
-    /// 앞머리가 `_` 로 끝나면 번호 변형이 있다 — rig 폴더에서 있는 번호를 세어 무작위로 뽑는다
-    static readonly System.Collections.Generic.Dictionary<string, GameObject[]> 변형캐시 =
-        new System.Collections.Generic.Dictionary<string, GameObject[]>();
+    [Header("★변형 — 노멀 위주로 나온다")]
+    [Tooltip("대표 모델이 다른 번호 하나보다 몇 배 자주 나오나")]
+    [Range(1f, 20f)] public float 노멀비중 = 5f;
+    [Tooltip("번호 하나 올라갈 때마다 이만큼 더 멀어야 나온다 (멂 0~1 · 계열 변형의 「먼곳부터」와 같은 자)")]
+    [Range(0f, 0.4f)] public float 번호간격 = 0.12f;
 
-    static GameObject 모델뽑기(string 앞머리)
+    /// 앞머리가 `_` 로 끝나면 번호 변형이 있다 — rig 폴더에서 있는 번호를 세어 둔다
+    static readonly System.Collections.Generic.Dictionary<string, (GameObject 것, int 번호)[]> 변형캐시 =
+        new System.Collections.Generic.Dictionary<string, (GameObject, int)[]>();
+
+    /// ★`멂` 을 넘기면 **노멀 위주**로 뽑는다. 안 넘기면(예열) 전부 대상이다
+    GameObject 모델뽑기(string 앞머리, float 멂 = 9f, int 노멀번호 = 1)
     {
         if (!변형캐시.TryGetValue(앞머리, out var 들))
         {
-            var 목록 = new System.Collections.Generic.List<GameObject>();
+            var 목록 = new System.Collections.Generic.List<(GameObject, int)>();
             if (앞머리.EndsWith("_"))
                 for (int n = 1; n <= 9; n++)
                 {
                     var g = Resources.Load<GameObject>("rig/" + 앞머리 + n);
-                    if (g != null) 목록.Add(g);
+                    if (g != null) 목록.Add((g, n));
                 }
             else
             {
                 var g = Resources.Load<GameObject>("rig/" + 앞머리);
-                if (g != null) 목록.Add(g);
+                if (g != null) 목록.Add((g, 1));
             }
             변형캐시[앞머리] = 들 = 목록.ToArray();
         }
-        return 들.Length > 0 ? 들[Random.Range(0, 들.Length)] : null;
+        if (들.Length == 0) return null;
+
+        float 합 = 0f;
+        for (int i = 0; i < 들.Length; i++) 합 += 뽑을무게(들[i].번호, 멂, 노멀번호);
+        if (합 <= 0f) return 들[0].것;              // 아무도 못 나올 거리면 첫 놈으로
+
+        float 룰렛 = Random.value * 합, 누적 = 0f;
+        for (int i = 0; i < 들.Length; i++)
+        {
+            누적 += 뽑을무게(들[i].번호, 멂, 노멀번호);
+            if (룰렛 <= 누적) return 들[i].것;
+        }
+        return 들[들.Length - 1].것;
+    }
+
+    /// 노멀은 어디서나 무겁게, 나머지는 **노멀을 뺀 순번만큼 멀어야** 나온다
+    float 뽑을무게(int 번호, float 멂, int 노멀번호)
+    {
+        if (번호 == 노멀번호) return Mathf.Max(0.01f, 노멀비중);
+        int 순 = 번호 > 노멀번호 ? 번호 - 1 : 번호;      // 노멀 자리를 건너뛴 순번 (1,2,3…)
+        return 멂 >= 순 * 번호간격 ? 1f : 0f;
     }
 
     [Tooltip("스폰마다 콘솔에 무엇을 넣었는지 찍는다 — 모델이 잘못 들어가면 여기서 바로 보인다")]
@@ -407,13 +442,14 @@ public class Wildlife : MonoBehaviour
         foreach (var v in 변형표)
             if (v.기본종 == s.이름 && 멂변 >= v.먼곳부터) 합 += v.확률;
         float 룰렛 = Random.value * Mathf.Max(0.0001f, 합), 누적 = 0f;
-        foreach (var (기본, 앞머리, 키, 확률, 먼곳부터, 이름) in 변형표)
+        foreach (var (기본, 앞머리, 키, 확률, 먼곳부터, 이름, 노멀번호) in 변형표)
         {
             if (기본 != s.이름 || 멂변 < 먼곳부터) continue;
             누적 += 확률;
             if (룰렛 > 누적) continue;
 
-            var 모델 = 모델뽑기(앞머리);
+            // ★번호 변형도 같은 자로 고른다 — 노멀이 위주, 나머지는 멀어야 나온다
+            var 모델 = 모델뽑기(앞머리, 멂변, 노멀번호);
             if (모델 != null)
             {
                 var d = s.복제();

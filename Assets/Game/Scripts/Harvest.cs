@@ -102,6 +102,28 @@ public class Harvest : MonoBehaviour
         }
     }
 
+    // ★★★★**갈무리한 것은 사체에 쌓인다 — 인벤으로 순간이동하지 않는다** (2026-08-12).
+    //   9-0(인과와 행위)의 마지막 구멍이었다. 사체를 뒤적이는 행위는 넣어 놓고,
+    //   **나온 것은 여전히 내 주머니로 텔레포트**했다 — 「꺼내서 챙긴다」가 없었다.
+    //   → 뒤적이면 몸에 쌓이고, **Tab 을 열어 가져가야** 내 것이 된다.
+    //   ☆무게 한도가 여기서 살아난다: 다 못 들면 사체에 남겨 두고 나중에 온다.
+    [Tooltip("켜면 캔 것이 인벤이 아니라 이 물체 위에 쌓인다 (사체)")]
+    public bool 그자리에쌓기 = false;
+
+    땅무더기 담을곳;
+    땅무더기 통찾기()
+    {
+        if (담을곳 == null) 담을곳 = GetComponent<땅무더기>();
+        if (담을곳 == null)
+        {
+            담을곳 = gameObject.AddComponent<땅무더기>();
+            담을곳.프롭모양 = true;             // 몸 자체가 모양이다 — 상자를 안 얹는다
+            담을곳.안사라짐 = true;
+            담을곳.반경 = 반경;
+        }
+        return 담을곳;
+    }
+
     /// 실제 한 히트 — 지급·소모·쓰러짐. **계속 패도 되면 true**
     bool 한타(Vector3 방향)
     {
@@ -110,11 +132,18 @@ public class Harvest : MonoBehaviour
         // ★돌은 인벤에 바로 꽂히지 않는다 — **돌맹이가 튀어 떨어지고, 줍는 것이 수확이다**
         //   (9-0 인과: 결과는 행위에서. 2026-08-11 사용자 "주변에 툭툭 떨어지게")
         if (kind == Stock.Kind.돌 && perHit > 0) { for (int i = 0; i < perHit; i++) 돌맹이튀기(); }
+        else if (그자리에쌓기 && perHit > 0)
+        {
+            var 종 = Stock.종(kind);
+            if (종 != null) { var 통 = 통찾기(); 통.속.넣기(종, perHit); 통.갱신(); }
+        }
         else if (perHit > 0) Stock.Add(kind, perHit);
 
         if (--hits > 0) return true;
 
         if (쓰러짐 != null) { 쓰러짐.시작(방향); Destroy(this); return false; }
+        // ★다 뒤적였어도 **몸은 남는다** — 쌓인 것을 가져가야 사라진다 (`Carcass` 가 지운다)
+        if (그자리에쌓기) { Destroy(this); return false; }
         if (장애물치우기) Blocker.Remove(blockAt);
         Destroy(gameObject);
         return false;
