@@ -728,6 +728,13 @@ public class WorldGen : MonoBehaviour
     [Tooltip("제일 큰 굴의 조각 수")] [Range(4, 40)] public int 굴조각최대 = 18;
     [Tooltip("클수록 작은 굴이 흔해진다")] [Range(1f, 4f)] public float 굴쏠림 = 2.4f;
     [Tooltip("굴이 퍼지는 반경 (m)")] [Range(10f, 70f)] public float 굴반경 = 45f;
+    // ★★폭을 손잡이로 뺀다 (2026-08-11 사용자 "그 폭이좀 넓어야할듯한데?") —
+    //   숫자를 코드에 박아 두면 눈으로 보고 못 고친다 (규칙 9-4 「화면에 띄워 놓고 정한다」).
+    //   ☆반지름이다. 실제 길 너비는 이 값의 두 배 — 2.6 이면 5.2m 짜리 길이다
+    [Tooltip("좁은 길의 반지름 (m) — 너비는 이 값의 두 배")] [Range(0.8f, 6f)] public float 굴길좁게 = 2.4f;
+    [Tooltip("넓은 길의 반지름 (m)")] [Range(1.5f, 12f)] public float 굴길넓게 = 6.0f;
+    [Tooltip("작은 공간의 반지름 (m)")] [Range(2f, 20f)] public float 굴방작게 = 7f;
+    [Tooltip("큰 공간의 반지름 (m)")] [Range(4f, 40f)] public float 굴방크게 = 16f;
     [Tooltip("★비우면 상자로 짓는다")] public GameObject[] 굴조각_방, 굴조각_통로, 굴조각_잡동사니;
 
     List<직소.주머니> 굴주머니()
@@ -776,7 +783,7 @@ public class WorldGen : MonoBehaviour
         // 공간 — 원 몇 개를 어긋나게 겹쳐 판다. 개수·반지름이 달라 **같은 방이 두 번 안 나온다**
         void 방파기(Vector3 p)
         {
-            float 큰r = Random.Range(3.5f, 8.5f);
+            float 큰r = Random.Range(굴방작게, Mathf.Max(굴방작게 + 0.5f, 굴방크게));
             int 원수 = Random.Range(3, 7);
             for (int i = 0; i < 원수; i++)
             {
@@ -806,7 +813,8 @@ public class WorldGen : MonoBehaviour
                 p.z = Mathf.Clamp(p.z, 8f, WorldGrid.Size - 8f);
                 if ((p - c).magnitude > 굴반경 * 0.62f)                              // 제 칸을 벗어나지 않게
                     dir = Mathf.Atan2(c.z - p.z, c.x - p.x) + Random.Range(-0.6f, 0.6f);
-                float 폭 = Mathf.Lerp(1.1f, 3.4f, Mathf.PerlinNoise(씨 + 31f, t * 0.08f));   // 길 두께가 변한다
+                float 폭 = Mathf.Lerp(굴길좁게, Mathf.Max(굴길좁게 + 0.3f, 굴길넓게),
+                                      Mathf.PerlinNoise(씨 + 31f, t * 0.08f));   // 길 두께가 변한다
                 새기기(p, 폭, 2.7f + 폭 * 0.35f);
                 if (가지 < 규모 / 5 && 걸음 - i > 10 && Random.value < 0.045f)      // 곁가지
                 { 가지++; 줄기들.Push((p, dir + Random.Range(1.1f, 2.1f) * (Random.value < 0.5f ? 1f : -1f), (걸음 - i) / 2)); }

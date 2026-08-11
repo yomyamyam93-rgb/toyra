@@ -107,6 +107,53 @@ public class Wildlife : MonoBehaviour
     {
         world = FindFirstObjectByType<WorldGen>();
         day = FindFirstObjectByType<DayNight>();
+        if (미리읽기) StartCoroutine(미리읽기속());
+    }
+
+    // ★★★**미리 읽어 둔다** (2026-08-11 실측 — 사용자가 준 렉재기 로그가 범인을 짚었다:
+    //   `[렉스파이크] 1154ms · 스크립트 95ms · 렌더 0ms · 컬링 0ms · GC 163,717KB`).
+    //   계산이 아니라 **디스크에서 읽는 것**이 프레임을 통째로 먹었다. 처음 보는 변형이
+    //   나타날 때 그 모델과 텍스처를 그 자리에서 읽기 때문이다 (텍스처 한 장이 메모리에선
+    //   수십 MB 다). 평균은 7.4ms(134fps)인데 이 순간만 1초를 멈춘다.
+    //   → 시작할 때 **몇 개씩 나눠** 읽어 캐시에 올려 둔다. 게임 중엔 읽을 것이 없어진다.
+    //   ☆한 프레임에 몰아 읽으면 그게 또 렉이다 — 프레임당 하나씩만 읽는다.
+    [Header("★미리 읽기 (렉 방지)")]
+    [Tooltip("시작할 때 펫 모델·동작을 미리 읽어 둔다 — 껐다 켜서 효과를 견줄 수 있다")]
+    public bool 미리읽기 = true;
+    [Tooltip("한 프레임에 몇 개까지 읽나")] [Range(1, 8)] public int 프레임당 = 1;
+
+    System.Collections.IEnumerator 미리읽기속()
+    {
+        var 시계 = System.Diagnostics.Stopwatch.StartNew();
+        int 모델수 = 0, 클립수 = 0, 센것 = 0;
+        var 동작 = 동작진열.동작들;
+
+        foreach (var v in 변형표)
+        {
+            // 모델뽑기 가 `변형캐시` 에 담아 둔다 — 같은 앞머리는 한 번만 읽는다
+            var 이름들 = new System.Collections.Generic.List<string>();
+            if (v.모델.EndsWith("_")) { for (int n = 1; n <= 9; n++) 이름들.Add(v.모델 + n); }
+            else 이름들.Add(v.모델);
+
+            foreach (var nm in 이름들)
+            {
+                var g = Resources.Load<GameObject>("rig/" + nm);
+                if (g == null) continue;
+                모델수++;
+                // ★메시·텍스처를 **실제로 메모리에 올린다** — 참조만 잡으면 아직 안 읽는다
+                foreach (var r in g.GetComponentsInChildren<Renderer>(true))
+                {
+                    var m = r.sharedMaterial;
+                    if (m != null && m.mainTexture != null) { var _ = m.mainTexture.width; }
+                }
+                foreach (var d in 동작)
+                    if (Resources.Load<AnimationClip>("rig/" + d + "_" + nm) != null) 클립수++;
+
+                if (++센것 % Mathf.Max(1, 프레임당) == 0) yield return null;
+            }
+            모델뽑기(v.모델);       // 캐시 채우기
+        }
+        Debug.Log($"[야생] 미리 읽기 끝 — 모델 {모델수}개 · 동작 {클립수}개 · {시계.ElapsedMilliseconds}ms");
     }
 
     void Update()
