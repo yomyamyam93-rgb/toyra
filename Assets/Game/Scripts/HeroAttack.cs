@@ -50,8 +50,16 @@ public class HeroAttack : MonoBehaviour
     [Tooltip("채집하는 동안의 걷는 속도 배")] [Range(0f, 1f)] public float 채집이속 = 0.3f;
     [Tooltip("나무·돌을 팰 때 초당 몇 번 내려찍나")] [Range(0.5f, 4f)] public float 패는빠르기 = 1.6f;
     [Tooltip("(은퇴) 좌클릭 평타로도 캐진다 — 캐기는 F 로 갔다")] public bool 평타로도캐기 = false;
-    [Tooltip("갈무리할 때 얼마나 앉나 — 1 이면 공격 예비만큼(9cm), 2.6 이면 쪼그려 앉기")]
+    [Tooltip("(예비) 클립이 없을 때만 쓰는 절차 앉기 — 1 이면 9cm, 2.6 이면 쪼그려 앉기")]
     [Range(1f, 4f)] public float 앉기굽힘 = 2.6f;
+    // ★★★★**갈무리는 클립이 그린다** (2026-08-11 사용자 "애니메이션을 넣으라고, 절차적으로
+    //   생성해서, 쪼그려 앉은다음 손으로 갈무리하는 동작으로 그냥 휘젓는 게 아니라 갈무리하듯").
+    //   `Tools ▸ 토이라 ▸ 갈무리 모션을 클립으로 굽기` 로 구우면 여기 저절로 꽂힌다.
+    //   ☆앞 0.30초는 **앉는 구간**이라 한 번만 돌고, 나머지 1초가 되풀이된다.
+    [Tooltip("갈무리 동작 클립 — Tools ▸ 토이라 ▸ 갈무리 모션을 클립으로 굽기")]
+    public AnimationClip 갈무리클립;
+    [Tooltip("갈무리 클립에서 앉는 구간의 길이 (초) — 이 뒤가 되풀이된다")]
+    public float 갈무리앉는데 = 0.30f;
     [Tooltip("걸으면 채집이 풀린다 — 이 속도를 넘으면 끊긴다 (m/s)")]
     [Range(0.05f, 2f)] public float 채집끊는속도 = 0.35f;
     Harvest 채집대상;
@@ -1325,10 +1333,20 @@ public class HeroAttack : MonoBehaviour
         //   ☆나무·돌을 팰 때는 클립이 맞다 — 도끼질은 저작된 동작이라야 읽힌다.
         //     사체 뒤적임은 저작된 클립이 없으므로 절차 쪽이 그린다.
         bool 뒤적임 = state == State.채집 && !채집팸;
-        if (공격클립 != null && !뒤적임) 클립으로그리기();
+        if (뒤적임 && 갈무리클립 != null)
+        {
+            // ★★**클립이 그린다** — 앞 0.30초는 앉는 구간이라 한 번만, 그 뒤가 되풀이된다
+            상체층내리기();                   // 걷기·공격 레이어를 내려놓아야 안 다툰다
+            float 앉기 = Mathf.Max(0.01f, 갈무리앉는데);
+            float 초 = t <= 앉기 ? t
+                     : 앉기 + Mathf.Repeat(t - 앉기, Mathf.Max(0.05f, 갈무리클립.length - 앉기));
+            if (몸뿌리 == null) { 애니 = GetComponentInChildren<Animator>(); 몸뿌리 = 애니 != null ? 애니.gameObject : gameObject; }
+            갈무리클립.SampleAnimation(몸뿌리, 초);
+        }
+        else if (공격클립 != null && !뒤적임) 클립으로그리기();
         else
         {
-            if (뒤적임) 상체층내리기();       // 클립이 상체를 쥔 채면 쪼그림과 다툰다
+            if (뒤적임) 상체층내리기();       // 클립이 없으면 절차 자세로 (예비 길)
             몸통스윙(Time.deltaTime);        // 척추를 먼저 돌리고 — 무기는 그 팔을 따라간다
         }
         주먹쥐기();
