@@ -545,8 +545,9 @@ public class HeroAttack : MonoBehaviour
                 채집중 = true;
                 // 다 캤거나 · F 를 다시 눌렀거나 · 멀어지면 끝난다 (놓는다고 안 멈춘다)
                 if (채집대상 == null || F방금눌림) { 채집끝(); break; }
+                // ★멀어졌나도 **실제 그림**까지의 거리로 잰다 (잡을 때와 같은 자)
+                if (채집대상.수평거리(transform.position) > 사거리 + 1.2f) { 채집끝(); break; }
                 var v채 = 채집대상.transform.position - transform.position; v채.y = 0f;
-                if (v채.magnitude - 채집대상.반경 > 사거리 + 1.2f) { 채집끝(); break; }
                 hero.MoveMul = 채집이속;              // 쪼그려 앉아 뒤적이는 동안은 느리다
                 채집게이지 += 채집대상.캐는속도() * dt;
                 if (채집게이지 >= 1f)

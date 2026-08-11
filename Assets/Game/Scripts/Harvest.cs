@@ -154,8 +154,50 @@ public class Harvest : MonoBehaviour
     //   중심은 범위 밖**이었다. 때리는 쪽은 뼈 점 전부(`실루엣판정`)로 재니
     //   "때릴 땐 맞는데 갈무리는 안 된다" 가 났다 — 두 자가 달랐던 것이다.
     //   → 그 물체의 반경만큼 거리에서 빼 준다. `Carcass` 가 몸을 재서 넣어 준다.
-    [Tooltip("이 물체의 반경 (m) — 갈무리 거리에서 빼 준다. 사체는 몸을 재서 넣는다")]
+    [Tooltip("이 물체의 반경 (m) — 싼 거르개에만 쓴다. 0 이면 그림을 재서 채운다")]
     public float 반경 = 0f;
+
+    // ★★★★**근본 해결 — 「중심 한 점」이 아니라 「실제 그림」으로 잰다** (2026-08-11 사용자
+    //   "쓰러진 나무도 마찬가지야.. 선택이 안돼, 이상해 범위가,, 이거 계속 그럴거 같은데
+    //   근본적으로 해결할 방법 없어?").
+    //
+    //   맞는 지적이었다. 나는 사체 반경 → 방향무관 → 쓰러진 나무 로 **하나씩 땜질**하고
+    //   있었다. 뿌리는 하나다: 물체를 **중심점 + 반지름**(원)으로 봤다는 것.
+    //   실제 물체는 **누워 있거나 길쭉하다** — 쓰러진 나무는 10m 짜리 막대인데
+    //   원으로 재니 끝을 잡아도 안 걸린다. 사체도 같은 이유였다.
+    //   → **렌더러 경계 상자**까지의 거리로 잰다. 상자 안이면 거리 0 이다.
+    //     사체·쓰러진 나무·큰 바위가 한 번에 풀리고, 앞으로 어떤 모양이 와도 안 틀린다.
+    //
+    //   ☆9-4: 경계는 **한 번 재서 담아 둔다.** 자원이 수천 개라 매번 재면 그게 렉이다.
+    //     ★단 **움직이면 다시 잰다** — 나무가 쓰러지면 경계가 통째로 바뀐다.
+    Bounds 경계; bool 경계잼; Vector3 잰자리; Quaternion 잰돌기;
+
+    void 경계확인()
+    {
+        if (경계잼 && transform.position == 잰자리 && transform.rotation == 잰돌기) return;
+        잰자리 = transform.position; 잰돌기 = transform.rotation; 경계잼 = true;
+
+        var rs = GetComponentsInChildren<Renderer>(true);
+        if (rs.Length == 0)
+        {
+            경계 = new Bounds(잰자리, Vector3.one * 0.6f);
+            if (반경 <= 0f) 반경 = 0.3f;
+            return;
+        }
+        var b = rs[0].bounds;
+        for (int i = 1; i < rs.Length; i++) b.Encapsulate(rs[i].bounds);
+        경계 = b;
+        반경 = Mathf.Max(b.extents.x, b.extents.z);   // 싼 거르개용 — 넉넉하게
+    }
+
+    /// ★이 물체의 **그림까지**의 수평 거리 (m) — 안에 서 있으면 0
+    public float 수평거리(Vector3 p)
+    {
+        경계확인();
+        // 높이는 안 본다 — 위아래로 긴 나무를 올려다보며 재면 늘 멀다
+        var q = new Vector3(p.x, 경계.center.y, p.z);
+        return Mathf.Sqrt(경계.SqrDistance(q));
+    }
 
     // ★★**사체는 방향을 안 본다** (2026-08-11 사용자 "갈무리 범위가 내가 몸을 돌릴때마다
     //   됐다 안됐다하는데 바라보는 방향이나 공격 범위보단 그냥 주변에 있으면 가능하게").
@@ -206,7 +248,8 @@ public class Harvest : MonoBehaviour
             var h = All[i];
             if (h == null) continue;
             var v = h.transform.position - 땅점; v.y = 0f;
-            float d = Mathf.Max(0f, v.magnitude - h.반경);
+            if (v.magnitude - h.반경 - 0.6f > 반경) continue;      // 싼 거르개
+            float d = h.수평거리(땅점);                            // 정밀 (실제 그림)
             if (d > 반경 || d > bd) continue;
             bd = d; best = h;
         }
@@ -222,7 +265,10 @@ public class Harvest : MonoBehaviour
             var h = All[i];
             if (h == null) continue;
             var v = h.transform.position - from; v.y = 0f;
-            float d = Mathf.Max(0f, v.magnitude - h.반경);   // ★몸집만큼 봐 준다
+            // ①싼 거르개 — 담아 둔 반경으로 대충 자른다 (자원이 수천 개라 이게 먼저다)
+            if (v.magnitude - h.반경 - 0.6f > reach) continue;
+            // ②정밀 — **실제 그림**까지의 거리. 누운 사체도 쓰러진 나무도 여기서 맞는다
+            float d = h.수평거리(from);
             if (d > reach || d > bd) continue;
             if (!h.방향무관 && v.sqrMagnitude > 0.01f
                 && Vector3.Dot(v.normalized, look) < 0.2f) continue;   // 앞쪽만 (사체는 안 본다)
