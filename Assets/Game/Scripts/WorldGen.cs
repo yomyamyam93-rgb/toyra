@@ -817,8 +817,15 @@ public class WorldGen : MonoBehaviour
         }
 
         // ── ① 판다 — 입구에서 안쪽으로
-        float 입구각 = Random.value * Mathf.PI * 2f;
+        // ★★★**입구는 카메라 쪽(남서)에 낸다** (2026-08-11 사용자 "동굴 입구는 위쪽 말고
+        //   시야에서 보이는 쪽에좀 설치해줄래..?"). 아이소 카메라는 yaw 45°·pitch 40° 로
+        //   **남서쪽에서** 내려다본다 — 즉 화면 앞면은 −X·−Z 면이다. 입구가 북동쪽에 나면
+        //   언덕 **뒤통수**에 생겨서 화면에서 안 보이고, 돌아 들어가야 한다.
+        //   ☆조금은 흔든다(±50°) — 전부 똑같은 자리면 도장 찍은 것처럼 보인다.
+        float 카메라쪽 = Mathf.Atan2(-1f, -1f);                    // 남서쪽
+        float 입구각 = 카메라쪽 + Random.Range(-0.87f, 0.87f);
         var 입구p = c + new Vector3(Mathf.Cos(입구각), 0f, Mathf.Sin(입구각)) * Mathf.Min(굴반경 * 0.45f, 26f);
+        새기기(입구p, Mathf.Max(굴길좁게, 2.2f), 3.2f * 높이배);   // ★입구 자리를 확실히 판다
         var 줄기들 = new Stack<(Vector3 p, float dir, int 걸음)>();
         줄기들.Push((입구p, 입구각 + Mathf.PI, 규모 * 3 + 8));
         float 씨 = Random.value * 512f;
@@ -856,13 +863,18 @@ public class WorldGen : MonoBehaviour
                     if (!천장.ContainsKey(k2)) 살.Add(k2);
                 }
 
-        // 입구 앞은 튼다 — 살로 막으면 못 들어간다
+        // ★★★**입구 통로는 바위를 끝까지 뚫는다** (2026-08-11 사용자 "입구가 없는 동굴도있네").
+        //   전에는 입구 자리에서 **9m 만** 텄다. 그런데 벌레가 헤매다 보면 입구 자리가
+        //   덩어리 한가운데에 들어앉기도 하고, 그러면 9m 로는 바깥까지 못 닿아
+        //   **입구가 바위 속에서 끝나 버린다** — 들어갈 수 없는 굴이 그렇게 생겼다.
+        //   → 덩어리를 확실히 벗어날 만큼(굴반경 + 여유) 곧게 뚫는다. 없는 살은 지워도 그만이다.
         var 바깥벡 = new Vector3(Mathf.Cos(입구각), 0f, Mathf.Sin(입구각));
+        float 뚫는길이 = 굴반경 + 40f;
         살.RemoveWhere(k =>
         {
             var q = new Vector3(k.Item1 * 칸, 0f, k.Item2 * 칸) - 입구p;
             float 앞 = Vector3.Dot(q, 바깥벡);
-            return 앞 > -1f && 앞 < 9f && (q - 바깥벡 * 앞).magnitude < 2.8f;
+            return 앞 > -2f && 앞 < 뚫는길이 && (q - 바깥벡 * 앞).magnitude < 2.8f;
         });
 
         // 갇힌 빈칸은 돌이 된다 — 밖에서 걸어 들어갈 수 없는 구멍은 지형이 아니라 얼룩이다
@@ -943,7 +955,9 @@ public class WorldGen : MonoBehaviour
             }
         }
 
-        루트.AddComponent<굴가림>();
+        var 가림 = 루트.AddComponent<굴가림>();
+        가림.입구자리 = 입구p;
+        가림.입구방향 = 바깥벡;
     }
 
     // (2026-08-11) 직소 방을 감싸던 「살채우기」는 웜 방식 동굴터가 제 살을 직접 채우면서 걷어냈다

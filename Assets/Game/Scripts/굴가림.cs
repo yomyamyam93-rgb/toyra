@@ -21,6 +21,9 @@ public class 굴가림 : MonoBehaviour
     public float 벽높이 = 2.4f;
     [Tooltip("파인 바닥에서 이만큼 안이면 「들어왔다」로 본다 (m)")]
     public float 들어온거리 = 3f;
+    // ★입구 자리·방향을 기록해 둔다 — 「입구가 없는 굴」을 검사할 때 쓴다 (2026-08-11)
+    [HideInInspector] public Vector3 입구자리;
+    [HideInInspector] public Vector3 입구방향;
 
     readonly List<Renderer> 천장들 = new List<Renderer>();
     readonly List<(Transform t, Vector3 크기, Vector3 자리)> 살들 = new List<(Transform, Vector3, Vector3)>();
