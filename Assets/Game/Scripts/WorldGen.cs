@@ -1353,6 +1353,97 @@ public class WorldGen : MonoBehaviour
         }
     }
 
+    // ★★★★**황야 소품은 「재서 세운다」** (2026-08-12 사용자 "너무 작게 안보이게 보이거나
+    //   땅에 박혀있는게 많아").
+    //
+    //   실측이 딱 떨어졌다 — 블록황야 모델 9개가 **전부 1×1×1 로 정규화**돼 들어왔고
+    //   **원점이 한가운데**다 (밑 y = −0.50). 그대로 놓으면 ①키가 1m 라 안 보이고
+    //   ②절반이 땅에 묻힌다. `Swap놈` 은 그냥 `Instantiate` 만 해서 둘 다 그대로 났다.
+    //   → **키를 정해 주고, 재서 그 키로 맞추고, 밑면을 땅에 붙인다.** 짐작이 없다 (3장).
+    //   ☆치수는 프리팹마다 **한 번만** 재서 기억한다 (9-4).
+    // ★★**흔함이 다르다** — 요새·석조 콘솔은 **랜드마크**다. 균등하게 뽑으면 11m 격자마다
+    //   8.7m 짜리 요새가 서서 들판이 아니라 유적 단지가 된다 (실측 폭: 요새 8.7m · 콘솔 3.8m).
+    static readonly (string 이름조각, float 키작게, float 키크게, bool 막나, float 흔함)[] 황야치수표 =
+    {
+        ("Brick_Built_Bare_Tree", 6.0f, 9.0f, true,  1.00f),  // 벽돌 마른나무 — 이 권역의 「나무」다
+        ("Brickbuilt_Winter",     6.0f, 9.0f, true,  0.80f),
+        ("Bamboo_Grove",          4.0f, 7.0f, true,  0.70f),
+        ("Bamboo_Burst",          3.0f, 5.0f, true,  0.70f),
+        ("Cactus_Bricks",         2.4f, 4.0f, true,  1.00f),
+        ("Brick_Cactus",          2.0f, 3.4f, true,  1.00f),
+        ("Green_Rosette",         0.35f, 0.6f, false, 1.20f), // 다육 — 작아서 넘어 다닌다
+        ("Clay_Fortress",         3.0f, 5.0f, true,  0.06f),  // ★랜드마크 — 아주 드물게
+        ("Ancient_Stone_Console", 2.0f, 3.2f, true,  0.08f),  // ★랜드마크
+    };
+
+    static (float 키작게, float 키크게, bool 막나, float 흔함) 황야치수(string 이름)
+    {
+        foreach (var t in 황야치수표)
+            if (이름.StartsWith(t.이름조각)) return (t.키작게, t.키크게, t.막나, t.흔함);
+        return (2f, 3.5f, true, 0.5f);                  // 새 모델이 와도 그럴듯하게 선다
+    }
+
+    /// 흔함으로 하나 뽑는다 — 랜드마크가 들판을 덮지 않게
+    GameObject 황야뽑기()
+    {
+        if (블록프리팹 == null || 블록프리팹.Length == 0) return null;
+        float 합 = 0f;
+        for (int i = 0; i < 블록프리팹.Length; i++)
+            if (블록프리팹[i] != null) 합 += 황야치수(블록프리팹[i].name).흔함;
+        if (합 <= 0f) return null;
+        float 룰렛 = Random.value * 합, 누적 = 0f;
+        for (int i = 0; i < 블록프리팹.Length; i++)
+        {
+            if (블록프리팹[i] == null) continue;
+            누적 += 황야치수(블록프리팹[i].name).흔함;
+            if (룰렛 <= 누적) return 블록프리팹[i];
+        }
+        return null;
+    }
+
+    /// 프리팹의 제 키와 밑면 (스케일 1 기준) — 한 번만 재고 기억한다
+    static readonly Dictionary<GameObject, (float 키, float 밑)> 황야캐시 =
+        new Dictionary<GameObject, (float, float)>();
+
+    static (float 키, float 밑) 프리팹치수(GameObject pf)
+    {
+        if (황야캐시.TryGetValue(pf, out var v)) return v;
+        var rs = pf.GetComponentsInChildren<Renderer>(true);
+        var 값 = (1f, 0f);
+        if (rs.Length > 0)
+        {
+            var b = rs[0].bounds;
+            for (int i = 1; i < rs.Length; i++) b.Encapsulate(rs[i].bounds);
+            값 = (Mathf.Max(0.01f, b.size.y), b.min.y);
+        }
+        황야캐시[pf] = 값;
+        return 값;
+    }
+
+    /// 황야 소품 하나를 **제 키로 세운다**. 프리팹이 없으면 false
+    bool 황야소품(Vector3 at)
+    {
+        var pf = 황야뽑기();
+        if (pf == null) return false;
+
+        var (키작게, 키크게, 막나, _) = 황야치수(pf.name);
+        var (제키, 제밑) = 프리팹치수(pf);
+        float 배 = Random.Range(키작게, 키크게) / 제키;
+
+        var inst = Instantiate(pf, at, Quaternion.Euler(0f, Random.value * 360f, 0f), holder);
+        inst.transform.localScale = pf.transform.localScale * 배;
+        // ★밑면을 땅에 붙인다 — 재서 얻은 값이라 모델이 바뀌어도 안 틀린다
+        inst.transform.position = at + Vector3.up * (-제밑 * 배);
+        환경손질(inst);
+
+        if (막나)
+        {
+            float 폭 = 모델폭(pf) * 배;
+            if (폭 >= 막는돌지름) Blocker.Add(at, 폭 * 0.4f);
+        }
+        return true;
+    }
+
     void 블록터(Vector3 c)
     {
         // 원색 블록 — 두세 개씩 쌓인 탑이 블록 장난감으로 읽힌다
@@ -1362,7 +1453,7 @@ public class WorldGen : MonoBehaviour
         {
             var p = Scatter(c, spread);
             if (물인가(p)) continue;
-            if (Swap(블록프리팹, p, true, -1f)) continue;
+            if (황야소품(p)) continue;
             float w = Random.Range(1.4f, 3f);
             int 층 = Random.Range(1, 4);
             float yaw = Random.value * 360f;
@@ -1619,6 +1710,12 @@ public class WorldGen : MonoBehaviour
         float 반 = WorldGrid.Tile * 0.5f;
         var st = Random.state;
 
+        // ★★★**황야는 제 소품으로만 채운다** (2026-08-12 사용자 "그 황야에는 그 요소들로
+        //   채워야해 일반 나무들 넣으면 안돼고 돌들도, 돌은 주울수 있는 작은것들만").
+        //   여태 `흩뿌리기` 가 **모든 칸에** 일반 나무·돌을 깔아서, 벽돌 선인장 옆에
+        //   자작나무가 서 있었다 — 권역이 안 읽힌다. 황야는 여기서 갈라져 나간다.
+        if (k == Land.블록) { 황야뿌리기(중심, 반); Random.state = st; return; }
+
         if (k != Land.숲) 나무뿌리기(중심, 반);          // 숲 칸은 `Forest()` 가 따로 심는다
         돌뿌리기(중심, 반, k == Land.바위지대 ? 2f : 1f);
 
@@ -1702,6 +1799,55 @@ public class WorldGen : MonoBehaviour
 
     [Tooltip("이 지름(m)보다 작은 돌은 안 막는다 — 넘어 다닌다")]
     [Range(0f, 4f)] public float 막는돌지름 = 1.6f;
+
+    [Header("★황야(블록) — 제 소품으로만 채운다")]
+    [Tooltip("소품 씨앗칸 간격 (m) — 좁을수록 빽빽하다")]
+    [Range(4f, 30f)] public float 황야간격 = 11f;
+    [Tooltip("씨앗칸 하나에 소품이 설 확률")]
+    [Range(0f, 1f)] public float 황야밀도 = 0.5f;
+    [Tooltip("씨앗칸 하나에 **주울 수 있는** 작은 돌이 놓일 확률")]
+    [Range(0f, 1f)] public float 황야돌확률 = 0.3f;
+
+    /// 황야 칸을 제 소품으로 채운다 — 나무·바위 대신 벽돌나무·선인장·대나무·다육이 선다
+    void 황야뿌리기(Vector3 중심, float 반)
+    {
+        float 격자 = Mathf.Max(4f, 황야간격);
+        int r = Mathf.CeilToInt(반 / 격자) + 1;
+        for (int ix = -r; ix <= r; ix++)
+            for (int iz = -r; iz <= r; iz++)
+            {
+                int cx = Mathf.FloorToInt((중심.x + ix * 격자) / 격자);
+                int cz = Mathf.FloorToInt((중심.z + iz * 격자) / 격자);
+
+                var 칸중심 = new Vector3((cx + 0.5f) * 격자, 0f, (cz + 0.5f) * 격자);
+                // ★주인 정하기 — 나무뿌리기와 같은 이유 (칸 경계의 빈 띠 방지)
+                if (칸중심.x - 중심.x < -반 || 칸중심.x - 중심.x >= 반
+                 || 칸중심.z - 중심.z < -반 || 칸중심.z - 중심.z >= 반) continue;
+                Random.InitState(WorldGrid.TileSeed(0x5b7a, cx, cz));
+
+                if (Random.value < 황야밀도)
+                {
+                    var at = 칸중심 + new Vector3(Random.value - 0.5f, 0f, Random.value - 0.5f) * 격자 * 0.9f;
+                    // ☆`길에서멂` 은 안 본다 — 그건 **잔디 마스크**를 읽는데 황야 바닥이
+                    //   잔디로 잡히는지가 확실하지 않다. 틀리면 황야가 통째로 빈다
+                    if (!물인가(at)) 황야소품(at);
+                }
+
+                // ★★**돌은 주울 수 있는 작은 것만** (사용자 확정). 큰 바위를 안 놓으므로
+                //   황야는 「트인 데」가 된다 — 헌법 7 의 병목이 여기선 소품 사이에서 난다
+                if (Random.value < 황야돌확률)
+                {
+                    var at = 칸중심 + new Vector3(Random.value - 0.5f, 0f, Random.value - 0.5f) * 격자 * 0.9f;
+                    if (물인가(at)) continue;
+                    float w = Random.Range(0.26f, 0.5f);          // 막는돌지름(1.6m)보다 한참 아래
+                    float h = w * Random.Range(0.5f, 1.0f);
+                    var 돌알 = Grey.Box(holder, at + Vector3.up * (h * 0.4f),
+                             new Vector3(w, h, w * Random.Range(0.7f, 1.3f)), C바위, "돌멩이",
+                             0f, Random.value * 360f);
+                    땅무더기.줍이(아이템표.찾기("돌"), 1, 돌알);
+                }
+            }
+    }
 
     void 돌뿌리기(Vector3 중심, float 반, float 배)
     {
