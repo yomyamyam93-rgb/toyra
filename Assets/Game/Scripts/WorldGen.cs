@@ -1365,14 +1365,15 @@ public class WorldGen : MonoBehaviour
     //   8.7m 짜리 요새가 서서 들판이 아니라 유적 단지가 된다 (실측 폭: 요새 8.7m · 콘솔 3.8m).
     static readonly (string 이름조각, float 키작게, float 키크게, bool 막나, float 흔함)[] 황야치수표 =
     {
-        // ★고목을 낮췄다 (2026-08-12 사용자 "고목들이 사이즈가 너무커" — 7.5m 는 사람 1.8m 의
-        //   네 배라 받침판 위에 얹힌 브릭 나무로 안 읽히고 탑이 됐다)
-        ("Brick_Built_Bare_Tree", 3.2f, 5.0f, true,  1.00f),  // 벽돌 마른나무 — 이 권역의 「나무」다
-        ("Brickbuilt_Winter",     3.2f, 5.0f, true,  0.80f),
-        ("Bamboo_Grove",          4.0f, 7.0f, true,  0.70f),
-        ("Bamboo_Burst",          3.0f, 5.0f, true,  0.70f),
-        ("Cactus_Bricks",         2.4f, 4.0f, true,  1.00f),
-        ("Brick_Cactus",          2.0f, 3.4f, true,  1.00f),
+        // ★★**고목은 크게, 관목은 작게** (2026-08-12 사용자 "고목 나무는 그대로 커야하고,
+        //   그 관목이 작아져야했어" — 앞서 제가 반대로 알아듣고 고목을 낮췄었다).
+        //   ☆사람 1.8m 이 자다 — 고목은 올려다보고, 관목은 허리에서 머리 사이다.
+        ("Brick_Built_Bare_Tree", 6.0f, 9.0f, true,  1.00f),  // 고목 — 이 권역의 「나무」다
+        ("Brickbuilt_Winter",     6.0f, 9.0f, true,  0.80f),  // 고목
+        ("Bamboo_Grove",          1.6f, 2.6f, true,  0.70f),  // ↓관목
+        ("Bamboo_Burst",          1.2f, 2.0f, true,  0.70f),  // ↓관목
+        ("Cactus_Bricks",         1.4f, 2.4f, true,  1.00f),  // ↓관목
+        ("Brick_Cactus",          1.2f, 2.0f, true,  1.00f),  // ↓관목
         ("Green_Rosette",         0.35f, 0.6f, false, 1.20f), // 다육 — 작아서 넘어 다닌다
         ("Clay_Fortress",         3.0f, 5.0f, true,  0.06f),  // ★랜드마크 — 아주 드물게
         ("Ancient_Stone_Console", 2.0f, 3.2f, true,  0.08f),  // ★랜드마크
