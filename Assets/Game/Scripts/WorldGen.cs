@@ -25,8 +25,10 @@ public class WorldGen : MonoBehaviour
     // ★`w물` 은 0 이다 — 물은 칸이 아니라 노이즈 장(`물기`)이 정한다 (2026-08-06).
     //   손잡이는 `물칸`·`물문턱`. 여긴 은퇴한 자리라 지우지 않고 0 으로 둔다.
     public float w빈들판 = 4f, w숲 = 2.5f, w바위 = 2f, w물 = 0f, w폐허 = 0.8f, w둥지 = 0.8f;
+    // ★0.7 → 1.8 (2026-08-11 사용자 "동굴 크고작게 좀더 많이 스폰되게해주면안돼?").
+    //   0.7 이면 81칸 중 대여섯 개라 1440m 맵에서 우연히 만나기 어려웠다
     [Tooltip("★동굴 — 독립 랜드마크. 밖은 막힌 바위, 틈새로 들어가면 덮개가 걷힌다")]
-    public float w동굴 = 0.7f;
+    public float w동굴 = 1.8f;
 
     // ★★★**테마 권역** (2026-08-11 사용자 "찰흙지역, 솜털실지역, 블록지역, 유리설원 등등
     //   새로운 테마의 지형들을 준비중인데 그런 곳들도 맵생성에서 분포되서 나올 수 있어야").
@@ -78,6 +80,9 @@ public class WorldGen : MonoBehaviour
         new Color(0.85f, 0.25f, 0.22f), new Color(0.22f, 0.45f, 0.85f),
         new Color(0.95f, 0.80f, 0.20f), new Color(0.25f, 0.70f, 0.35f),
     };
+    // 동굴 뚜껑 위의 풀 — 언덕처럼 보이게 한다
+    static readonly Color C뚜껑풀A = new Color(0.30f, 0.42f, 0.24f);
+    static readonly Color C뚜껑풀B = new Color(0.25f, 0.36f, 0.21f);
     static readonly Color C유리A = new Color(0.82f, 0.92f, 0.97f);
     static readonly Color C유리B = new Color(0.65f, 0.82f, 0.92f);
 
@@ -93,7 +98,7 @@ public class WorldGen : MonoBehaviour
     //   → `PixelScreen` 과 같은 방식: **정본 번호**를 두고, 씬에 적힌 번호가 낮으면
     //     아래 값들을 코드 것으로 덮어쓴다. 숫자를 새로 정할 때 번호를 하나 올리면 된다.
     //   ★플레이 중 인스펙터로 만지는 건 그대로 먹는다 (그때는 이미 덮어쓴 뒤다).
-    const int 정본지금 = 20;
+    const int 정본지금 = 21;
     [Tooltip("코드가 정한 값으로 맞춘 번호 — 건드리지 않는다")] public int 정본 = 0;
 
     void 정본맞추기()
@@ -149,8 +154,13 @@ public class WorldGen : MonoBehaviour
         굴넣기 = false;
         // ★★동굴을 독립 랜드마크로 (정본 20, 2026-08-11) — "사이즈도 다양하게 엄청큰것도
         //   있고 좁은곳도있고". 씬에 저장된 옛 값(최대 18조각·45m)을 넓힌다
-        굴조각최대 = 40;
-        굴반경 = 70f;
+        // ★★크기 차이를 더 벌린다 (2026-08-11 사용자 "동굴 크고작게 좀더 많이") —
+        //   제일 작은 굴은 곁방 하나짜리, 제일 큰 굴은 한참 헤매는 크기가 되게
+        굴조각최소 = 2;
+        굴조각최대 = 60;
+        굴쏠림 = 2.6f;          // 작은 굴이 흔하고 큰 굴이 드물다
+        굴반경 = 80f;
+        w동굴 = 1.8f;
         정본 = 정본지금;
     }
 
@@ -735,6 +745,10 @@ public class WorldGen : MonoBehaviour
     [Tooltip("넓은 길의 반지름 (m)")] [Range(1.5f, 12f)] public float 굴길넓게 = 6.0f;
     [Tooltip("작은 공간의 반지름 (m)")] [Range(2f, 20f)] public float 굴방작게 = 7f;
     [Tooltip("큰 공간의 반지름 (m)")] [Range(4f, 40f)] public float 굴방크게 = 16f;
+    [Tooltip("제일 큰 굴의 천장이 작은 굴의 몇 배인가 — 1 이면 다 같은 높이")]
+    [Range(1f, 3f)] public float 굴높이배 = 2.1f;
+    [Tooltip("뚜껑 위 칸 중 잔디가 덮인 비율")] [Range(0f, 1f)] public float 뚜껑잔디 = 0.25f;
+    [Tooltip("뚜껑 위 칸 중 나무가 박힌 비율")] [Range(0f, 0.3f)] public float 뚜껑나무 = 0.07f;
     [Tooltip("★비우면 상자로 짓는다")] public GameObject[] 굴조각_방, 굴조각_통로, 굴조각_잡동사니;
 
     List<직소.주머니> 굴주머니()
@@ -766,6 +780,11 @@ public class WorldGen : MonoBehaviour
 
         const float 칸 = 2f;
         var 천장 = new Dictionary<(int ix, int iz), float>();      // 판 자리 → 천장 높이
+        // ★★**큰 굴일수록 천장이 높다** (2026-08-11 사용자 "동굴 높이도, 크기에 따라서 좀
+        //   다르게 넣어줄 수 있어? 지금 높이가 작은 사이즈일때로 맞추고").
+        //   지금 값을 **작은 굴의 높이**로 삼고, 규모에 따라 위로만 늘린다
+        float 규모비0 = Mathf.InverseLerp(굴조각최소, 굴조각최대, 규모);
+        float 높이배 = Mathf.Lerp(1f, 굴높이배, 규모비0);
 
         void 새기기(Vector3 p, float r, float 높이)
         {
@@ -783,13 +802,17 @@ public class WorldGen : MonoBehaviour
         // 공간 — 원 몇 개를 어긋나게 겹쳐 판다. 개수·반지름이 달라 **같은 방이 두 번 안 나온다**
         void 방파기(Vector3 p)
         {
-            float 큰r = Random.Range(굴방작게, Mathf.Max(굴방작게 + 0.5f, 굴방크게));
+            // ★★규모가 공간 크기도 정한다 (2026-08-11) — 곁방 하나짜리 작은 굴에 20m 짜리
+            //   홀이 있으면 어색하다. 큰 굴일수록 큰 방이 나올 수 있게 위쪽을 연다
+            float 규모비 = Mathf.InverseLerp(굴조각최소, 굴조각최대, 규모);
+            float 위한계 = Mathf.Lerp(굴방작게 + 2f, 굴방크게, 규모비);
+            float 큰r = Random.Range(굴방작게, Mathf.Max(굴방작게 + 0.5f, 위한계));
             int 원수 = Random.Range(3, 7);
             for (int i = 0; i < 원수; i++)
             {
                 var 옆 = p + new Vector3(Random.Range(-1f, 1f), 0f, Random.Range(-1f, 1f)) * 큰r * 0.55f;
                 float r = 큰r * Random.Range(0.45f, 0.9f);
-                새기기(옆, r, 2.9f + r * 0.28f);                    // 넓으면 천장이 높다
+                새기기(옆, r, (2.9f + r * 0.28f) * 높이배);          // 넓으면·큰 굴일수록 천장이 높다
             }
         }
 
@@ -815,7 +838,7 @@ public class WorldGen : MonoBehaviour
                     dir = Mathf.Atan2(c.z - p.z, c.x - p.x) + Random.Range(-0.6f, 0.6f);
                 float 폭 = Mathf.Lerp(굴길좁게, Mathf.Max(굴길좁게 + 0.3f, 굴길넓게),
                                       Mathf.PerlinNoise(씨 + 31f, t * 0.08f));   // 길 두께가 변한다
-                새기기(p, 폭, 2.7f + 폭 * 0.35f);
+                새기기(p, 폭, (2.7f + 폭 * 0.35f) * 높이배);
                 if (가지 < 규모 / 5 && 걸음 - i > 10 && Random.value < 0.045f)      // 곁가지
                 { 가지++; 줄기들.Push((p, dir + Random.Range(1.1f, 2.1f) * (Random.value < 0.5f ? 1f : -1f), (걸음 - i) / 2)); }
                 if (Random.value < 0.045f) 방파기(p);                                // 가다 불쑥 열리는 공간
@@ -884,11 +907,40 @@ public class WorldGen : MonoBehaviour
             if (kv.Value > 4f && Random.value < 0.035f)
                 격자상자(p2 + Vector3.up * Random.Range(0.6f, 1f), new Vector3(0.55f, Random.Range(1.1f, 2f), 0.55f), 직소상자.C굴벽, "돌기둥", 0.4f);
         }
+        // ★★★**뚜껑 위는 그냥 바위가 아니라 「땅」이다** (2026-08-11 사용자 "동굴 뚜껑
+        //   윗부분에는 군데군데 잔디지형처럼 좀 들어가있고 나무도 박혀있었음 좋겠어").
+        //   밖에서 보면 **풀이 난 언덕**이라야 「막힌 지형」으로 읽힌다 — 회색 덩어리는 건물이다.
+        //   ☆「덮개장식」 아래에 묶는다 — 안에 들어가면 `굴가림` 이 천장과 함께 통째로 숨긴다.
+        //   ☆개수를 센다 (지침 9-4 ①): 살 칸의 잔디 25% · 나무 7%.
+        //     큰 굴의 살이 1,500칸이면 나무 100그루쯤 — 세계 전체 2만 6천 그루에 견주면 작다.
+        var 장식 = new GameObject("덮개장식");
+        장식.transform.SetParent(루트.transform, false);
+
         foreach (var k in 살)
         {
             var p2 = new Vector3(k.Item1 * 칸, 0f, k.Item2 * 칸);
-            float h = Random.Range(4.8f, 6.2f);
+            float h = Random.Range(4.8f, 6.2f) * Mathf.Lerp(1f, 높이배, 0.6f);   // 큰 굴은 언덕도 두툼하다
             격자상자(p2 + Vector3.up * (h * 0.5f - 0.2f), new Vector3(칸 * 1.04f, h, 칸 * 1.04f), 직소상자.C굴덮개, "덮개산", 칸 * 0.52f);
+
+            float 꼭대기 = h - 0.2f;
+            // 잔디 — 바위 위에 얇게 덮인 흙·풀
+            if (Random.value < 뚜껑잔디)
+            {
+                var 풀 = Grey.Box(장식.transform, p2 + Vector3.up * (꼭대기 + 0.12f),
+                                  new Vector3(칸 * 1.02f, 0.24f, 칸 * 1.02f),
+                                  Random.value < 0.5f ? C뚜껑풀A : C뚜껑풀B, "덮개풀");
+                풀.GetComponent<MeshRenderer>().sharedMaterial =
+                    Grey.격자Mat(Random.value < 0.5f ? C뚜껑풀A : C뚜껑풀B);
+            }
+            // 나무 — 언덕 위에 박혀 있다. ★`나무하나` 가 아니라 프리팹만 세운다:
+            //   벨 수도 없고(손이 안 닿는다) 길도 막지 않아야 한다 (바위가 이미 막는다)
+            if (Random.value < 뚜껑나무)
+            {
+                var 자리 = p2 + Vector3.up * 꼭대기
+                         + new Vector3(Random.Range(-0.6f, 0.6f), 0f, Random.Range(-0.6f, 0.6f));
+                var 나 = 나무프리팹세우기(자리, Random.Range(4.5f, 7.5f));
+                if (나 != null) 나.transform.SetParent(장식.transform, true);
+            }
         }
 
         루트.AddComponent<굴가림>();
