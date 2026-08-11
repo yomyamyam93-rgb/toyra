@@ -199,6 +199,12 @@ public class Harvest : MonoBehaviour
         return Mathf.Sqrt(경계.SqrDistance(q));
     }
 
+    /// 그림의 한가운데 — 방향(앞쪽인가)을 잴 때 쓴다. 쓰러진 나무는 뿌리가 아니라 몸통이 기준이다
+    public Vector3 경계중심 { get { 경계확인(); return 경계.center; } }
+
+    /// ★싼 거르개의 여유 (m) — 긴 물체(쓰러진 나무 10m)의 끝이 닿는 경우를 놓치지 않게
+    const float 넉넉 = 12f;
+
     // ★★**사체는 방향을 안 본다** (2026-08-11 사용자 "갈무리 범위가 내가 몸을 돌릴때마다
     //   됐다 안됐다하는데 바라보는 방향이나 공격 범위보단 그냥 주변에 있으면 가능하게").
     //   나무·돌은 **앞으로 도끼를 휘두르는** 것이라 방향이 맞다. 그런데 갈무리는 쪼그려
@@ -264,13 +270,16 @@ public class Harvest : MonoBehaviour
         {
             var h = All[i];
             if (h == null) continue;
-            var v = h.transform.position - from; v.y = 0f;
-            // ①싼 거르개 — 담아 둔 반경으로 대충 자른다 (자원이 수천 개라 이게 먼저다)
-            if (v.magnitude - h.반경 - 0.6f > reach) continue;
+            // ①싼 거르개 — **기억해 둔 자리**를 읽는다 (2026-08-11 실측: 2만 6천 개를
+            //   Transform 으로 읽으면 22.5ms · 기억한 값이면 0.1ms 안쪽).
+            //   ☆넉넉하게 자른다 — 쓰러진 나무처럼 **긴 것**은 중심이 멀어도 끝이 닿는다.
+            var v자 = h.자리 - from; v자.y = 0f;
+            if (v자.sqrMagnitude > (reach + 넉넉) * (reach + 넉넉)) continue;
             // ②정밀 — **실제 그림**까지의 거리. 누운 사체도 쓰러진 나무도 여기서 맞는다
             float d = h.수평거리(from);
             if (d > reach || d > bd) continue;
-            if (!h.방향무관 && v.sqrMagnitude > 0.01f
+            var v = h.경계중심 - from; v.y = 0f;
+            if (!h.방향무관 && d > 0.05f && v.sqrMagnitude > 0.01f
                 && Vector3.Dot(v.normalized, look) < 0.2f) continue;   // 앞쪽만 (사체는 안 본다)
             bd = d; best = h;
         }

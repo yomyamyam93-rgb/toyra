@@ -129,22 +129,14 @@ public class 대상표시 : MonoBehaviour
             if (best != null) { 색 = 때릴것; return best.transform; }
         }
 
-        // ⑤ 캘 것 (`Harvest.TryHarvest` 와 같은 잣대)
-        float 닿음 = (손 != null ? 손.사거리 : 2.2f) + 0.4f;
-        Harvest hb = null; float hd = 닿음 * 닿음;
-        // ★★`transform.position` 이 아니라 **기억해 둔 자리**를 읽는다 (2026-08-11).
-        //   실측: 2만 6천 개를 Transform 으로 읽으면 22.5ms · 기억한 값이면 0.1ms 안쪽.
-        //   Transform 읽기는 엔진 안쪽을 오가는 호출이라 개수가 많으면 그게 곧 렉이다.
-        for (int i = Harvest.All.Count - 1; i >= 0; i--)
-        {
-            var h = Harvest.All[i];
-            if (h == null) continue;
-            var v = h.자리 - p; v.y = 0f;
-            float d2 = v.sqrMagnitude;
-            if (d2 > hd) continue;
-            if (d2 > 0.01f && Vector3.Dot(v.normalized, look) < 0.2f) continue;
-            hd = d2; hb = h;
-        }
+        // ⑤ 캘 것 — ★★★★**F 가 부르는 바로 그 함수를 부른다** (2026-08-11 사용자
+        //   "여전히.. 외곽 선택되었다고 안뜸").
+        //   여기 옛 코드가 **점 하나**로 재는 옛 방식을 그대로 복사해 갖고 있었다 —
+        //   반경도, 경계도, 방향무관도 없었다. 그래서 `Harvest.찾기` 를 고쳐도
+        //   **표시만 안 떴다.** 두 자가 다르면 언제든 다시 어긋난다.
+        //   ☆이 파일의 원칙이 바로 그것이다 (82행 "각 시스템이 실제로 쓰는 것과 같은 순서").
+        //     `조준표시` 도 사거리를 베끼지 않고 `HeroAttack.닿는거리()` 를 부른다 — 같은 길이다.
+        var hb = Harvest.찾기(p, look, (손 != null ? 손.사거리 : 2.2f) + 0.6f);
         if (hb != null) { 색 = 캘것; return hb.transform; }
 
         return null;

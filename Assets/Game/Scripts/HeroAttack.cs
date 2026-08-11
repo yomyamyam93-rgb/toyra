@@ -49,6 +49,9 @@ public class HeroAttack : MonoBehaviour
     [Range(0f, 0.6f)] public float 채집지연 = 0f;
     [Tooltip("채집하는 동안의 걷는 속도 배")] [Range(0f, 1f)] public float 채집이속 = 0.3f;
     [Tooltip("나무·돌을 팰 때 초당 몇 번 내려찍나")] [Range(0.5f, 4f)] public float 패는빠르기 = 1.6f;
+    [Tooltip("(은퇴) 좌클릭 평타로도 캐진다 — 캐기는 F 로 갔다")] public bool 평타로도캐기 = false;
+    [Tooltip("걸으면 채집이 풀린다 — 이 속도를 넘으면 끊긴다 (m/s)")]
+    [Range(0.05f, 2f)] public float 채집끊는속도 = 0.35f;
     Harvest 채집대상;
     /// HUD 가 읽는다 — 상시로 안 띄우고 **캘 때만** 뜬다 (11장 · 기획 5-7)
     public static bool 채집중;
@@ -545,6 +548,10 @@ public class HeroAttack : MonoBehaviour
                 채집중 = true;
                 // 다 캤거나 · F 를 다시 눌렀거나 · 멀어지면 끝난다 (놓는다고 안 멈춘다)
                 if (채집대상 == null || F방금눌림) { 채집끝(); break; }
+                // ★★**걸으면 풀린다** (2026-08-11 사용자 "갈무리도중에 이동하면 풀려야하는데
+                //   계속 캐지는 버그 이동하면서"). 쪼그려 앉아 뒤적이면서 걸어갈 수는 없다.
+                //   ☆`채집이속` 으로 느려지긴 해도 0 은 아니라, 걸으면 실제로 움직인다.
+                if (hero.속도.magnitude > 채집끊는속도) { 채집끝(); break; }
                 // ★멀어졌나도 **실제 그림**까지의 거리로 잰다 (잡을 때와 같은 자)
                 if (채집대상.수평거리(transform.position) > 사거리 + 1.2f) { 채집끝(); break; }
                 var v채 = 채집대상.transform.position - transform.position; v채.y = 0f;
@@ -1113,6 +1120,23 @@ public class HeroAttack : MonoBehaviour
             case State.예비: 초 = t; break;
             case State.휘두름: 초 = 예비 + t; break;
             case State.여운: 초 = 예비 + 휘두름 + t; break;
+            // ★★★★**나무·돌을 팰 때는 공격 클립을 돌린다** (2026-08-11 사용자 "갈무리할때
+            //   때리는 모션 넣어달라했는데 안넣었음"). 절차 자세(몸 숙임)만으로는
+            //   **도끼질로 안 읽힌다** — 저작된 클립이 팔과 도구를 실제로 휘둘러야 한다.
+            //   ☆클립의 예비~여운 구간만 되풀이한다. 꼬리(대기로 풀리는 구간)는 건너뛴다.
+            case State.채집 when 채집팸:
+                초 = Mathf.Repeat(t * 패는빠르기, 1f) * (예비 + 휘두름 + 여운);
+                break;
+            // 사체를 뒤적일 때는 클립을 안 쓴다 — 쪼그린 자세는 절차 쪽이 그린다
+            case State.채집:
+                if (애니 != null && 공격층 > 0)
+                {
+                    float w채 = Mathf.MoveTowards(애니.GetLayerWeight(공격층), 0f, Time.deltaTime * 8f);
+                    애니.SetLayerWeight(공격층, w채);
+                    if (하체층 > 0) { 하체무게 = Mathf.MoveTowards(하체무게, 0f, Time.deltaTime * 10f); 애니.SetLayerWeight(하체층, 하체무게); }
+                }
+                클립돌던중 = false; return;
+
             default:
                 // ★★★**누르고 있는 동안(감는 중)도 클립이 그린다** (2026-08-09 사용자 "클릭하고
                 //   유지하고있을때의 모션이 안들어가네").
@@ -1260,7 +1284,11 @@ public class HeroAttack : MonoBehaviour
         무기자세();
         if (state != State.휘두름 || t < 휘두름 * 0.5f || 캤나) return;
         캤나 = true;
-        if (맞은것.Count == 0) Harvest.TryHarvest(transform.position, hero.LookDir, 사거리 + 0.4f);
+        // ★★(은퇴) 평타로 캐던 길 — **캐기는 이제 F 다** (2026-08-11 사용자 "평타고 나무가
+        //   캐지는버그"). 좌클릭 = 싸움 · F = 일 로 갈랐는데 여기가 남아 있어서
+        //   허공을 치면 옆 나무가 캐졌다. 지우지 않고 스위치로 끈다.
+        if (평타로도캐기 && 맞은것.Count == 0)
+            Harvest.TryHarvest(transform.position, hero.LookDir, 사거리 + 0.4f);
     }
     bool 캤나;
     void OnDisable()
