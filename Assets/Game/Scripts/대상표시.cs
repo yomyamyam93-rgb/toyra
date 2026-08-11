@@ -49,6 +49,9 @@ public class 대상표시 : MonoBehaviour
     //   어느 부품인지 알 수가 없다. 빈도가 이 증상과 맞아 제일 유력한 후보다
     [Tooltip("이보다 오래 걸린 프레임을 콘솔에 남긴다 (ms · 0 이면 안 남김)")]
     public float 스스로재기 = 5f;
+    // ★★진단 스위치 — 대상이 **바뀔 때만** 한 줄 찍는다 (매 프레임 로그는 그 자체가 렉이다 · 9-4)
+    [Tooltip("외곽선이 왜 안 보이는지 콘솔에 남긴다 — 잡고 나면 끈다")]
+    public bool 진단 = true;
 
     void LateUpdate()
     {
@@ -153,27 +156,45 @@ public class 대상표시 : MonoBehaviour
         껍데기.transform.localScale = Vector3.one;      // 부풀림은 셰이더 노멀 푸시가 맡는다
 
         재질만들기();
-        if (선재질 == null) return;
+        if (선재질 == null)
+        {
+            if (진단) Debug.LogWarning("[대상표시-진단] 선재질이 null — 셰이더를 못 찾았다. 껍데기만 빈 채로 남는다");
+            return;
+        }
 
         // ★겹은 **마스크·선 두 장씩** — 마스크(큐 2001)가 원본 실루엣을 스텐실에 굽고,
         //   선(큐 2002)은 스텐실 밖에만 그려져 **최외곽만** 남는다 (2026-08-11 사용자
         //   "모델링 안쪽까지 실루엣을 보이게 하면 안 됨"). 큐가 순서를 강제하므로
         //   메시가 여럿이어도 안쪽 이음선이 안 샌다.
+        int 만든겹 = 0, 본MF = 0, 거른MF = 0;
         foreach (var mf in 대상.GetComponentsInChildren<MeshFilter>(false))
         {
+            본MF++;
             var mr = mf.GetComponent<MeshRenderer>();
-            if (mr == null || !mr.enabled || mf.sharedMesh == null) continue;
+            if (mr == null || !mr.enabled || mf.sharedMesh == null) { 거른MF++; continue; }
             겹만들기(mf.transform, 대상, mf.sharedMesh, 마스크재질);
             겹만들기(mf.transform, 대상, mf.sharedMesh, 선재질);
+            만든겹 += 2;
         }
 
         // 뼈가 있는 몸(리깅 모델)은 뼈를 나눠 써야 자세가 따라온다
+        int 본SMR = 0;
         foreach (var sm in 대상.GetComponentsInChildren<SkinnedMeshRenderer>(false))
         {
+            본SMR++;
             if (!sm.enabled || sm.sharedMesh == null) continue;
             뼈겹만들기(sm, 마스크재질);
             뼈겹만들기(sm, 선재질);
+            만든겹 += 2;
         }
+
+        // ★★진단 (2026-08-11) — 「찾기도 되고 껍데기도 만들어졌는데 안 보인다」를 잡는 자리.
+        //   겹이 0 이면 그릴 게 아무것도 없다는 뜻이다. 무엇 때문에 걸러졌는지까지 남긴다.
+        if (진단)
+            Debug.LogFormat("[대상표시-진단] 대상={0} · 겹={1} (MeshFilter 본 {2}/거른 {3} · Skinned 본 {4})"
+                          + " · 대상크기={5} · 활성={6}",
+                대상.name, 만든겹, 본MF, 거른MF, 본SMR,
+                대상.lossyScale.ToString("F2"), 대상.gameObject.activeInHierarchy);
 
         색칠(색);
     }
