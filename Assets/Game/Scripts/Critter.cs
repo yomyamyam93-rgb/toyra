@@ -110,6 +110,30 @@ public class Critter : MonoBehaviour, IHittable
 
     [Tooltip("★버티기 — 무게가 이 값이면 맞아도 반드시 안 움츠러든다 (확률 = 무게 ÷ 이 값)")]
     public float 버팀무게 = 6f;
+    // ★버텨냈을 때의 움찔 — 경직·밀림은 없이 **몸만** 한 번 튕긴다 (타격감)
+    [Tooltip("버텨냈을 때 몸이 튕기는 거리 — 그 종 키에 대한 비율")] [Range(0f, 0.2f)] public float 움찔거리 = 0.05f;
+    [Tooltip("버팀 움찔이 잦아드는 시간 (초)")] [Range(0.04f, 0.4f)] public float 움찔길이 = 0.18f;
+    float 움찔남은; Vector3 움찔방향;
+
+    [Header("★타격감 곡선 — 팍 치고 천천히 풀린다")]
+    [Tooltip("맞아서 밀리는 곡선 — 클수록 처음에 몰아서 팍 나간다 (총 거리는 안 변한다)")]
+    [Range(1f, 6f)] public float 밀림곡선 = 3.2f;
+    [Tooltip("밀림이 풀리는 데 걸리는 시간 배 — 클수록 천천히 멎는다")]
+    [Range(0.5f, 3f)] public float 밀림길이배 = 1.5f;
+    [Tooltip("공격할 때 앞으로 파고드는 세기 — 처음이 제일 세다")]
+    [Range(0f, 3f)] public float 돌진세기 = 1.5f;
+    [Tooltip("돌진이 잦아드는 곡선 — 클수록 팍 나갔다 금방 잦아든다")]
+    [Range(1f, 5f)] public float 돌진곡선 = 2.4f;
+    [Tooltip("타격 뒤 여운에서 남는 전진")] [Range(0f, 0.5f)] public float 돌진여운 = 0.12f;
+
+    [Header("★팻 공격 사거리")]
+    [Tooltip("종이 가진 사거리에 곱한다")] [Range(0.5f, 3f)] public float 사거리배 = 1.3f;
+    [Tooltip("몸 키를 이만큼 더 얹는다 — 큰 놈일수록 더 멀리 닿는다 (종에 따라 갈린다)")]
+    [Range(0f, 0.5f)] public float 사거리키몫 = 0.16f;
+    /// ★★**실제로 닿는 거리** — 종의 사거리 + 몸 반지름 + 키 몫.
+    ///   (2026-08-11 사용자 "팻들 공격사거리가 좀 짧은데 조금 늘려도될듯? 종에따라 늘려도 좋고")
+    ///   키를 얹는 것이 곧 「종에 따라」다 — 티라는 크게, 다람쥐는 조금만 늘어난다.
+    public float 닿는사거리 => 종.사거리 * 사거리배 + 종.반지름 + Mathf.Max(0.2f, 종.키) * 사거리키몫;
 
     float 기절든지;                 // 엎어진 지 얼마나 됐나 (엎어지는 동작에 쓴다)
 
@@ -308,8 +332,17 @@ public class Critter : MonoBehaviour, IHittable
 
         if (전 < 휘두름시간)
         {
-            // 살짝 파고든다 — 타격 시점까지만 세게, 그 뒤는 여운
-            float 밀도 = 휘두름t < 타격시점 ? 0.55f : 0.15f;
+            // ★★**팍 나갔다 서서히 잦아든다** (2026-08-11 사용자 "공격모션도, 팍 돌진하고
+            //   서서히 풀리게"). 옛 코드는 0.55 → 0.15 로 **계단**이라, 타격 전 내내 같은
+            //   속도로 미끄러졌다 — 「돌진」이 아니라 「이동」으로 읽혔다.
+            //   → 시작이 제일 세고 타격 시점으로 갈수록 잦아든다. 여운엔 아주 조금만 남는다.
+            float 밀도;
+            if (휘두름t < 타격시점)
+            {
+                float u = Mathf.Clamp01(휘두름t / Mathf.Max(0.01f, 타격시점));
+                밀도 = 돌진세기 * Mathf.Pow(1f - u, 돌진곡선);
+            }
+            else 밀도 = 돌진여운;
             var pos = transform.position + 휘두름방향 * 종.이속 * 밀도 * dt;
             pos = Blocker.Resolve(pos, 종.반지름); pos.y = 땅격자.걷는높이(pos.x, pos.z);
             transform.position = pos;
@@ -325,7 +358,7 @@ public class Critter : MonoBehaviour, IHittable
                 //   거기에 반지름과 0.45 를 또 얹어 늑대가 중심에서 2.05m 밖에서 물었다
                 //   (늑대 입은 중심에서 0.6m 남짓이다).
                 if (target != null && target.Alive
-                    && 실루엣판정.닿나(target.T, transform.position, 종.사거리 + 종.반지름, 0.1f))
+                    && 실루엣판정.닿나(target.T, transform.position, 닿는사거리, 0.1f))
                     target.TakeDamage(종.피해);
             }
         }
@@ -382,9 +415,14 @@ public class Critter : MonoBehaviour, IHittable
         // ★맞아서 뒤로 밀리는 중 — 처음엔 훅, 끝으로 갈수록 잦아든다 (버티며 멎는 느낌)
         if (밀림남은 > 0f)
         {
-            float 총 = Mathf.Max(0.01f, 몸짓.피격길이 * 0.60f);
+            // ★★곡선을 손잡이로 (2026-08-11 사용자 "느긋하게 맞는게 아니라, 팍 맞아서
+            //   천천히 풀리게"). 지수가 클수록 **처음에 더 몰아서** 나가고 뒤가 길어진다.
+            //   ☆총 이동거리는 지수와 무관하게 같다 — 계수 `2(p+1)/3` 이 그걸 맞춘다.
+            //     안 맞추면 곡선만 만졌는데 넉백 세기까지 같이 변한다 (8/9 에 줄여 놓은 값이다).
+            float 총 = Mathf.Max(0.01f, 몸짓.피격길이 * 0.60f * 밀림길이배);
             float 남음 = 밀림남은 / 총;                 // 1 → 0
-            transform.position += 밀림 * (남음 * 남음 * dt / 총 * 2f);
+            float 몫 = Mathf.Pow(남음, 밀림곡선) * (2f * (밀림곡선 + 1f) / 3f);
+            transform.position += 밀림 * (몫 * dt / 총);
             밀림남은 -= dt;
         }
 
@@ -949,7 +987,21 @@ public class Critter : MonoBehaviour, IHittable
     public void Knock(Vector3 dir, float dist, float stagger, float down = 0f)
     {
         if (!Alive) return;
-        if (Time.time - 버팀시각 < 0.05f) return;   // 이번 타를 버텼다 — 밀리지도 비틀거리지도 않는다
+        // ★★★★**버텨도 「맞았다」는 보여야 한다** (2026-08-11 사용자 "흔들림넣어서 타격감있게끔").
+        //
+        //   버티면 밀림도 경직도 안 준다 — 그게 버티기의 뜻이다. 그런데 **아무 반응이 없으니**
+        //   사용자가 "딜이 안 들어간다" 고 읽었다. 실제로는 피해가 들어가고 있었다(hp -= d).
+        //   사슴은 버팀 확률이 50% 라 **두 대에 한 대꼴로** 허공을 친 것처럼 보였다.
+        //   ☆12장 이펙트 규칙의 잣대 — "이 이펙트를 지우면 무슨 일이 일어났는지 못 알아보는가?"
+        //     지금은 **못 알아본다.** 그러니 넣는 게 맞다.
+        //   ★★크기는 절대 안 건드린다 (2026-08-09 사용자 "팻 쳐맞는 모션 만들고 왜 이상한걸
+        //     쓰냐"). 눌렀다 펴면 저작된 클립과 겹쳐 꿈틀거린다 — **자리만** 튕겼다 돌아온다.
+        if (Time.time - 버팀시각 < 0.05f)
+        {
+            움찔방향 = dir; 움찔방향.y = 0f;
+            움찔남은 = 움찔길이;
+            return;                              // 밀리지도 비틀거리지도 않는다
+        }
 
         // ★★★**큰 놈이 너무 밀렸다** (2026-08-10 사용자 — "큰데도 밀려나는게 심한것들도 많고").
         //
@@ -1091,6 +1143,21 @@ public class Critter : MonoBehaviour, IHittable
         if (지금 == 상태.불놀람) return;
         squash = 0f;
         if (body.localScale != bodyScale) body.localScale = bodyScale;
+
+        // ★★**버팀 움찔** — 크기가 아니라 **자리**를 튕긴다 (2026-08-11).
+        //   맞은 방향으로 훅 밀렸다 스르르 제자리로. 세기는 제곱으로 잦아들어
+        //   「퍽 하고 버텼다」로 읽힌다 (12장 — 임팩트는 몸의 3막에서 나온다).
+        //   ☆크기(bodyScale)와 회전(bodyRot)은 안 건드린다 — 저작된 클립의 몫이다.
+        if (움찔남은 > 0f)
+        {
+            움찔남은 -= dt;
+            float u = Mathf.Clamp01(움찔남은 / Mathf.Max(0.01f, 움찔길이));
+            var 로컬 = body.parent != null ? body.parent.InverseTransformDirection(움찔방향) : 움찔방향;
+            // ★★곡선 — `u²` 는 처음에 확 빠져서 「팍」이 안 산다. SmoothStep 은 **꼭대기에서
+            //   잠깐 머물다** 스르르 내려온다 = 팍 맞고 천천히 풀린다 (12장 여운).
+            body.localPosition = bodyPos + 로컬 * (움찔거리 * Mathf.Max(0.2f, 종.키) * Mathf.SmoothStep(0f, 1f, u));
+        }
+        else if (body.localPosition != bodyPos) body.localPosition = bodyPos;
     }
 
     // ══════════════════════════════════════════════════════════
