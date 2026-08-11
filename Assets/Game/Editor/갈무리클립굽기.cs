@@ -136,8 +136,11 @@ public static class 갈무리클립굽기
 
         섬.SampleAnimation(an.gameObject, 0f);      // 뜨느라 만진 몸을 되돌린다
 
+        // ★`CopySerialized` 는 **이름까지 덮어쓴다** — 새 클립의 빈 이름이 에셋에 들어가
+        //   애니메이터 목록이 빈칸으로 뜬다 (2026-08-11 실측). 미리 이름을 넣어 둔다.
+        clip.name = $"갈무리_{뒷말}";
         var 있던 = AssetDatabase.LoadAssetAtPath<AnimationClip>(경로);
-        if (있던 != null) { EditorUtility.CopySerialized(clip, 있던); clip = 있던; }
+        if (있던 != null) { EditorUtility.CopySerialized(clip, 있던); clip = 있던; clip.name = $"갈무리_{뒷말}"; }
         else AssetDatabase.CreateAsset(clip, 경로);
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
