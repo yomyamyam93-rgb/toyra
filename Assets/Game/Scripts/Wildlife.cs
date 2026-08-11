@@ -121,6 +121,8 @@ public class Wildlife : MonoBehaviour
     [Tooltip("시작할 때 펫 모델·동작을 미리 읽어 둔다 — 껐다 켜서 효과를 견줄 수 있다")]
     public bool 미리읽기 = true;
     [Tooltip("한 프레임에 몇 개까지 읽나")] [Range(1, 8)] public int 프레임당 = 1;
+    [Tooltip("애니메이터 연결까지 미리 시킨다 — 첫 스폰 11~15ms 가 1ms 로 떨어진다")]
+    public bool 예열 = true;
 
     System.Collections.IEnumerator 미리읽기속()
     {
@@ -148,6 +150,27 @@ public class Wildlife : MonoBehaviour
                 }
                 foreach (var d in 동작)
                     if (Resources.Load<AnimationClip>("rig/" + d + "_" + nm) != null) 클립수++;
+
+                // ★★★**애니메이터 연결까지 미리 시킨다** (2026-08-11 실측 — 종류마다
+                //   첫 스폰 11~15ms · 두 번째부터 1ms 로 **12배** 차이가 났다).
+                //   모델을 읽어 두는 것만으로는 모자란다: 유니티는 그 모델에 컨트롤러를
+                //   **처음 물릴 때** 뼈와 커브를 짝지어 놓는데(바인딩), 그게 첫 스폰의 비용이다.
+                //   → 화면 밖에서 한 마리를 만들어 한 틱 돌리고 지운다. 그러면 그 짝짓기가
+                //     끝나 있어서 게임 중 첫 등장이 1ms 로 떨어진다.
+                if (예열)
+                {
+                    var 통 = new GameObject("예열_" + nm);
+                    통.transform.position = new Vector3(0f, -2000f, 0f);   // 화면 밖(땅 아래)
+                    var 몸 = Instantiate(g, 통.transform);
+                    몸.name = "Armature";
+                    foreach (var r in 몸.GetComponentsInChildren<Renderer>(true)) r.enabled = false;
+                    var an = 통.AddComponent<Animator>();
+                    var 짓 = 통.AddComponent<몸짓>();
+                    짓.준비(an, nm);
+                    짓.enabled = false;              // Critter 없이 Update 가 돌면 안 된다
+                    an.Update(0f);                   // ★여기서 바인딩이 실제로 일어난다
+                    Destroy(통);
+                }
 
                 if (++센것 % Mathf.Max(1, 프레임당) == 0) yield return null;
             }
