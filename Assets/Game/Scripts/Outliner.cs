@@ -99,6 +99,17 @@ public class Outliner : MonoBehaviour
     public static void 새것(GameObject go)
     {
         if (Me == null || go == null) return;
+        // ★★★★**꺼져 있으면 아무것도 만들지 않는다** (2026-08-11 실측 사고 — 내가 낸 버그).
+        //
+        //   옛날엔 실루엣을 `Update` 안에서만 만들었다. 그래서 이 컴포넌트를 끄면
+        //   **실루엣이 아예 안 생겼다** — 끄는 것이 곧 「안 만든다」였다.
+        //   그런데 `새것` 은 static 이라 **꺼져 있어도 그냥 만들었다.** 결과:
+        //     · 실루엣 복사본(31번 층)은 만들어지는데
+        //     · 그걸 카메라에서 가려 주는 `층가리기()` 는 Update 안이라 안 돈다
+        //     → 납작한 검정 복사본이 팻을 통째로 덮었다. 사용자가 본 「텍스처 날아감」이 이것.
+        //   ☆실측: 본카메라 cullingMask = -1(모든 층) · Outliner.enabled = false ·
+        //     사슴에 `사슴_1(층0)` 과 `실루엣(층31, Toyra/Outline)` 이 겹쳐 있었다.
+        if (!Me.isActiveAndEnabled) return;
         Me.하나붙이기(go);
     }
 
