@@ -40,8 +40,13 @@ public class HeroAttack : MonoBehaviour
     enum State { 쉼, 예비, 휘두름, 여운, 채집 }
 
     [Header("★채집 (누르고 있으면 캔다)")]
-    [Tooltip("이만큼 누르고 있으면 채집으로 넘어간다 (초) — 짧게 딸깍하면 그냥 공격이다")]
-    [Range(0.05f, 0.6f)] public float 채집지연 = 0.16f;
+    // ★★★**기다리는 시간을 두지 않는다** (2026-08-11 사용자 "뭘 누르라는거야 시발;;
+    //   마우스로 좌클릭해서 누르면 캐지게해주면안돼?"). 처음엔 0.16초 누르고 있어야
+    //   채집으로 넘어가게 했는데, 그건 **손에 안 잡히는 규칙**이다.
+    //   → 4장의 원칙 그대로 간다: **「앞에 무엇이 있느냐」가 정한다.**
+    //     앞에 살아 있는 짐승이 있으면 때리고, 없으면 캔다. 누르는 순간 갈린다.
+    [Tooltip("0 이면 누르는 즉시 캔다 — 굳이 늦추고 싶을 때만 올린다")]
+    [Range(0f, 0.6f)] public float 채집지연 = 0f;
     [Tooltip("채집하는 동안의 걷는 속도 배")] [Range(0f, 1f)] public float 채집이속 = 0.3f;
     Harvest 채집대상;
     /// HUD 가 읽는다 — 상시로 안 띄우고 **캘 때만** 뜬다 (11장 · 기획 5-7)
@@ -555,7 +560,7 @@ public class HeroAttack : MonoBehaviour
                 //   짧게 딸깍하면 공격, 대상을 두고 **길게 누르면 채집**이다.
                 //   ☆지연을 두는 이유: 없으면 나무 옆에서 짐승을 때릴 수가 없다.
                 //     `감은시간` 은 누르고 있는 동안 흐르므로 그대로 자로 쓴다.
-                if (누름중 && cd <= 0f && 감은시간 >= 채집지연)
+                if (누름중 && cd <= 0f && 감은시간 >= 채집지연 && !앞에적있나())
                 {
                     var 대상 = Harvest.찾기(transform.position, hero.LookDir, 사거리 + 0.4f);
                     if (대상 != null)
@@ -649,6 +654,27 @@ public class HeroAttack : MonoBehaviour
                 if (t >= 여운) { state = State.쉼; cd = 공격쿨; Pose(0f, 0f); }   // 쿨이 리듬을 만든다
                 break;
         }
+    }
+
+    /// ★★앞에 **살아 있는** 짐승이 있나 — 있으면 캐는 게 아니라 때리는 것이다 (4장).
+    ///   ☆사체는 `Critter` 가 아니므로 안 걸린다 — 사체 옆에서는 그냥 갈무리가 된다.
+    ///   ☆판정은 때리는 것과 **같은 자**로 잰다 (실루엣·부채꼴) — 안 그러면
+    ///     "때릴 수 있는데 캐진다" 가 난다.
+    bool 앞에적있나()
+    {
+        var p = transform.position;
+        var look = hero.LookDir;
+        float 닿음 = Mathf.Max(닿는거리(), 표시사거리);
+        float 반각 = 표시각도 * 0.5f;
+        for (int i = Critter.All.Count - 1; i >= 0; i--)
+        {
+            var c = Critter.All[i];
+            if (c == null || !c.Alive || c.side != Critter.Side.야생) continue;
+            var v = c.transform.position - p; v.y = 0f;
+            if (v.magnitude > 닿음 + c.Radius + 0.6f) continue;
+            if (실루엣판정.부채꼴에맞나(c.transform, p, look, 닿음, 표시각도, 판정거리여유)) return true;
+        }
+        return false;
     }
 
     /// 채집을 끝낸다 — 놓았거나, 멀어졌거나, 다 캤거나
