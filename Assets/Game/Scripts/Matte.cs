@@ -43,36 +43,60 @@ public class Matte : MonoBehaviour
         // ★★★**새로 생긴 게 없으면 훑지 않는다** (2026-08-06 실측 — 주기적 끊김의 정체).
         //   씬 렌더러가 7만 개라, 할 일이 하나도 없어도 훑기 한 번이 **119ms + GC 4.1MB**
         //   였고 그게 `다시훑기 = 2초` 마다 왔다. 판별은 `씬바뀜` 이 거의 공짜로 한다.
+        // ★★★★**전체 훑기를 「자식 수」에서 떼어낸다** (2026-08-11 실측 — `Outliner` 와 같은 버그).
+        //
+        //   자식 수 문은 「아무것도 안 생겼을 때」만 막는다. 그런데 야생 스폰·시체·이펙트가
+        //   쉬지 않고 자식 수를 흔들어서 문이 사실상 늘 열려 있었다.
+        //   실측(2026-08-11 22:31 로그): **1.5~2초마다 Update 92~100ms · GC 1,868KB**.
+        //   야생이 26마리에서 **더 안 늘어나는데도** 계속 찍혔다 — 스폰 렉이 아니라 이 훑기였다.
+        //   ☆GC 1,868KB 는 렌더러 114,673개를 배열로 뜬 크기와 정확히 맞는다.
+        //
+        //   → 새 재질은 **만든 쪽이 알려 준다**(`새것`). 전체 훑기는 아무도 안 알려준 것을
+        //     줍는 **안전망**이라 `강제훑기`(20초)에 한 번이면 된다.
         강제cd -= 다시훑기;
-        int 셈 = 씬바뀜.자식수합();
-        if (셈 == 지난자식수 && 강제cd > 0f) return;
-        지난자식수 = 셈;
-        if (강제cd <= 0f) 강제cd = 강제훑기;
+        if (강제cd > 0f) return;
+        강제cd = 강제훑기;
+        지난자식수 = 씬바뀜.자식수합();
         훑기();
+    }
+
+    // ★★만든 쪽이 알려 준다 — 그 하나만 무광으로 만든다 (전체 스캔 없음)
+    public static Matte Me;
+    void Awake() { Me = this; }
+
+    public static void 새것(GameObject go)
+    {
+        if (Me == null || go == null || !Me.isActiveAndEnabled) return;
+        foreach (var r in go.GetComponentsInChildren<Renderer>(true)) Me.하나무광(r);
     }
 
     /// 씬의 모든 렌더러 재질을 무광으로. 이미 무광이면 건드리지 않는다
     public void 훑기()
     {
         foreach (var r in FindObjectsByType<Renderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
-        {
-            r.GetSharedMaterials(재질버퍼);
-            for (int i = 0; i < 재질버퍼.Count; i++)
-            {
-                var m = 재질버퍼[i];
-                if (m == null) continue;
-                if (!처리됨.Add(m)) continue;      // 이미 무광으로 만든 재질은 건너뛴다
+            하나무광(r);
+    }
 
-                if (m.HasProperty("_Smoothness") && m.GetFloat("_Smoothness") > 매끄러움 + 0.001f)
-                    m.SetFloat("_Smoothness", 매끄러움);
-                if (m.HasProperty("_Glossiness") && m.GetFloat("_Glossiness") > 매끄러움 + 0.001f)
-                    m.SetFloat("_Glossiness", 매끄러움);
-                if (m.HasProperty("_Metallic") && m.GetFloat("_Metallic") > 금속성 + 0.001f)
-                    m.SetFloat("_Metallic", 금속성);
-                // 스펙큘러 하이라이트를 아예 끌 수 있는 재질이면 끈다
-                if (m.HasProperty("_SpecularHighlights")) m.SetFloat("_SpecularHighlights", 0f);
-                if (m.HasProperty("_EnvironmentReflections")) m.SetFloat("_EnvironmentReflections", 0f);
-            }
+    /// 렌더러 하나의 재질을 무광으로 — 훑기와 푸시가 **같은 코드**를 쓴다 (어긋날 방법이 없다)
+    void 하나무광(Renderer r)
+    {
+        if (r == null) return;
+        r.GetSharedMaterials(재질버퍼);
+        for (int i = 0; i < 재질버퍼.Count; i++)
+        {
+            var m = 재질버퍼[i];
+            if (m == null) continue;
+            if (!처리됨.Add(m)) continue;      // 이미 무광으로 만든 재질은 건너뛴다
+
+            if (m.HasProperty("_Smoothness") && m.GetFloat("_Smoothness") > 매끄러움 + 0.001f)
+                m.SetFloat("_Smoothness", 매끄러움);
+            if (m.HasProperty("_Glossiness") && m.GetFloat("_Glossiness") > 매끄러움 + 0.001f)
+                m.SetFloat("_Glossiness", 매끄러움);
+            if (m.HasProperty("_Metallic") && m.GetFloat("_Metallic") > 금속성 + 0.001f)
+                m.SetFloat("_Metallic", 금속성);
+            // 스펙큘러 하이라이트를 아예 끌 수 있는 재질이면 끈다
+            if (m.HasProperty("_SpecularHighlights")) m.SetFloat("_SpecularHighlights", 0f);
+            if (m.HasProperty("_EnvironmentReflections")) m.SetFloat("_EnvironmentReflections", 0f);
         }
     }
 }
