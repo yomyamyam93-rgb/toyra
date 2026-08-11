@@ -67,7 +67,8 @@ public class HeroCarry : MonoBehaviour
         먹임 = Input.GetKeyDown(KeyCode.E);
 #endif
         // 모닥불 앞에 서 있으면 F 는 그쪽 것이다 (재료 붓기·땔감 넣기)
-        if (모닥불.F먹음) 눌림 = false;
+        // ★채집(캐기·갈무리) 중에도 F 는 그쪽 것이다 — 나무를 패다가 옆의 짐승을 붙잡으면 안 된다
+        if (모닥불.F먹음 || HeroAttack.F먹음) 눌림 = false;
 
         if (먹임) 먹이주기();
 

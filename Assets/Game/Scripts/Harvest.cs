@@ -197,6 +197,22 @@ public class Harvest : MonoBehaviour
         return 한타(방향);
     }
 
+    /// ★마우스가 가리킨 땅점 둘레에서 고른다 — **방향을 안 본다** (클릭으로 집는 것이라)
+    public static Harvest 찍기(Vector3 땅점, float 반경)
+    {
+        Harvest best = null; float bd = float.MaxValue;
+        for (int i = All.Count - 1; i >= 0; i--)
+        {
+            var h = All[i];
+            if (h == null) continue;
+            var v = h.transform.position - 땅점; v.y = 0f;
+            float d = Mathf.Max(0f, v.magnitude - h.반경);
+            if (d > 반경 || d > bd) continue;
+            bd = d; best = h;
+        }
+        return best;
+    }
+
     /// 앞(또는 옆)의 가장 가까운 대상 — 캐기와 갈무리가 **같은 자**로 잰다
     public static Harvest 찾기(Vector3 from, Vector3 look, float reach)
     {

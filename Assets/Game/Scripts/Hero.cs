@@ -145,6 +145,24 @@ public class Hero : MonoBehaviour, IHittable
         //   달리면서 싸울 일이 없으니 시선을 붙들 이유가 없고, 몸과 진행 방향이
         //   어긋나면 옆걸음·뒷걸음 블렌드가 섞여 달리기가 달리기로 안 읽힌다.
         //   (걷기는 그대로 마우스 기준 — 보면서 물러나는 게 전투의 뼈대다)
+        // ★★★★**클릭한 곳까지 알아서 걸어간다** (2026-08-11 사용자 "클릭해서 누르면
+        //   거기까지 알아서 걸어가서, 캐거나 갈무리하게해줘"). 알비온식이다.
+        //   ☆**WASD 가 언제나 이긴다** — 한 번이라도 누르면 자동 걸음은 그 자리에서 끊긴다.
+        //     두 조작이 싸우면 손이 안 맞으므로, 내 손이 들어오면 무조건 자동이 물러난다.
+        //   ☆`mv` 에 얹는다 — 아래 이동 코드(가속·회전·장애물)를 그대로 쓴다. 따로 걷지 않는다.
+        if (mv.sqrMagnitude > 0.01f) 걸어가는중 = false;
+        else if (걸어가는중)
+        {
+            var 갈d = 걸어갈곳 - transform.position; 갈d.y = 0f;
+            if (갈d.sqrMagnitude < 0.02f) 걸어가는중 = false;
+            else
+            {
+                // 세계 방향 → 화면(WASD) 방향으로 되돌린다 — 아래에서 다시 카메라로 돌리므로
+                var 화면 = Quaternion.Euler(0f, -(cam != null ? cam.yaw : 45f), 0f) * 갈d.normalized;
+                mv = new Vector2(화면.x, 화면.z);
+            }
+        }
+
         var 갈방향 = Quaternion.Euler(0f, cam != null ? cam.yaw : 45f, 0f)
                    * new Vector3(mv.x, 0f, mv.y);
         // ★★★**달릴 때는 방향을 돌려서 바꾼다** (2026-08-06 사용자 "뚝 방향이 바뀌니까
@@ -207,6 +225,15 @@ public class Hero : MonoBehaviour, IHittable
         pos.y = 땅격자.걷는높이(pos.x, pos.z);
         transform.position = pos;
     }
+
+    // ★★(은퇴 · 2026-08-11) 자동 걸음 — 클릭한 대상까지 알아서 걸어가려던 것.
+    //   캐기·갈무리를 **F 상호작용**으로 옮기면서 부르는 데가 없어졌다.
+    //   지우지 않고 둔다 (은퇴는 삭제가 아니라 스위치) — 나중에 「클릭해서 그리로 간다」가
+    //   필요해지면 `걸어가기(곳)` 한 줄만 부르면 된다. WASD 가 들어오면 스스로 끊긴다.
+    [HideInInspector] public Vector3 걸어갈곳;
+    [HideInInspector] public bool 걸어가는중;
+    public void 걸어가기(Vector3 곳) { 걸어갈곳 = 곳; 걸어가는중 = true; }
+    public void 걸음멈춤() { 걸어가는중 = false; }
 
     /// 바라보는 방향을 16칸 중 하나로 — 결과를 밀지 않고 **목표를 끊는다**
     /// (`Critter.Face` 와 같은 규칙. 이유는 그쪽 주석 참고)

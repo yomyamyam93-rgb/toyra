@@ -538,11 +538,12 @@ public class HeroAttack : MonoBehaviour
             case State.채집:
             {
                 t += dt;
-                hero.MoveMul = 채집이속;              // 쪼그려 앉아 뒤적이는 동안은 느리다
                 채집중 = true;
-                if (채집대상 == null || !누름중) { 채집끝(); break; }
+                // F 를 놓거나, 대상이 없어지거나, 멀어지면 끝난다
+                if (채집대상 == null || !F눌림) { 채집끝(); break; }
                 var v채 = 채집대상.transform.position - transform.position; v채.y = 0f;
-                if (v채.magnitude - 채집대상.반경 > 사거리 + 1.2f) { 채집끝(); break; }   // 멀어지면 끊긴다
+                if (v채.magnitude - 채집대상.반경 > 사거리 + 1.2f) { 채집끝(); break; }
+                hero.MoveMul = 채집이속;              // 쪼그려 앉아 뒤적이는 동안은 느리다
                 채집게이지 += 채집대상.캐는속도() * dt;
                 if (채집게이지 >= 1f)
                 {
@@ -560,13 +561,18 @@ public class HeroAttack : MonoBehaviour
                 //   짧게 딸깍하면 공격, 대상을 두고 **길게 누르면 채집**이다.
                 //   ☆지연을 두는 이유: 없으면 나무 옆에서 짐승을 때릴 수가 없다.
                 //     `감은시간` 은 누르고 있는 동안 흐르므로 그대로 자로 쓴다.
-                if (누름중 && cd <= 0f && 감은시간 >= 채집지연 && !앞에적있나())
+                // ★★★★**캐기·갈무리는 F 다** (2026-08-11 사용자 "클릭 말고, F 상호작용으로
+                //   캐거나 갈무리하게 할까?"). 그게 맞다 — 4장에 F 가 이미
+                //   *"앞에 무엇이 있느냐가 정한다"* 는 상호작용 키로 적혀 있다.
+                //   ☆이렇게 가르면 **좌클릭 = 싸움 · F = 일** 이 되어 서로 안 싸운다.
+                //     좌클릭에 캐기를 얹었더니 "나무 옆에서 짐승을 못 때린다" 가 났었다.
+                if (F눌림 && cd <= 0f && !모닥불.F먹음)
                 {
-                    var 대상 = Harvest.찾기(transform.position, hero.LookDir, 사거리 + 0.4f);
+                    var 대상 = Harvest.찾기(transform.position, hero.LookDir, 사거리 + 0.6f);
                     if (대상 != null)
                     {
-                        채집대상 = 대상; 채집게이지 = 0f; 감은시간 = 0f; 공격예약 = 0f;
-                        state = State.채집; t = 0f; 채집중 = true;
+                        채집대상 = 대상; 채집게이지 = 0f; 공격예약 = 0f;
+                        state = State.채집; t = 0f; 채집중 = true; F먹음 = true;
                         break;
                     }
                 }
@@ -656,6 +662,24 @@ public class HeroAttack : MonoBehaviour
         }
     }
 
+    /// F 를 누르고 있나 — 게이지가 차야 하므로 **누르는 동안** 을 본다
+    bool F눌림
+    {
+        get
+        {
+#if ENABLE_INPUT_SYSTEM
+            var k = Keyboard.current;
+            return k != null && k.fKey.isPressed;
+#else
+            return Input.GetKey(KeyCode.F);
+#endif
+        }
+    }
+
+    /// ★F 를 채집이 가져갔나 — `HeroCarry`(붙잡기)가 같은 F 로 끼어들지 않게 알려 준다.
+    ///   `모닥불.F먹음` 과 같은 방식이다.
+    public static bool F먹음;
+
     /// ★★앞에 **살아 있는** 짐승이 있나 — 있으면 캐는 게 아니라 때리는 것이다 (4장).
     ///   ☆사체는 `Critter` 가 아니므로 안 걸린다 — 사체 옆에서는 그냥 갈무리가 된다.
     ///   ☆판정은 때리는 것과 **같은 자**로 잰다 (실루엣·부채꼴) — 안 그러면
@@ -680,9 +704,9 @@ public class HeroAttack : MonoBehaviour
     /// 채집을 끝낸다 — 놓았거나, 멀어졌거나, 다 캤거나
     void 채집끝()
     {
-        채집대상 = null; 채집게이지 = 0f; 채집중 = false;
+        채집대상 = null; 채집게이지 = 0f; 채집중 = false; F먹음 = false;
         state = State.쉼; t = 0f; 감은시간 = 0f;
-        cd = Mathf.Max(cd, 0.12f);      // 놓자마자 공격이 튀어나가지 않게 한 박자
+        공격예약 = 0f;                   // F 로 캐다 놓았다고 공격이 튀어나가면 안 된다
     }
 
     /// 무기와 몸의 자세 — 예비엔 뒤로 감고, 휘두르면 앞으로 지나간다
