@@ -45,17 +45,36 @@ public class 대상표시 : MonoBehaviour
 
     void OnDisable() { 치우기(); }
 
+    // ★스스로 시간을 잰다 (2026-08-11) — 스파이크에 「Late 24ms」 라고만 찍히면
+    //   어느 부품인지 알 수가 없다. 빈도가 이 증상과 맞아 제일 유력한 후보다
+    [Tooltip("이보다 오래 걸린 프레임을 콘솔에 남긴다 (ms · 0 이면 안 남김)")]
+    public float 스스로재기 = 5f;
+
     void LateUpdate()
     {
         찾을때까지 -= Time.deltaTime;
         if (찾을때까지 > 0f) return;
         찾을때까지 = 찾는간격;
 
+        var 시계 = 스스로재기 > 0f ? System.Diagnostics.Stopwatch.StartNew() : null;
+        double 찾은뒤 = 0;
+
         Transform 대상 = null; Color 색 = 캘것;
         if (hero.Alive) 대상 = 찾기(out 색);
+        if (시계 != null) 찾은뒤 = 시계.Elapsed.TotalMilliseconds;
 
-        if (대상 != 지금대상) { 치우기(); 지금대상 = 대상; if (대상 != null) 씌우기(대상, 색); }
+        bool 바뀜 = 대상 != 지금대상;
+        if (바뀜) { 치우기(); 지금대상 = 대상; if (대상 != null) 씌우기(대상, 색); }
         else if (껍데기 != null) 색칠(색);
+
+        if (시계 != null)
+        {
+            시계.Stop();
+            double ms = 시계.Elapsed.TotalMilliseconds;
+            if (ms >= 스스로재기)
+                Debug.LogFormat("[대상표시-느림] {0:F1}ms (찾기 {1:F1} · 씌우기 {2:F1}) · 바뀜={3} · 대상={4}",
+                    ms, 찾은뒤, ms - 찾은뒤, 바뀜, 대상 != null ? 대상.name : "없음");
+        }
     }
 
     // ══════════════════════════════════════════════════════════ 무엇이 대상인가
