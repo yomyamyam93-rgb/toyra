@@ -841,6 +841,11 @@ public class WorldGen : MonoBehaviour
         굴판칸.Clear();
         var 집 = WorldGrid.Center;
         int 못앉음 = 0;
+        // ★★★**굴끼리 겹치면 안 된다** (2026-08-11 사용자 "동굴바닥이 다른 텍스처가 보이는데").
+        //   `굴가림` 은 **굴마다 따로** 돈다 — A굴 안에 들어가도 B굴의 천장·뚜껑 잔디는
+        //   그대로 서 있다. 두 굴이 겹치면 굴 바닥에 **남의 잔디가 떠 있게** 된다.
+        //   ☆칸 룰렛일 땐 한 칸에 하나라 저절로 안 겹쳤다. 전역에 흩으면서 생긴 문제다.
+        var 놓인굴 = new List<Vector3>();
         for (int i = 0; i < 작은굴수 + 큰굴수; i++)
         {
             bool 큰가 = i >= 작은굴수;
@@ -853,9 +858,19 @@ public class WorldGen : MonoBehaviour
                 if (물인가(p)) continue;                                  // 호수 위엔 안 판다
                 float dx = p.x - 집.x, dz = p.z - 집.z;
                 if (dx * dx + dz * dz < 굴집비움 * 굴집비움) continue;      // 집 둘레는 트여 있어야 한다
+                // 남의 굴과 겹치지 않게 — 큰 굴은 더 멀리 떨어뜨린다
+                float 내반경 = 큰가 ? 굴반경 * 0.62f : 굴반경 * 0.30f;
+                bool 겹침 = false;
+                foreach (var q in 놓인굴)
+                {
+                    float ex = q.x - p.x, ez = q.z - p.z;
+                    if (ex * ex + ez * ez < (내반경 + q.y) * (내반경 + q.y)) { 겹침 = true; break; }
+                }
+                if (겹침) continue;
                 됐나 = true;
             }
             if (!됐나) { 못앉음++; continue; }
+            놓인굴.Add(new Vector3(p.x, 큰가 ? 굴반경 * 0.62f : 굴반경 * 0.30f, p.z));   // y 자리에 반경을 담는다
             동굴터(p, 큰가 ? 절차.정수(Random.value, 큰굴규모최소, 굴조각최대, 1.2f)
                           : 절차.정수(Random.value, 굴조각최소, 작은굴규모, 1.6f));
         }
@@ -1059,11 +1074,12 @@ public class WorldGen : MonoBehaviour
             //   ☆Hero.cs:205 에 **이미 적힌 사고의 재발**이다 — "`땅격자` 가 그림과 판정의
             //     단 하나뿐인 출처다. 여기서 안 물으면 발이 묻힌다" (2026-08-09).
             //     고치는 방향은 **그림을 출처에 맞추는 것** — 반대로 하면 그 규칙이 또 깨진다.
-            //   ☆윗면을 걷는높이에 딱 맞추면 땅과 z파이팅이 난다 → 2cm 만 띄운다.
-            //     상자 반높이가 0.08 이므로 중심은 걷는높이 + 0.02 - 0.08.
+            //   ☆띄우는 값 (2026-08-11 사용자 "동굴바닥이 다른 텍스처가 보이는데") —
+            //     2cm 는 밑의 땅이 비쳐 나올 만큼 얇았다. 5cm 로 벌린다.
+            //     사람 키 1.8m 에 5cm 면 3% 라 발이 묻힌 게 안 보인다 (옛 버그는 16cm 였다).
             굴판칸.Add((kv.Key.ix, kv.Key.iz));      // ★나중에 이 자리의 나무·돌을 치운다
             var p2 = new Vector3(kv.Key.ix * 칸, 땅격자.걷는높이(kv.Key.ix * 칸, kv.Key.iz * 칸), kv.Key.iz * 칸);
-            격자상자(p2 + Vector3.up * (0.02f - 0.08f), new Vector3(칸 * 1.03f, 0.16f, 칸 * 1.03f), 직소상자.C굴바닥, "바닥", 0f);
+            격자상자(p2 + Vector3.up * (0.05f - 0.08f), new Vector3(칸 * 1.03f, 0.16f, 칸 * 1.03f), 직소상자.C굴바닥, "바닥", 0f);
             격자상자(p2 + Vector3.up * (kv.Value + 0.2f), new Vector3(칸 * 1.03f, 0.4f, 칸 * 1.03f), 직소상자.C굴덮개, "덮개", 0f);
             // 높은 공간엔 가끔 돌기둥 — 빈 방이 심심하지 않게, 몸을 숨길 데가 생기게
             if (kv.Value > 4f && Random.value < 0.035f)
