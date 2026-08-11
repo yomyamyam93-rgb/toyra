@@ -149,6 +149,13 @@ public class Harvest : MonoBehaviour
     [Tooltip("이 물체의 반경 (m) — 갈무리 거리에서 빼 준다. 사체는 몸을 재서 넣는다")]
     public float 반경 = 0f;
 
+    // ★★**사체는 방향을 안 본다** (2026-08-11 사용자 "갈무리 범위가 내가 몸을 돌릴때마다
+    //   됐다 안됐다하는데 바라보는 방향이나 공격 범위보단 그냥 주변에 있으면 가능하게").
+    //   나무·돌은 **앞으로 도끼를 휘두르는** 것이라 방향이 맞다. 그런데 갈무리는 쪼그려
+    //   앉아 뒤적이는 일이다 — 옆에 있으면 되지 어느 쪽을 보는지는 상관없다.
+    [Tooltip("켜면 바라보는 방향을 안 본다 — 옆에 있기만 하면 된다 (사체가 그렇다)")]
+    public bool 방향무관 = false;
+
     public static bool TryHarvest(Vector3 from, Vector3 look, float reach)
     {
         Harvest best = null; float bd = float.MaxValue;
@@ -159,7 +166,8 @@ public class Harvest : MonoBehaviour
             var v = h.transform.position - from; v.y = 0f;
             float d = Mathf.Max(0f, v.magnitude - h.반경);   // ★몸집만큼 봐 준다
             if (d > reach || d > bd) continue;
-            if (v.sqrMagnitude > 0.01f && Vector3.Dot(v.normalized, look) < 0.2f) continue;   // 앞쪽만
+            if (!h.방향무관 && v.sqrMagnitude > 0.01f
+                && Vector3.Dot(v.normalized, look) < 0.2f) continue;   // 앞쪽만 (사체는 안 본다)
             bd = d; best = h;
         }
         if (best == null) return false;
