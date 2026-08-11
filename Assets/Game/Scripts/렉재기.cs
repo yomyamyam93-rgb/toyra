@@ -49,6 +49,12 @@ public class 렉재기 : MonoBehaviour
     //   상당수가 LateUpdate 에서 돈다(격자바닥·구름그림자·흩날림·IsoCam·대상표시·조준표시…).
     //   그게 튀어도 로그에는 「스크립트」로 안 잡혀서 62ms 의 정체를 못 봤다.
     ProfilerRecorder 감시_늦행동, 감시_애니, 감시_물리;
+    // ★★★**CPU 가 일한 게 아닌 스파이크가 있다** (2026-08-11 실측:
+    //   `397ms · Update 1 · LateUpdate 23 · 애니 0 · 렌더 0 · 컬링 0 · GC 14KB`
+    //   — 합이 24ms 인데 397ms 다. 373ms 가 어디에도 안 잡힌다).
+    //   그러면 남는 건 **GPU 대기**와 **셰이더를 그 자리에서 굽는 것**뿐이다.
+    //   에디터는 처음 보는 재질 조합을 만나면 그때 셰이더를 굽는데 수백 ms 가 걸린다.
+    ProfilerRecorder 감시_gpu1, 감시_gpu2, 감시_셰이더;
 
     void OnEnable()
     {
@@ -58,6 +64,9 @@ public class 렉재기 : MonoBehaviour
         감시_물리 = ProfilerRecorder.StartNew(ProfilerCategory.Internal, "Physics.Processing", 1);
         감시_렌더 = ProfilerRecorder.StartNew(ProfilerCategory.Internal, "Camera.Render", 1);
         감시_컬링 = ProfilerRecorder.StartNew(ProfilerCategory.Internal, "Culling", 1);
+        감시_gpu1 = ProfilerRecorder.StartNew(ProfilerCategory.Internal, "Gfx.WaitForPresentOnGfxThread", 1);
+        감시_gpu2 = ProfilerRecorder.StartNew(ProfilerCategory.Render, "Gfx.WaitForRenderThread", 1);
+        감시_셰이더 = ProfilerRecorder.StartNew(ProfilerCategory.Render, "Shader.CreateGPUProgram", 1);
         gc재개 = ProfilerRecorder.StartNew(ProfilerCategory.Memory, "GC Allocated In Frame", 1);
         if (켤때자동) 예약(기다림);
     }
@@ -143,6 +152,9 @@ public class 렉재기 : MonoBehaviour
         if (감시_늦행동.Valid) 감시_늦행동.Dispose();
         if (감시_애니.Valid) 감시_애니.Dispose();
         if (감시_물리.Valid) 감시_물리.Dispose();
+        if (감시_gpu1.Valid) 감시_gpu1.Dispose();
+        if (감시_gpu2.Valid) 감시_gpu2.Dispose();
+        if (감시_셰이더.Valid) 감시_셰이더.Dispose();
         if (감시_렌더.Valid) 감시_렌더.Dispose();
         if (감시_컬링.Valid) 감시_컬링.Dispose();
         if (gc재개.Valid) gc재개.Dispose();
@@ -177,14 +189,18 @@ public class 렉재기 : MonoBehaviour
                 if (c != null && c.side == Critter.Side.야생) 야생++;
             }
             double gcKB = gc재개.Valid ? gc재개.LastValue / 1024.0 : -1;
-            Debug.LogFormat("[렉스파이크] {0:F0}ms · Update {1:F0} · LateUpdate {2:F0} · 애니 {3:F0} · 물리 {4:F0} · 렌더 {5:F0} · 컬링 {6:F0} · 야생 {7}마리({8}) · GC {9:F0}KB · t={10:F1}s",
-                ms,
-                감시_행동.Valid ? 감시_행동.LastValue * 1e-6 : -1,
-                감시_늦행동.Valid ? 감시_늦행동.LastValue * 1e-6 : -1,
-                감시_애니.Valid ? 감시_애니.LastValue * 1e-6 : -1,
-                감시_물리.Valid ? 감시_물리.LastValue * 1e-6 : -1,
-                감시_렌더.Valid ? 감시_렌더.LastValue * 1e-6 : -1,
-                감시_컬링.Valid ? 감시_컬링.LastValue * 1e-6 : -1,
+            double u = 감시_행동.Valid ? 감시_행동.LastValue * 1e-6 : 0;
+            double lu = 감시_늦행동.Valid ? 감시_늦행동.LastValue * 1e-6 : 0;
+            double an = 감시_애니.Valid ? 감시_애니.LastValue * 1e-6 : 0;
+            double rd = 감시_렌더.Valid ? 감시_렌더.LastValue * 1e-6 : 0;
+            double cu = 감시_컬링.Valid ? 감시_컬링.LastValue * 1e-6 : 0;
+            double g1 = 감시_gpu1.Valid ? 감시_gpu1.LastValue * 1e-6 : 0;
+            double g2 = 감시_gpu2.Valid ? 감시_gpu2.LastValue * 1e-6 : 0;
+            double sh = 감시_셰이더.Valid ? 감시_셰이더.LastValue * 1e-6 : 0;
+            // ★★설명 안 되는 시간을 **직접 찍는다** — 이게 크면 CPU 가 일한 게 아니다
+            double 나머지 = ms - (u + lu + an + rd + cu + g1 + g2 + sh);
+            Debug.LogFormat("[렉스파이크] {0:F0}ms · Update {1:F0} · Late {2:F0} · 애니 {3:F0} · 렌더 {4:F0} · 컬링 {5:F0} · GPU대기 {6:F0}/{7:F0} · 셰이더굽기 {8:F0} · ★설명안됨 {9:F0} · 야생 {10}마리({11}) · GC {12:F0}KB · t={13:F1}s",
+                ms, u, lu, an, rd, cu, g1, g2, sh, 나머지,
                 야생, 지난야생 < 0 ? "?" : (야생 - 지난야생).ToString("+#;-#;0"), gcKB,
                 Time.unscaledTime);
             지난야생 = 야생;
