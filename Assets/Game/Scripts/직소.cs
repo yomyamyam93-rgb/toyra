@@ -292,7 +292,8 @@ public static class 직소
         foreach (var r in 놓인것.GetComponentsInChildren<MeshRenderer>(true))
         {
             var n = r.gameObject.name;
-            if (n.StartsWith("바닥") || n.StartsWith("이음") || n.StartsWith("슬롯")) continue;
+            // ★「덮개」는 동굴 지붕이다 (2026-08-11) — 공중에 떠 있으니 발은 안 걸려야 한다
+            if (n.StartsWith("바닥") || n.StartsWith("이음") || n.StartsWith("슬롯") || n.StartsWith("덮개")) continue;
             var b = r.bounds;
             if (b.size.y < 0.6f) continue;                       // 납작한 건 안 막는다
             Blocker.Add(new Vector3(b.center.x, 0f, b.center.z), Mathf.Max(b.size.x, b.size.z) * 0.45f);

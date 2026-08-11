@@ -108,6 +108,9 @@ public class Critter : MonoBehaviour, IHittable
     [Tooltip("무게가 밀림을 얼마나 막나 — 클수록 큰 놈이 꿈쩍 안 한다")]
     [Range(1f, 2.5f)] public float 밀림지수 = 1.4f;
 
+    [Tooltip("★버티기 — 무게가 이 값이면 맞아도 반드시 안 움츠러든다 (확률 = 무게 ÷ 이 값)")]
+    public float 버팀무게 = 6f;
+
     float 기절든지;                 // 엎어진 지 얼마나 됐나 (엎어지는 동작에 쓴다)
 
     /// ★둔기로 맞았다 — 기절값이 쌓인다. 뾰족한 무기는 이걸 안 부른다
@@ -276,6 +279,7 @@ public class Critter : MonoBehaviour, IHittable
     // ── 타이머 (상태가 아니라 「막는 것」)
     float staggerT, downT;
     Vector3 밀림; float 밀림남은;      // 맞아서 뒤로 밀리는 중 (크기·무게로 보정된 거리)
+    float 버팀시각 = -99f;             // 이번 타를 버틴 시각 — 바로 뒤따르는 `Knock` 도 같이 무시한다
 
     // ★★공격 커밋 (2026-08-07 사용자 "공격모션이 들어갔으면 끝까지 모션하도록, 허공에
     //   때리더라도 · 앞으로 조금 돌진하면서"). 전에는 휘두르다가도 상대가 반 발짝 벗어나면
@@ -891,10 +895,30 @@ public class Critter : MonoBehaviour, IHittable
     }
 
     // ── 맞기
-    public void TakeDamage(float d)
+    public void TakeDamage(float d) => TakeDamage(d, false);
+
+    /// ★★★**버티기 — 맞아도 확률로 움츠러들지 않는다** (2026-08-11 사용자 "급을 나누지 말고
+    ///   확률로 보정해서 맞아도 움츠러들지 않게끔").
+    ///   전엔 맞으면 반드시 ①0.4초 경직 ②하던 공격 취소 ③뒤로 밀림이 걸렸다. 내 공격
+    ///   사이클(0.87초)이 상대의 「경직 회복 + 다시 무는 시간」(약 1초)보다 짧아서,
+    ///   **연타만 하면 상대가 영원히 한 대도 못 때렸다** — 그게 "전투가 쉽다"의 정체.
+    ///   → 무게에 비례한 확률로 **피해만 받고 하던 일을 계속한다.** 물던 놈은 마저 문다.
+    ///     다람쥐 0.1 · 늑대 0.22 · 랩터 0.3 · 사슴 0.5 · 티라 1.0 (급으로 자르지 않고 무게로 잇는다)
+    ///   ☆버티면 뒤따르는 넉백(`Knock`)도 같이 무시한다 — 안 움츠러드는데 밀리면 반쪽이다.
+    ///   ☆**밀기(우클릭)는 안 굴린다** — 밀기는 둘러싸였을 때의 탈출 수단이라 안 통하는
+    ///     수가 있으면 안 된다 (기절값도 그대로 쌓인다 — 생포 루트는 안 건드린다).
+    public void TakeDamage(float d, bool 버틸수있나)
     {
         if (!Alive) return;
         hp -= d;
+
+        if (버틸수있나 && Random.value < Mathf.Clamp01(종.무게 / Mathf.Max(0.1f, 버팀무게)))
+        {
+            버팀시각 = Time.time;
+            if (무리 != null) 무리.다쳤다(this, 새끼);
+            if (hp <= 0f) Die();
+            return;
+        }
         // ★눌림(squash)은 안 건다 — 맞는 동작은 저작된 `피격` 클립의 몫이다
 
         // ★★**맞으면 맞는 게 보여야 전투다** (2026-08-07 사용자 — 좀보이드 참고).
@@ -925,6 +949,7 @@ public class Critter : MonoBehaviour, IHittable
     public void Knock(Vector3 dir, float dist, float stagger, float down = 0f)
     {
         if (!Alive) return;
+        if (Time.time - 버팀시각 < 0.05f) return;   // 이번 타를 버텼다 — 밀리지도 비틀거리지도 않는다
 
         // ★★★**큰 놈이 너무 밀렸다** (2026-08-10 사용자 — "큰데도 밀려나는게 심한것들도 많고").
         //

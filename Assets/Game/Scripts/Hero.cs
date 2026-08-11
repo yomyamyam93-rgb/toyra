@@ -70,6 +70,7 @@ public class Hero : MonoBehaviour, IHittable
     [Tooltip("숨이 다 찼을 때, 지구력이 이 비율만큼 차기 전에는 다시 못 뛴다")]
     [Range(0.05f, 0.6f)] public float 숨돌리기 = 0.25f;
     [HideInInspector] public float stamina = 100f;
+    [HideInInspector] public float 회복정지끝;   // 이 시각까지는 숨이 안 찬다 — 휘두르면 `HeroAttack` 이 민다
 
     /// 숨이 다 차서 쉬는 중인가 — `숨돌리기` 만큼 찰 때까지 달리기가 안 걸린다
     bool 지쳤다;
@@ -164,7 +165,8 @@ public class Hero : MonoBehaviour, IHittable
         // 사람도 16칸으로 본다 (`Critter.Face` 와 같은 규칙 — 버티기 포함)
         FaceQuantized(LookDir);
 
-        stamina += (Running ? -runCost : regen) * Time.deltaTime;
+        // ★휘두른 직후엔 숨이 안 찬다 (2026-08-11 "지구력회복도 멈춰야하고") — 연타에 숨값을 매긴다
+        stamina += (Running ? -runCost : Time.time < 회복정지끝 ? 0f : regen) * Time.deltaTime;
         // ★피로가 쌓이면 **최대 지구력 자체가 줄어든다** (`생존`) — 덜 뛰게 된다
         stamina = Mathf.Clamp(stamina, 0f, maxStamina * Mathf.Clamp(생존지구력, 0.1f, 1f));
         // 숨이 차면 느려진다 — 화력이 아니라 숨이 전투를 제한한다

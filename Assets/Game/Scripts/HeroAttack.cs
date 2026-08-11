@@ -53,7 +53,13 @@ public class HeroAttack : MonoBehaviour
     [Tooltip("손목이 젖혔다 눕는 정도 (°) — 몽둥이 끝의 궤적")] public float 손목 = 22f;
     [Tooltip("맞으면 이만큼 밀린다 (m)")] public float 넉백 = 0.6f;
     [Tooltip("맞으면 이만큼 비틀거린다 (초)")] public float 비틀 = 0.35f;
-    [Tooltip("한 번 휘두를 때 쓰는 지구력")] public float 지구력소모 = 6f;
+    [Tooltip("한 번 휘두를 때 쓰는 지구력")] public float 지구력소모 = 8f;
+    // ★★연타에 숨값을 매긴다 (2026-08-11 사용자 "지구력회복도 멈춰야하고, 지구력도 닳아야지").
+    //   전엔 소모 6 에 회복 9/초 — 한 사이클 0.87초당 6 을 쓰고 그 사이 8 이 차서,
+    //   **아무리 연타해도 숨이 안 찼다.** 헌법 6("지구력이 전투를 제한한다")이 공격에는
+    //   안 걸려 있던 것. 휘두른 뒤 잠깐 회복을 멈추면 연타 = 순수 소모가 된다 —
+    //   숨이 바닥나면 도망(달리기)도 못 하니 연타 자체가 도박이 된다.
+    [Tooltip("휘두르거나 민 뒤 이만큼은 지구력이 안 찬다 (초)")] public float 회복정지 = 1.2f;
 
     // ★★★**뾰족한 것으로는 기절시킬 수 없다** (2026-08-10 사용자 — *"뾰족한 무기가 아니라,
     //   둔기같은 뭉뚱한 무기로만 때렸을때 기절하게 해줘, 말이안돼니까"*).
@@ -486,6 +492,7 @@ public class HeroAttack : MonoBehaviour
         {
             밀기cd = 밀기쿨;
             hero.stamina -= 밀기소모;
+            hero.회복정지끝 = Time.time + 회복정지;
             Shove();
         }
 
@@ -502,6 +509,7 @@ public class HeroAttack : MonoBehaviour
                 {
                     공격예약 = 0f;
                     hero.stamina -= 지구력소모;
+                    hero.회복정지끝 = Time.time + 회복정지;
                     맞은것.Clear();
                     캤나 = false;              // 이번 휘두름에서 아직 안 캤다
                     t = 0f;
@@ -610,13 +618,42 @@ public class HeroAttack : MonoBehaviour
     public float 표시사거리 { get; private set; }
 
     /// 지금 이 순간 무기 끝까지의 거리. **판정이 쓰는 값**이지만 프레임마다 변한다
+    // ★★★**끝을 공식으로 짐작하지 않고 보이는 몸체를 잰다** (2026-08-11 사용자 "안맞는
+    //   경우가 많아서 마우스 방향은 맞는데"). 옛 공식 `lossyScale.z*0.5` 는 회색 상자
+    //   (크기 = (굵기,굵기,길이) · 중심축) 전용이다. 지금은 `무기자리` 에 진짜 몽둥이
+    //   모델이 들어가 있어 그 공식이 절반을 깎았다 — 실측: 공식 끝 0.40m vs 실제 메시 끝
+    //   0.91m. **그림의 절반 거리에서만 맞고 있었다.**
+    //   → 렌더러 bounds 의 여덟 꼭짓점 중 제일 먼 수평거리를 쓴다. 상자든 모델이든,
+    //     무기를 갈아끼우든 저절로 맞는다 (기울면 살짝 후해지는데, 후한 쪽이 맞다).
+    Renderer[] 무기렌더러; Transform 무기렌더러주인;
     public float 닿는거리()
     {
         if (무기 == null) return 사거리;
-        var 축 = (무기.rotation * Vector3.forward).normalized;
-        var 끝 = 무기.position + 축 * (무기.lossyScale.z * 0.5f);
-        var v = 끝 - transform.position; v.y = 0f;
-        return Mathf.Max(v.magnitude, 0.2f) + 사거리여유;
+        if (무기렌더러 == null || 무기렌더러주인 != 무기)
+        { 무기렌더러 = 무기.GetComponentsInChildren<Renderer>(true); 무기렌더러주인 = 무기; }
+
+        float far = 0f;
+        foreach (var r in 무기렌더러)
+        {
+            if (r == null || !r.enabled || !r.gameObject.activeInHierarchy) continue;
+            var mn = r.bounds.min; var mx = r.bounds.max;
+            for (int i = 0; i < 8; i++)
+            {
+                var v = new Vector3((i & 1) == 0 ? mn.x : mx.x,
+                                    (i & 2) == 0 ? mn.y : mx.y,
+                                    (i & 4) == 0 ? mn.z : mx.z) - transform.position;
+                v.y = 0f;
+                far = Mathf.Max(far, v.magnitude);
+            }
+        }
+        if (far <= 0.01f)      // 렌더러가 하나도 없으면 옛 공식으로 떨어진다 (상자 축)
+        {
+            var 축 = (무기.rotation * Vector3.forward).normalized;
+            var 끝 = 무기.position + 축 * (무기.lossyScale.z * 0.5f);
+            var w = 끝 - transform.position; w.y = 0f;
+            far = w.magnitude;
+        }
+        return Mathf.Max(far, 0.2f) + 사거리여유;
     }
     // ★★0.10 → 0.30 (2026-08-09 사용자 "몸둥이가 닿는데 딜이 안 박히니까 이상한데").
     //   무기 끝은 **한 점**인데 판정은 그 점까지의 거리로만 봤다. 눈으로는 막대의 옆면이
@@ -630,7 +667,12 @@ public class HeroAttack : MonoBehaviour
         float lo = Mathf.Min(a, b), hi = Mathf.Max(a, b);
         var p = transform.position;
         var look = hero.LookDir;
-        float 닿음 = 닿는거리();
+        // ★★휘두르는 내내 **이 스윙이 닿을 최대 거리**로 판정한다 (2026-08-11 사용자
+        //   "안맞는 경우가 많아서"). 순간값만 쓰면 몽둥이가 위로 들린 프레임엔 수평
+        //   닿는거리가 짧아서, 하필 그때 각도가 쓸린 놈이 억울하게 빗나간다.
+        //   `표시사거리` 는 지난 스윙의 최대 = **조준 고리가 그리는 바로 그 값** —
+        //   고리 안에 있으면 맞는다. 판정과 표시가 같은 값을 본다 (이 파일의 원칙).
+        float 닿음 = Mathf.Max(닿는거리(), 표시사거리);
         bool hit = false;
 
         for (int i = Critter.All.Count - 1; i >= 0; i--)
@@ -657,7 +699,7 @@ public class HeroAttack : MonoBehaviour
                           * Mathf.Clamp(hero.생존힘, 0.2f, 1f);       // 굶으면 힘이 빠진다
             float 낼기절 = 쥠 != null && 쥠.종.무기 ? 쥠.종.무기기절 : (둔기 ? 기절력 : 0f);
 
-            c.TakeDamage(낼피해);
+            c.TakeDamage(낼피해, true);   // ★버티기를 굴린다 — 무거운 놈은 맞아도 하던 일을 계속한다 (밀기는 안 굴린다)
             if (c.Alive)
             {
                 c.Knock(v, 넉백, 비틀);

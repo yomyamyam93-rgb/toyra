@@ -32,6 +32,9 @@ public class Boot : MonoBehaviour
     [Header("동작 진열 (F1)")]
     [Tooltip("F1 = 구워 놓은 네발 동작 60개를 격자로 세워 보여준다 (다시 누르면 치운다)")]
     public bool 동작진열키 = true;
+    [Header("시험 모드 (F2)")]
+    [Tooltip("F2 = 이속 10배 · 지구력 안 닳음. 세상을 둘러볼 때 쓴다")]
+    public bool 시험모드키 = true;
 
     /// ★크기를 눈으로 견주려고 셋을 **다른 덩치**로 데리고 나간다 (사람 1.8m 기준).
     ///   무릎께 · 가슴께 · 올려다보는 것. 이래야 크기 규칙을 실제로 정할 수 있다.
@@ -60,6 +63,8 @@ public class Boot : MonoBehaviour
         if (hero == null) hero = FindFirstObjectByType<Hero>();
 
         if (동작진열키 && GetComponent<동작진열>() == null) gameObject.AddComponent<동작진열>();
+        // F2 — 시험모드 (이속 10배 · 지구력 안 닳음). 누르기 전엔 아무 일도 안 한다
+        if (시험모드키 && GetComponent<시험모드>() == null) gameObject.AddComponent<시험모드>();
 
         Stock.Clear();
         if (world != null) world.Generate();

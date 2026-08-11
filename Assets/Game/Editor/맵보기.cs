@@ -32,6 +32,12 @@ public class 맵보기 : EditorWindow
         (WorldGen.Land.둥지, new Color(1f, 0.9f, 0.2f),  "둥지"),
         (WorldGen.Land.캠프, new Color(1f, 0.25f, 0.25f), "캠프"),
         (WorldGen.Land.물웅덩이, new Color(0.4f, 0.8f, 1f), "물"),
+        // 테마 권역 (2026-08-11) — 분포를 걸어가 보지 않고 여기서 확인한다
+        (WorldGen.Land.찰흙,     new Color(0.85f, 0.50f, 0.30f), "찰흙"),
+        (WorldGen.Land.솜털실,   new Color(0.95f, 0.70f, 0.85f), "솜털실"),
+        (WorldGen.Land.블록,     new Color(0.30f, 0.55f, 1f),    "블록"),
+        (WorldGen.Land.유리설원, new Color(0.75f, 0.95f, 1f),    "유리설원"),
+        (WorldGen.Land.동굴,     new Color(0.65f, 0.58f, 0.52f), "동굴"),
     };
 
     void OnGUI()
@@ -127,18 +133,46 @@ public class 맵보기 : EditorWindow
         var w = FindFirstObjectByType<WorldGen>();
         if (w == null) { EditorUtility.DisplayDialog("맵 보기", "씬에 WorldGen 이 없습니다.", "확인"); return; }
 
+        // ★★플레이 중엔 **이미 있는 세상을 찍는다** (2026-08-11). 전엔 플레이 중에 눌러도
+        //   세상을 새로 지었다 뜯어서(찍고치우기), 찍고 나면 게임이 빈 땅 위에 서 있었다.
+        bool 놀이중 = Application.isPlaying;
         int 옛씨앗 = w.worldSeed;
-        w.worldSeed = 씨앗;
+        if (!놀이중) w.worldSeed = 씨앗;
 
         Camera 눈 = null; RenderTexture rt = null;
+
+        // ★★밤에 찍으면 검게 나온다 (2026-08-11 사용자 "검게 타서 오류난거같아" — 오류가
+        //   아니라 밤이었다. 나무는 조명을 안 받는 단색 셰이더라 저 혼자 초록으로 남는다).
+        //   → 찍는 동안만 조명을 낮으로 젖혔다가 되돌린다 (동작진열이 밤을 젖히는 것과 같은 이유)
+        var 해 = RenderSettings.sun;
+        if (해 == null) { var dl = GameObject.Find("Directional Light"); if (dl != null) 해 = dl.GetComponent<Light>(); }
+        Quaternion 해회전 = Quaternion.identity; float 해세기 = 0f; Color 해색 = Color.white;
+        if (해 != null) { 해회전 = 해.transform.rotation; 해세기 = 해.intensity; 해색 = 해.color; }
+        bool 안개 = RenderSettings.fog;
+        var 주변모드 = RenderSettings.ambientMode;
+        var 하늘색 = RenderSettings.ambientSkyColor;
+
         try
         {
-            EditorUtility.DisplayProgressBar("맵 보기", "세계를 짓는 중…", 0.2f);
-            w.Generate();
+            if (!놀이중)
+            {
+                EditorUtility.DisplayProgressBar("맵 보기", "세계를 짓는 중…", 0.2f);
+                w.Generate();
+            }
 
             // 칸 종류는 표시를 찍는 데만 쓴다 (그림은 진짜 세계다)
             var 칸밭 = typeof(WorldGen).GetField("kinds", BindingFlags.NonPublic | BindingFlags.Instance);
             칸 = 칸밭 != null ? (WorldGen.Land[,])칸밭.GetValue(w) : null;
+
+            if (해 != null)
+            {
+                해.transform.rotation = Quaternion.Euler(50f, 215f, 0f);
+                해.intensity = 1.4f;
+                해.color = new Color(1f, 0.97f, 0.9f);
+            }
+            RenderSettings.fog = false;
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+            RenderSettings.ambientLight = new Color(0.55f, 0.60f, 0.65f);
 
             EditorUtility.DisplayProgressBar("맵 보기", "하늘에서 찍는 중…", 0.7f);
             float 전체 = WorldGrid.Tile * WorldGrid.N;
@@ -158,7 +192,13 @@ public class 맵보기 : EditorWindow
 
             rt = new RenderTexture(그림크기, 그림크기, 24, RenderTextureFormat.ARGB32) { antiAliasing = 1 };
             눈.targetTexture = rt;
+            // ★★셰이더가 준비되기를 기다렸다 찍는다 (2026-08-11 사용자 "검게 타서 오류난거같아").
+            //   에디터는 셰이더를 뒤에서 천천히 굽는데, 안 구워진 첫 렌더는 **땅이 검게** 나온다.
+            //   비동기를 끄면 이 렌더에서 다 구워질 때까지 기다린다. 한 번 구워지면 다음부턴 즉시다.
+            bool 옛비동기 = ShaderUtil.allowAsyncCompilation;
+            ShaderUtil.allowAsyncCompilation = false;
             눈.Render();
+            ShaderUtil.allowAsyncCompilation = 옛비동기;
 
             var 옛 = RenderTexture.active;
             RenderTexture.active = rt;
@@ -170,10 +210,16 @@ public class 맵보기 : EditorWindow
         }
         finally
         {
+            // 조명을 원래대로 — 플레이 중이면 DayNight 가 다음 틱에 어차피 되잡지만, 안 미룬다
+            if (해 != null) { 해.transform.rotation = 해회전; 해.intensity = 해세기; 해.color = 해색; }
+            RenderSettings.fog = 안개;
+            RenderSettings.ambientMode = 주변모드;
+            RenderSettings.ambientSkyColor = 하늘색;
+
             if (눈 != null) { 눈.targetTexture = null; DestroyImmediate(눈.gameObject); }
             if (rt != null) { rt.Release(); DestroyImmediate(rt); }
-            if (찍고치우기) w.Clear();
-            w.worldSeed = 옛씨앗;
+            if (!놀이중 && 찍고치우기) w.Clear();     // ★플레이 중엔 세상을 안 지운다 — 게임이 그 위에 서 있다
+            if (!놀이중) w.worldSeed = 옛씨앗;
             EditorUtility.ClearProgressBar();
         }
         Repaint();

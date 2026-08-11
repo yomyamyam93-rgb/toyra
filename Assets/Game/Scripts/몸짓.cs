@@ -27,6 +27,9 @@ public class 몸짓 : MonoBehaviour
     static Mesh 잼틀;
     static readonly System.Collections.Generic.Dictionary<string, AnimationClip[]> 클립캐시 =
         new System.Collections.Generic.Dictionary<string, AnimationClip[]>();
+    // ★모델당 컨트롤러 하나 — 스폰 렉의 정체였다 (위 `준비` 참고)
+    static readonly System.Collections.Generic.Dictionary<string, AnimatorOverrideController> 오버라이드캐시 =
+        new System.Collections.Generic.Dictionary<string, AnimatorOverrideController>();
     static readonly System.Collections.Generic.List<float> 높이들 = new System.Collections.Generic.List<float>(2048);
 
     public void 준비(Animator a, string 모델이름)
@@ -46,18 +49,28 @@ public class 몸짓 : MonoBehaviour
         }
 
         // 자리표(다람쥐_1) 클립을 이 모델의 클립으로 갈아끼운다
-        var aoc = new AnimatorOverrideController(공용);
-        var 짝 = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<AnimationClip, AnimationClip>>();
-        aoc.GetOverrides(짝);
-        for (int k = 0; k < 짝.Count; k++)
+        // ★★★**모델당 한 번만 만든다** (2026-08-11 사용자 "팻이 생성될때 그런거같은데 렉이
+        //   심해 뚝뚝 끊겨"). 전에는 **짐승 한 마리마다** `AnimatorOverrideController` 를 새로
+        //   만들고 `GetOverrides`/`ApplyOverrides` 를 돌렸다 — 둘 다 배열을 새로 할당하고
+        //   컨트롤러를 통째로 다시 굽는 무거운 일이라, 스폰마다 프레임이 튀었다.
+        //   ☆같은 모델이면 덮어쓰는 내용이 **똑같다** — 하나를 만들어 모두가 나눠 쓰면 된다.
+        //     (`Animator` 는 컨트롤러를 공유해도 제 상태를 따로 갖는다)
+        if (!오버라이드캐시.TryGetValue(모델, out var aoc) || aoc == null)
         {
-            var 자리표 = 짝[k].Key;
-            if (자리표 == null) continue;
-            for (int i = 0; i < 동작이름.Length; i++)
-                if (자리표.name.StartsWith(동작이름[i] + "_") && 내클립[i] != null)
-                { 짝[k] = new System.Collections.Generic.KeyValuePair<AnimationClip, AnimationClip>(자리표, 내클립[i]); break; }
+            aoc = new AnimatorOverrideController(공용) { name = "동작_" + 모델 };
+            var 짝 = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<AnimationClip, AnimationClip>>();
+            aoc.GetOverrides(짝);
+            for (int k = 0; k < 짝.Count; k++)
+            {
+                var 자리표 = 짝[k].Key;
+                if (자리표 == null) continue;
+                for (int i = 0; i < 동작이름.Length; i++)
+                    if (자리표.name.StartsWith(동작이름[i] + "_") && 내클립[i] != null)
+                    { 짝[k] = new System.Collections.Generic.KeyValuePair<AnimationClip, AnimationClip>(자리표, 내클립[i]); break; }
+            }
+            aoc.ApplyOverrides(짝);
+            오버라이드캐시[모델] = aoc;
         }
-        aoc.ApplyOverrides(짝);
         an.runtimeAnimatorController = aoc;
         지금동작 = -1;
         바꿈(대기);
@@ -76,8 +89,9 @@ public class 몸짓 : MonoBehaviour
     public float 공격클립길이()
         => 내클립 != null && 내클립[공격] != null ? 내클립[공격].length : 0.55f;
 
-    /// 플레이 시작마다 부른다 (`플레이초기화`) — 지금은 비울 것이 없다 (높이 보정 철거됨)
-    public static void 캐시비우기() { }
+    /// 플레이 시작마다 부른다 (`플레이초기화`) — 도메인 리로드를 끄면 static 이 남는다.
+    /// ★죽은 유니티 객체를 물고 있으면 안 되므로 컨트롤러 캐시를 비운다 (클립은 에셋이라 살아 있다)
+    public static void 캐시비우기() { 오버라이드캐시.Clear(); }
 
     /// 맞았다 — 피격 모션.
     ///

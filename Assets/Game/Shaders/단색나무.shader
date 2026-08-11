@@ -18,7 +18,10 @@ Shader "토이라/단색나무"
         _BarkColor("줄기 색", Color) = (0.40, 0.29, 0.20, 1)
         _GreenBias("초록으로 치는 문턱", Range(-0.1, 0.2)) = 0.02
         _Steps("빛 단계 수", Range(1,4)) = 2
-        _ShadowLift("그늘 밝기", Range(0,1)) = 0.55
+        // ★★0.55 → 0.30 (2026-08-11 사용자 "나무 색상 대비좀 더 넣어줄래? 어둡게 잘리는
+        //   부분이 더 어둡게 표현되어야할거같은데"). 그늘이 밑색의 55% 면 밝은 쪽과 거의
+        //   안 갈려서 단색 두 벌이 통짜로 보인다 — 30% 면 잎의 굴곡이 실루엣으로 읽힌다
+        _ShadowLift("그늘 밝기", Range(0,1)) = 0.30
         _Cutoff("알파 자르기", Range(0,1)) = 0.5
         [Toggle] _DoClip("알파로 자를까", Float) = 0
     }
@@ -83,7 +86,8 @@ Shader "토이라/단색나무"
                 band = lerp(_ShadowLift, 1.0h, band);
                 band *= lerp(_ShadowLift, 1.0h, L.shadowAttenuation);
 
-                half3 col = albedo * (L.color * band + SampleSH(n) * 0.55h);
+                // ★주변광이 세면 그늘이 도로 밝아져 대비가 죽는다 — 0.55 → 0.34 (2026-08-11)
+                half3 col = albedo * (L.color * band + SampleSH(n) * 0.34h);
                 col = MixFog(col, i.fog);
                 return half4(col, 1);
             }

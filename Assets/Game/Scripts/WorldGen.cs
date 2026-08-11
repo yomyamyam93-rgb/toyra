@@ -13,7 +13,9 @@ using UnityEngine;
 ///   옛 프로젝트를 무겁게 하던 16MB 짜리 높이 파일도 없다.
 public class WorldGen : MonoBehaviour
 {
-    public enum Land { 빈들판, 숲, 바위지대, 물웅덩이, 폐허, 둥지, 캠프 }
+    // ★찰흙~유리설원은 **테마 권역** (2026-08-11) — 룰렛이 아니라 `테마깔기` 가 권역으로 얹는다
+    // ★동굴은 **독립 랜드마크** (2026-08-11 사용자 확정 — 바위지대 소속이 아니라 어디든 난다)
+    public enum Land { 빈들판, 숲, 바위지대, 물웅덩이, 폐허, 둥지, 캠프, 찰흙, 솜털실, 블록, 유리설원, 동굴 }
 
     [Header("씨앗")]
     [Tooltip("0 = 켤 때마다 새 맵 · 다른 숫자 = 그 숫자의 맵이 항상 똑같이 나온다")]
@@ -23,6 +25,25 @@ public class WorldGen : MonoBehaviour
     // ★`w물` 은 0 이다 — 물은 칸이 아니라 노이즈 장(`물기`)이 정한다 (2026-08-06).
     //   손잡이는 `물칸`·`물문턱`. 여긴 은퇴한 자리라 지우지 않고 0 으로 둔다.
     public float w빈들판 = 4f, w숲 = 2.5f, w바위 = 2f, w물 = 0f, w폐허 = 0.8f, w둥지 = 0.8f;
+    [Tooltip("★동굴 — 독립 랜드마크. 밖은 막힌 바위, 틈새로 들어가면 덮개가 걷힌다")]
+    public float w동굴 = 0.7f;
+
+    // ★★★**테마 권역** (2026-08-11 사용자 "찰흙지역, 솜털실지역, 블록지역, 유리설원 등등
+    //   새로운 테마의 지형들을 준비중인데 그런 곳들도 맵생성에서 분포되서 나올 수 있어야").
+    //   기존 지역(숲·바위…) **위에 몇 칸짜리 권역으로** 얹힌다 — 칸 단위 룰렛에 섞으면
+    //   한 칸씩 흩어져서 테마로 안 읽힌다. 씨앗 칸을 잡고 이웃으로 번져 덩어리가 된다.
+    //   ★먼곳부터 = 집에서의 거리 0~1 (맵 반변 720m 기준) — 유리설원은 먼 데만 있다.
+    //     변형표(Wildlife)의 「먼곳부터」와 같은 사상: **멀수록 낯설다** (헌법 3).
+    //   ★새 테마 추가 = enum 한 자리 + 이 표 한 줄 + 소품 함수 한 개 (+ 서식 줄 하나)
+    //   ★바닥·바닥세기: 그 권역의 **땅색** (2026-08-11 사용자 "바닥색은 그대로인데?") —
+    //     소품만 바꾸면 바닥이 여전히 풀·흙이라 지역이 안 읽힌다. 셰이더가 이 색으로 물들인다
+    static readonly (Land 땅, int 칸수, float 먼곳부터, Color 바닥, float 바닥세기)[] 테마표 =
+    {
+        (Land.찰흙,     3, 0.20f, new Color(0.60f, 0.40f, 0.26f), 0.75f),
+        (Land.솜털실,   3, 0.30f, new Color(0.86f, 0.74f, 0.80f), 0.75f),
+        (Land.블록,     3, 0.45f, new Color(0.30f, 0.55f, 0.30f), 0.70f),   // 블록 바닥판의 초록
+        (Land.유리설원, 4, 0.60f, new Color(0.86f, 0.92f, 0.96f), 0.85f),
+    };
 
     [Header("★교체 자리 — 프리팹을 넣으면 상자 대신 그게 나온다")]
     public GameObject[] 나무프리팹;
@@ -31,6 +52,11 @@ public class WorldGen : MonoBehaviour
     public GameObject 둥지프리팹;
     public GameObject 부화터프리팹;
     public GameObject 물프리팹;
+    [Header("★테마 권역 프리팹 — 준비 중인 모델이 오면 여기 꽂는다 (비우면 상자)")]
+    public GameObject[] 찰흙프리팹;
+    public GameObject[] 솜털실프리팹;
+    public GameObject[] 블록프리팹;
+    public GameObject[] 유리설원프리팹;
 
     // 상자 색 — 「무엇인지 색으로 안다」
     public static readonly Color C땅 = new Color(0.24f, 0.30f, 0.19f);
@@ -42,6 +68,18 @@ public class WorldGen : MonoBehaviour
     static readonly Color C둥지 = new Color(0.70f, 0.42f, 0.15f);
     static readonly Color C알 = new Color(0.90f, 0.87f, 0.80f);
     static readonly Color C캠프 = new Color(0.75f, 0.28f, 0.28f);
+    // 테마 권역 상자 색 — 소품이 색으로 「여긴 다른 데다」를 말한다
+    static readonly Color C찰흙A = new Color(0.72f, 0.45f, 0.28f);
+    static readonly Color C찰흙B = new Color(0.58f, 0.34f, 0.22f);
+    static readonly Color C솜털A = new Color(0.92f, 0.78f, 0.84f);
+    static readonly Color C솜털B = new Color(0.75f, 0.82f, 0.92f);
+    static readonly Color[] C블록들 =
+    {
+        new Color(0.85f, 0.25f, 0.22f), new Color(0.22f, 0.45f, 0.85f),
+        new Color(0.95f, 0.80f, 0.20f), new Color(0.25f, 0.70f, 0.35f),
+    };
+    static readonly Color C유리A = new Color(0.82f, 0.92f, 0.97f);
+    static readonly Color C유리B = new Color(0.65f, 0.82f, 0.92f);
 
     Land[,] kinds;
     Transform holder;
@@ -55,7 +93,7 @@ public class WorldGen : MonoBehaviour
     //   → `PixelScreen` 과 같은 방식: **정본 번호**를 두고, 씬에 적힌 번호가 낮으면
     //     아래 값들을 코드 것으로 덮어쓴다. 숫자를 새로 정할 때 번호를 하나 올리면 된다.
     //   ★플레이 중 인스펙터로 만지는 건 그대로 먹는다 (그때는 이미 덮어쓴 뒤다).
-    const int 정본지금 = 18;
+    const int 정본지금 = 20;
     [Tooltip("코드가 정한 값으로 맞춘 번호 — 건드리지 않는다")] public int 정본 = 0;
 
     void 정본맞추기()
@@ -102,6 +140,17 @@ public class WorldGen : MonoBehaviour
         // 2048 로 되돌린다 — 제일 잔 무늬가 재질 타일로 옮겨 갔으므로 해상도를 올릴 이유가
         // 없어졌다. 4배 느려질 일도 없다.
         땅해상도 = 2048;
+        // ★★폐허·굴·둥지를 **끈다** (2026-08-11 사용자 "폐허나 동굴 알둥지 이런것들은 좀 다
+        //   빼줄래? 니 멋대로 기획해서 넣은거고, 제대로 만들지도 않은거같은데").
+        //   지우지 않고 스위치로 끈다 (은퇴는 삭제가 아니라 스위치) — 제대로 기획하고
+        //   만드는 날, 여기 세 값을 되켜면 그대로 돌아온다.
+        w폐허 = 0f;
+        w둥지 = 0f;
+        굴넣기 = false;
+        // ★★동굴을 독립 랜드마크로 (정본 20, 2026-08-11) — "사이즈도 다양하게 엄청큰것도
+        //   있고 좁은곳도있고". 씬에 저장된 옛 값(최대 18조각·45m)을 넓힌다
+        굴조각최대 = 40;
+        굴반경 = 70f;
         정본 = 정본지금;
     }
 
@@ -148,6 +197,53 @@ public class WorldGen : MonoBehaviour
             for (int z = 0; z < n; z++)
                 if (kinds[x, z] == Land.바위지대 && Neighbors(x, z, Land.바위지대) >= 3)
                     kinds[x, z] = Land.빈들판;
+
+        테마깔기(seed);          // ★테마 권역은 맨 마지막에 얹는다 — 밑에 뭐가 깔렸었는지 안 따진다
+    }
+
+    /// ★테마 권역 깔기 — 테마마다 씨앗 칸을 잡고 이웃으로 번져 덩어리를 만든다.
+    /// 집 옆 여덟 칸·캠프·남의 테마 위에는 안 앉는다. 자리가 안 나오는 맵이면 그냥 없다
+    /// (씨앗을 바꾸면 나온다 — 매 맵에 다 있으라는 법은 없다).
+    void 테마깔기(int seed)
+    {
+        int n = WorldGrid.N;
+        for (int i = 0; i < 테마표.Length; i++)
+        {
+            var 테마 = 테마표[i];
+            Random.InitState(seed ^ (0x7e11 + i * 7919));
+
+            int sx = -1, sz = -1;
+            for (int t = 0; t < 60 && sx < 0; t++)
+            {
+                int x = Random.Range(0, n), z = Random.Range(0, n);
+                if (테마가능(x, z, 테마.먼곳부터)) { sx = x; sz = z; }
+            }
+            if (sx < 0) continue;
+
+            kinds[sx, sz] = 테마.땅;
+            var 덩어리 = new List<(int x, int z)> { (sx, sz) };
+            // ★번질 때는 거리 문턱을 살짝 낮춘다 — 씨앗만 충분히 멀면 가장자리는 걸쳐도 된다
+            for (int t = 0; t < 80 && 덩어리.Count < 테마.칸수; t++)
+            {
+                var (bx, bz) = 덩어리[Random.Range(0, 덩어리.Count)];
+                int x = bx + Random.Range(-1, 2), z = bz + Random.Range(-1, 2);
+                if ((x == bx && z == bz) || !WorldGrid.InRange(x, z)) continue;
+                if (!테마가능(x, z, 테마.먼곳부터 * 0.75f)) continue;
+                kinds[x, z] = 테마.땅;
+                덩어리.Add((x, z));
+            }
+        }
+    }
+
+    bool 테마가능(int x, int z, float 먼곳부터)
+    {
+        int home = WorldGrid.Home;
+        if (Mathf.Abs(x - home) <= 1 && Mathf.Abs(z - home) <= 1) return false;   // 집 둘레는 트여 있어야 한다
+        foreach (var v in 테마표) if (kinds[x, z] == v.땅) return false;           // 남의 테마 위엔 안 앉는다
+        var c = WorldGrid.TileCenter(x, z);
+        var h = WorldGrid.Center;
+        float 멂 = new Vector2(c.x - h.x, c.z - h.z).magnitude / (WorldGrid.Size * 0.5f);
+        return 멂 >= 먼곳부터;
     }
 
     int Neighbors(int x, int z, Land k)
@@ -164,14 +260,15 @@ public class WorldGen : MonoBehaviour
 
     Land Roll()
     {
-        float total = w빈들판 + w숲 + w바위 + w물 + w폐허 + w둥지;
+        float total = w빈들판 + w숲 + w바위 + w물 + w폐허 + w둥지 + w동굴;
         float r = Random.value * total;
         if ((r -= w빈들판) < 0) return Land.빈들판;
         if ((r -= w숲) < 0) return Land.숲;
         if ((r -= w바위) < 0) return Land.바위지대;
         if ((r -= w물) < 0) return Land.물웅덩이;
         if ((r -= w폐허) < 0) return Land.폐허;
-        return Land.둥지;
+        if ((r -= w둥지) < 0) return Land.둥지;
+        return Land.동굴;
     }
 
     // ── ② 실제로 세운다
@@ -192,7 +289,8 @@ public class WorldGen : MonoBehaviour
                 // ★어느 칸이든 돌·나무를 조금씩 흩뿌린다 (2026-08-04 사용자 "돌이랑 나무도
                 //   좀 넣어줘봐"). 빈 들판이 정말로 텅 비어 있으면 걸어갈 맛이 없다.
                 Random.InitState(WorldGrid.TileSeed(seed, x, z) ^ 0x77aa);
-                if (k != Land.캠프 && k != Land.물웅덩이) 흩뿌리기(x, z, k);
+                // ★동굴 칸엔 안 흩뿌린다 (2026-08-11) — 방 한가운데 나무가 선다
+                if (k != Land.캠프 && k != Land.물웅덩이 && k != Land.동굴) 흩뿌리기(x, z, k);
 
                 if (k == Land.빈들판) continue;
 
@@ -225,6 +323,11 @@ public class WorldGen : MonoBehaviour
                     case Land.폐허: Ruin(c); break;
                     case Land.둥지: Nest(c); break;
                     case Land.캠프: Camp(c); break;
+                    case Land.찰흙: 찰흙터(c); break;
+                    case Land.솜털실: 솜털실터(c); break;
+                    case Land.블록: 블록터(c); break;
+                    case Land.유리설원: 유리설원터(c); break;
+                    case Land.동굴: 동굴터(c); break;
                 }
             }
     }
@@ -344,6 +447,29 @@ public class WorldGen : MonoBehaviour
         return t;
     }
 
+    /// 테마 권역이 어디이고 바닥을 무슨 색으로 물들이나 — 셰이더가 읽는다 (바위지도와 같은 방식).
+    /// 9×9 를 부드럽게 늘려 읽으니 권역 경계가 스르르 넘어간다
+    Texture2D 테마지도만들기()
+    {
+        int n = WorldGrid.N;
+        var t = new Texture2D(n, n, TextureFormat.RGBA32, false)
+        {
+            name = "테마지도", filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp
+        };
+        var px = new Color32[n * n];
+        for (int z = 0; z < n; z++)
+            for (int x = 0; x < n; x++)
+            {
+                var c = new Color(0f, 0f, 0f, 0f);
+                foreach (var v in 테마표)
+                    if (kinds[x, z] == v.땅) { c = v.바닥; c.a = v.바닥세기; break; }
+                px[z * n + x] = c;
+            }
+        t.SetPixels32(px);
+        t.Apply(false);
+        return t;
+    }
+
     /// 땅 — 지형이 아니라 판때기 하나 (완전 평지). 잔디·길·물은 **칠해서** 넣는다
     void MakeGround(int seed)
     {
@@ -385,6 +511,7 @@ public class WorldGen : MonoBehaviour
             // 결 uv 는 월드 좌표라, 1m 에 몇 장 깔리나로 준다
             m.SetFloat("_DetailTiling", 1f / Mathf.Max(0.05f, 땅결칸));
             m.SetFloat("_DetailStrength", 땅결);
+            m.SetTexture("_ThemeMap", 테마지도만들기());   // ★테마 권역 바닥색 (2026-08-11)
             사진꽂기(m, seed);
         }
         else
@@ -589,9 +716,14 @@ public class WorldGen : MonoBehaviour
         }
     }
 
-    [Header("★굴 (바위지대에만)")]
-    [Tooltip("바위지대에 굴을 판다")] public bool 굴넣기 = true;
-    [Tooltip("바위지대 몇 곳에 굴이 나나")] [Range(0f, 1f)] public float 굴확률 = 0.45f;
+    // ★★동굴 — **독립 랜드마크** (2026-08-11 사용자 "밖에서 보면 막힌 지형인데, 입구가
+    //   있고, 들어가면 좀보이드처럼 투시되서 보이는 그런 공간").
+    //   땅은 평지 그대로 두고 **위에 얹는 높은 구조물**이다 — 높이차 금지(헌법 7)는 땅의
+    //   높낮이 얘기라 안 부딪힌다. 덮개는 `굴가림` 이 걷고, 입구 틈새는 입구방이 만든다.
+    //   ☆`굴넣기`(바위지대 소속이던 옛 방식)는 꺼진 채 은퇴 — 동굴은 `w동굴` 룰렛으로 나온다.
+    [Header("★동굴 — 밖은 막힌 바위, 틈새로 들어간다")]
+    [Tooltip("(은퇴) 바위지대에 굴을 판다 — 동굴이 독립 랜드마크가 되면서 껐다")] public bool 굴넣기 = true;
+    [Tooltip("(은퇴) 바위지대 몇 곳에 굴이 나나")] [Range(0f, 1f)] public float 굴확률 = 0.45f;
     [Tooltip("제일 작은 굴의 조각 수")] [Range(2, 12)] public int 굴조각최소 = 3;
     [Tooltip("제일 큰 굴의 조각 수")] [Range(4, 40)] public int 굴조각최대 = 18;
     [Tooltip("클수록 작은 굴이 흔해진다")] [Range(1f, 4f)] public float 굴쏠림 = 2.4f;
@@ -608,6 +740,153 @@ public class WorldGen : MonoBehaviour
             new 직소.주머니 { 이름 = "잡동사니", 조각들 = 굴조각_잡동사니 },
         };
     }
+
+    /// ★★★동굴 — **직소 방을 버리고 벌레가 판다** (2026-08-11 사용자 "다 방 같이 되어있는데
+    ///   동굴이라면 길의 두께도 다르고, 공간이 생겼을때도 공간의 크기도 다르고할텐데말이지
+    ///   랜덤하지도 않고 길도 그냥 다 연결되있고 2D 던전게임도 아니고").
+    ///   방·복도 조각을 이어 붙이면 아무리 섞어도 「건물」로 읽힌다. 이제는:
+    ///     · 벌레가 노이즈로 **구불구불** 파고든다 — 직선도 직각도 없다
+    ///     · **길 두께가 계속 변한다** (1.1~3.4m) — 좁아졌다 넓어졌다
+    ///     · 가다가 불쑥 **공간이 열린다** — 원 여러 개를 겹쳐 파서 크기·모양이 매번 다르다
+    ///     · **곁가지·막다른 끝** — 전부 이어진 격자가 아니라 나뭇가지다
+    ///     · 넓은 데는 **천장도 높다.** 겉의 바위 살이 그 위를 덮는다
+    ///   ☆직소 굴 조각(직소상자)은 안 부르게 됐지만 지우지 않는다 (은퇴는 스위치)
+    void 동굴터(Vector3 c)
+    {
+        int 규모 = 절차.정수(Random.value, 굴조각최소, 굴조각최대, 굴쏠림);      // 3~40 · 작은 굴이 흔하다
+        var 루트 = new GameObject("동굴");
+        루트.transform.SetParent(holder, false);
+
+        const float 칸 = 2f;
+        var 천장 = new Dictionary<(int ix, int iz), float>();      // 판 자리 → 천장 높이
+
+        void 새기기(Vector3 p, float r, float 높이)
+        {
+            int 반 = Mathf.CeilToInt(r / 칸);
+            int cx = Mathf.RoundToInt(p.x / 칸), cz = Mathf.RoundToInt(p.z / 칸);
+            for (int ix = cx - 반; ix <= cx + 반; ix++)
+                for (int iz = cz - 반; iz <= cz + 반; iz++)
+                {
+                    if (new Vector2(ix * 칸 - p.x, iz * 칸 - p.z).sqrMagnitude > r * r) continue;
+                    천장.TryGetValue((ix, iz), out float h);
+                    천장[(ix, iz)] = Mathf.Max(h, 높이);
+                }
+        }
+
+        // 공간 — 원 몇 개를 어긋나게 겹쳐 판다. 개수·반지름이 달라 **같은 방이 두 번 안 나온다**
+        void 방파기(Vector3 p)
+        {
+            float 큰r = Random.Range(3.5f, 8.5f);
+            int 원수 = Random.Range(3, 7);
+            for (int i = 0; i < 원수; i++)
+            {
+                var 옆 = p + new Vector3(Random.Range(-1f, 1f), 0f, Random.Range(-1f, 1f)) * 큰r * 0.55f;
+                float r = 큰r * Random.Range(0.45f, 0.9f);
+                새기기(옆, r, 2.9f + r * 0.28f);                    // 넓으면 천장이 높다
+            }
+        }
+
+        // ── ① 판다 — 입구에서 안쪽으로
+        float 입구각 = Random.value * Mathf.PI * 2f;
+        var 입구p = c + new Vector3(Mathf.Cos(입구각), 0f, Mathf.Sin(입구각)) * Mathf.Min(굴반경 * 0.45f, 26f);
+        var 줄기들 = new Stack<(Vector3 p, float dir, int 걸음)>();
+        줄기들.Push((입구p, 입구각 + Mathf.PI, 규모 * 3 + 8));
+        float 씨 = Random.value * 512f;
+        int 가지 = 0;
+        while (줄기들.Count > 0)
+        {
+            var (p, dir, 걸음) = 줄기들.Pop();
+            float t = Random.value * 64f;
+            for (int i = 0; i < 걸음; i++)
+            {
+                t += 1f;
+                dir += (Mathf.PerlinNoise(씨, t * 0.13f) - 0.5f) * 1.5f;             // 구불구불
+                p += new Vector3(Mathf.Cos(dir), 0f, Mathf.Sin(dir)) * 1.5f;
+                p.x = Mathf.Clamp(p.x, 8f, WorldGrid.Size - 8f);
+                p.z = Mathf.Clamp(p.z, 8f, WorldGrid.Size - 8f);
+                if ((p - c).magnitude > 굴반경 * 0.62f)                              // 제 칸을 벗어나지 않게
+                    dir = Mathf.Atan2(c.z - p.z, c.x - p.x) + Random.Range(-0.6f, 0.6f);
+                float 폭 = Mathf.Lerp(1.1f, 3.4f, Mathf.PerlinNoise(씨 + 31f, t * 0.08f));   // 길 두께가 변한다
+                새기기(p, 폭, 2.7f + 폭 * 0.35f);
+                if (가지 < 규모 / 5 && 걸음 - i > 10 && Random.value < 0.045f)      // 곁가지
+                { 가지++; 줄기들.Push((p, dir + Random.Range(1.1f, 2.1f) * (Random.value < 0.5f ? 1f : -1f), (걸음 - i) / 2)); }
+                if (Random.value < 0.045f) 방파기(p);                                // 가다 불쑥 열리는 공간
+            }
+            방파기(p);                                                               // 막다른 끝은 공간이다
+        }
+
+        // ── ② 살 — 판 자리를 두 칸(4m) 두께의 바위가 감싼다
+        var 살 = new HashSet<(int, int)>();
+        foreach (var k in 천장.Keys)
+            for (int dx = -2; dx <= 2; dx++)
+                for (int dz = -2; dz <= 2; dz++)
+                {
+                    var k2 = (k.ix + dx, k.iz + dz);
+                    if (!천장.ContainsKey(k2)) 살.Add(k2);
+                }
+
+        // 입구 앞은 튼다 — 살로 막으면 못 들어간다
+        var 바깥벡 = new Vector3(Mathf.Cos(입구각), 0f, Mathf.Sin(입구각));
+        살.RemoveWhere(k =>
+        {
+            var q = new Vector3(k.Item1 * 칸, 0f, k.Item2 * 칸) - 입구p;
+            float 앞 = Vector3.Dot(q, 바깥벡);
+            return 앞 > -1f && 앞 < 9f && (q - 바깥벡 * 앞).magnitude < 2.8f;
+        });
+
+        // 갇힌 빈칸은 돌이 된다 — 밖에서 걸어 들어갈 수 없는 구멍은 지형이 아니라 얼룩이다
+        int bxMin = int.MaxValue, bxMax = int.MinValue, bzMin = int.MaxValue, bzMax = int.MinValue;
+        foreach (var k in 천장.Keys) { bxMin = Mathf.Min(bxMin, k.ix); bxMax = Mathf.Max(bxMax, k.ix); bzMin = Mathf.Min(bzMin, k.iz); bzMax = Mathf.Max(bzMax, k.iz); }
+        bxMin -= 3; bxMax += 3; bzMin -= 3; bzMax += 3;
+        int W = bxMax - bxMin + 1, H = bzMax - bzMin + 1;
+        var 닿음 = new bool[W, H];
+        var 큐 = new Queue<(int, int)>();
+        bool 빈칸(int ix, int iz) => !천장.ContainsKey((ix, iz)) && !살.Contains((ix, iz));
+        void 씨앗(int ix, int iz)
+        {
+            if (ix < bxMin || ix > bxMax || iz < bzMin || iz > bzMax) return;
+            if (닿음[ix - bxMin, iz - bzMin] || !빈칸(ix, iz)) return;
+            닿음[ix - bxMin, iz - bzMin] = true; 큐.Enqueue((ix, iz));
+        }
+        for (int ix = bxMin; ix <= bxMax; ix++) { 씨앗(ix, bzMin); 씨앗(ix, bzMax); }
+        for (int iz = bzMin; iz <= bzMax; iz++) { 씨앗(bxMin, iz); 씨앗(bxMax, iz); }
+        while (큐.Count > 0)
+        {
+            var (qx, qz) = 큐.Dequeue();
+            씨앗(qx - 1, qz); 씨앗(qx + 1, qz); 씨앗(qx, qz - 1); 씨앗(qx, qz + 1);
+        }
+        for (int ix = bxMin; ix <= bxMax; ix++)
+            for (int iz = bzMin; iz <= bzMax; iz++)
+                if (빈칸(ix, iz) && !닿음[ix - bxMin, iz - bzMin]) 살.Add((ix, iz));
+
+        // ── ③ 짓는다 — 전부 격자 재질 (바닥이고 벽이고 모두 격자형식으로)
+        GameObject 격자상자(Vector3 pos, Vector3 size, Color col, string name, float blockR)
+        {
+            var g = Grey.Box(루트.transform, pos, size, col, name, blockR, 0f);
+            g.GetComponent<MeshRenderer>().sharedMaterial = Grey.격자Mat(col);
+            return g;
+        }
+
+        foreach (var kv in 천장)
+        {
+            var p2 = new Vector3(kv.Key.ix * 칸, 0f, kv.Key.iz * 칸);
+            격자상자(p2 + Vector3.up * 0.08f, new Vector3(칸 * 1.03f, 0.16f, 칸 * 1.03f), 직소상자.C굴바닥, "바닥", 0f);
+            격자상자(p2 + Vector3.up * (kv.Value + 0.2f), new Vector3(칸 * 1.03f, 0.4f, 칸 * 1.03f), 직소상자.C굴덮개, "덮개", 0f);
+            // 높은 공간엔 가끔 돌기둥 — 빈 방이 심심하지 않게, 몸을 숨길 데가 생기게
+            if (kv.Value > 4f && Random.value < 0.035f)
+                격자상자(p2 + Vector3.up * Random.Range(0.6f, 1f), new Vector3(0.55f, Random.Range(1.1f, 2f), 0.55f), 직소상자.C굴벽, "돌기둥", 0.4f);
+        }
+        foreach (var k in 살)
+        {
+            var p2 = new Vector3(k.Item1 * 칸, 0f, k.Item2 * 칸);
+            float h = Random.Range(4.8f, 6.2f);
+            격자상자(p2 + Vector3.up * (h * 0.5f - 0.2f), new Vector3(칸 * 1.04f, h, 칸 * 1.04f), 직소상자.C굴덮개, "덮개산", 칸 * 0.52f);
+        }
+
+        루트.AddComponent<굴가림>();
+    }
+
+    // (2026-08-11) 직소 방을 감싸던 「살채우기」는 웜 방식 동굴터가 제 살을 직접 채우면서 걷어냈다
 
     // ★★폐허는 **조각을 이어 붙여** 짓는다 (2026-08-06 사용자 — 마인크래프트 직소 방식).
     //   전에는 돌기둥을 원으로 둘러 세우기만 했다. 그건 매번 「원」이라 두 번만 봐도 같다.
@@ -690,6 +969,105 @@ public class WorldGen : MonoBehaviour
         //   시작 바닥같은거 지우라니까"). 처음엔 10×4×10 빨간 덩어리, 그다음엔 낮은
         //   바닥판으로 줄였는데 그것도 눈에 거슬린다. 자리 표시가 화면을 더럽히면
         //   표시로서 값을 못 한다 — 진짜 부화터 모델이 생기면 위 `Swap` 이 세운다.
+    }
+
+    // ══════════════════════════════════════════ ★테마 권역 소품 (2026-08-11)
+    //  전부 색칠한 상자다 (규칙 9-1 「상자 먼저, 모델 나중」) — 진짜 모델이 오면
+    //  「테마 권역 프리팹」 칸에 꽂는다. 코드는 안 고쳐도 된다.
+
+    void 찰흙터(Vector3 c)
+    {
+        // 낮고 퍼진 덩어리 — 뭉쳐 놓은 찰흙 무더기로 읽힌다
+        int count = Random.Range(14, 24);
+        float spread = Random.Range(35f, 55f);
+        for (int i = 0; i < count; i++)
+        {
+            var p = Scatter(c, spread);
+            if (물인가(p)) continue;
+            if (Swap(찰흙프리팹, p, true, -1f)) continue;
+            float w = Random.Range(1.5f, 4f), h = w * Random.Range(0.35f, 0.6f);
+            Grey.Box(holder, p + Vector3.up * (h * 0.45f),
+                     new Vector3(w, h, w * Random.Range(0.8f, 1.2f)),
+                     Random.value < 0.5f ? C찰흙A : C찰흙B, "찰흙덩이",
+                     w >= 2.5f ? w * 0.45f : 0f, Random.value * 360f);
+        }
+    }
+
+    void 솜털실터(Vector3 c)
+    {
+        // 파스텔 실뭉치 — 가끔 실타래 기둥이 선다
+        int count = Random.Range(16, 26);
+        float spread = Random.Range(35f, 55f);
+        for (int i = 0; i < count; i++)
+        {
+            var p = Scatter(c, spread);
+            if (물인가(p)) continue;
+            if (Swap(솜털실프리팹, p, true, -1f)) continue;
+            var 색 = Random.value < 0.5f ? C솜털A : C솜털B;
+            if (Random.value < 0.2f)
+            {
+                float h = Random.Range(4f, 7f);
+                Grey.Box(holder, p + Vector3.up * (h * 0.45f), new Vector3(1.1f, h, 1.1f),
+                         색, "실기둥", 0.7f, Random.value * 360f);
+            }
+            else
+            {
+                float w = Random.Range(1.2f, 2.6f);
+                Grey.Box(holder, p + Vector3.up * (w * 0.45f), new Vector3(w, w, w), 색, "실뭉치",
+                         w >= 2f ? w * 0.5f : 0f, Random.value * 360f);
+            }
+        }
+    }
+
+    void 블록터(Vector3 c)
+    {
+        // 원색 블록 — 두세 개씩 쌓인 탑이 블록 장난감으로 읽힌다
+        int count = Random.Range(12, 20);
+        float spread = Random.Range(30f, 50f);
+        for (int i = 0; i < count; i++)
+        {
+            var p = Scatter(c, spread);
+            if (물인가(p)) continue;
+            if (Swap(블록프리팹, p, true, -1f)) continue;
+            float w = Random.Range(1.4f, 3f);
+            int 층 = Random.Range(1, 4);
+            float yaw = Random.value * 360f;
+            for (int j = 0; j < 층; j++)
+            {
+                float bw = w * (1f - j * 0.18f);
+                Grey.Box(holder, p + Vector3.up * (w * 0.5f + j * w * 0.92f),
+                         new Vector3(bw, w * 0.9f, bw),
+                         C블록들[Random.Range(0, C블록들.Length)], "블록",
+                         j == 0 && w >= 2f ? w * 0.5f : 0f, yaw + j * 14f);
+            }
+        }
+    }
+
+    void 유리설원터(Vector3 c)
+    {
+        // 희고 시린 밭 — 가늘고 큰 유리 조각이 서 있고 사이에 눈더미가 깔린다
+        int count = Random.Range(16, 28);
+        float spread = Random.Range(35f, 60f);
+        for (int i = 0; i < count; i++)
+        {
+            var p = Scatter(c, spread);
+            if (물인가(p)) continue;
+            if (Swap(유리설원프리팹, p, true, -1f)) continue;
+            var 색 = Random.value < 0.6f ? C유리A : C유리B;
+            if (Random.value < 0.4f)
+            {
+                float h = Random.Range(3.5f, 8f);
+                Grey.Box(holder, p + Vector3.up * (h * 0.42f),
+                         new Vector3(Random.Range(0.5f, 1f), h, Random.Range(0.5f, 1f)),
+                         색, "유리조각", 0.6f, Random.value * 360f);
+            }
+            else
+            {
+                float w = Random.Range(1f, 2.4f), h = w * Random.Range(0.5f, 0.8f);
+                Grey.Box(holder, p + Vector3.up * (h * 0.45f), new Vector3(w, h, w), 색, "눈더미",
+                         0f, Random.value * 360f);
+            }
+        }
     }
 
     /// 물은 **땅에 칠한다** (`GroundPaint`) — 겹침·정렬 문제가 없고 픽셀 화면과도 맞는다.
@@ -901,7 +1279,10 @@ public class WorldGen : MonoBehaviour
     {
         if (!자잼) 자재기();
         var 중심 = WorldGrid.TileCenter(gx, gz);
-        float 반 = WorldGrid.Tile * 0.48f;
+        // ★0.48 → 0.5 (2026-08-11 사용자 "왜케 중간중간 뚝뚝 길게끊어진 구간들이 있지?") —
+        //   0.48 로 자르니 칸(160m)마다 못 심는 6.4m 띠가 남아 **모든 칸 경계가 일직선으로
+        //   비었다.** 겹침 방지는 이제 「주인 정하기」(아래 뿌리기 함수들)가 한다
+        float 반 = WorldGrid.Tile * 0.5f;
         var st = Random.state;
 
         if (k != Land.숲) 나무뿌리기(중심, 반);          // 숲 칸은 `Forest()` 가 따로 심는다
@@ -928,15 +1309,22 @@ public class WorldGen : MonoBehaviour
     void 나무뿌리기(Vector3 중심, float 반)
     {
         float 격자 = Mathf.Max(2f, 나무간격);
-        int r = Mathf.CeilToInt(반 / 격자);
+        int r = Mathf.CeilToInt(반 / 격자) + 1;
         for (int ix = -r; ix <= r; ix++)
             for (int iz = -r; iz <= r; iz++)
             {
                 int cx = Mathf.FloorToInt((중심.x + ix * 격자) / 격자);
                 int cz = Mathf.FloorToInt((중심.z + iz * 격자) / 격자);
-                Random.InitState(WorldGrid.TileSeed(0x7ee5, cx, cz));
 
                 var 칸중심 = new Vector3((cx + 0.5f) * 격자, 0f, (cz + 0.5f) * 격자);
+                // ★★칸 경계의 빈 띠를 없앤다 — **주인 정하기** (2026-08-11). 씨앗칸의 중심이
+                //   든 칸이 그 씨앗칸의 주인이다. 반개구간([-반, 반))이라 이웃 칸이 같은
+                //   씨앗칸을 또 심는 일도 없다 — 전엔 「나무가 중심에서 76.8m 안」으로 잘라
+                //   칸 경계마다 6.4m 빈 띠가 일직선으로 남았다
+                if (칸중심.x - 중심.x < -반 || 칸중심.x - 중심.x >= 반
+                 || 칸중심.z - 중심.z < -반 || 칸중심.z - 중심.z >= 반) continue;
+                Random.InitState(WorldGrid.TileSeed(0x7ee5, cx, cz));
+
                 float 숲 = 진하기(칸중심, 숲자);
                 if (숲 <= 0f) continue;
 
@@ -969,7 +1357,7 @@ public class WorldGen : MonoBehaviour
                     // 심지에서는 흩어지는 폭을 좁혀 **서로 붙여** 심는다 — 이게 틈을 없앤다
                     float 퍼짐 = 격자 * Mathf.Lerp(0.95f, 0.45f, 심지);
                     var at = 칸중심 + new Vector3(Random.value - 0.5f, 0f, Random.value - 0.5f) * 퍼짐;
-                    if (Mathf.Abs(at.x - 중심.x) > 반 || Mathf.Abs(at.z - 중심.z) > 반) continue;
+                    // ★칸 밖으로 반 발짝 삐져나가는 건 그냥 둔다 — 주인이 하나뿐이라 겹치지 않는다
                     if (!GroundPaint.잔디인가(at)) continue;
                     // 빽빽한 곳은 어리고 성긴 곳은 굵다 — 서로 빛을 다투는 숲의 모습
                     float h = Random.Range(4.5f, 8.5f) * Mathf.Lerp(1.1f, 0.85f, 숲);   // ★7~13 → 4.5~8.5
@@ -984,15 +1372,18 @@ public class WorldGen : MonoBehaviour
     void 돌뿌리기(Vector3 중심, float 반, float 배)
     {
         float 격자 = Mathf.Max(2f, 돌간격);
-        int r = Mathf.CeilToInt(반 / 격자);
+        int r = Mathf.CeilToInt(반 / 격자) + 1;
         for (int ix = -r; ix <= r; ix++)
             for (int iz = -r; iz <= r; iz++)
             {
                 int cx = Mathf.FloorToInt((중심.x + ix * 격자) / 격자);
                 int cz = Mathf.FloorToInt((중심.z + iz * 격자) / 격자);
-                Random.InitState(WorldGrid.TileSeed(0x3c1d, cx, cz));
 
                 var 칸중심 = new Vector3((cx + 0.5f) * 격자, 0f, (cz + 0.5f) * 격자);
+                // ★주인 정하기 — 나무뿌리기와 같은 이유 (칸 경계의 빈 띠 방지, 2026-08-11)
+                if (칸중심.x - 중심.x < -반 || 칸중심.x - 중심.x >= 반
+                 || 칸중심.z - 중심.z < -반 || 칸중심.z - 중심.z >= 반) continue;
+                Random.InitState(WorldGrid.TileSeed(0x3c1d, cx, cz));
                 float 진 = 진하기(칸중심, 배 > 1.5f ? 돌자_바위 : 돌자) * 길에서멂(칸중심);
                 if (진 <= 0.02f) continue;
 
@@ -1003,7 +1394,6 @@ public class WorldGen : MonoBehaviour
                 for (int i = 0; i < n; i++)
                 {
                     var at = 칸중심 + new Vector3(Random.value - 0.5f, 0f, Random.value - 0.5f) * 격자 * 0.95f;
-                    if (Mathf.Abs(at.x - 중심.x) > 반 || Mathf.Abs(at.z - 중심.z) > 반) continue;
                     if (!GroundPaint.잔디인가(at)) continue;
                     // ★★**작은 돌은 안 막는다** (2026-08-06 사용자 "작은 돌들은 그냥
                     //   지나가지던가 해야 하는데 전부 막혀서 힘들어").

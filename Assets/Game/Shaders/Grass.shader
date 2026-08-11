@@ -266,6 +266,65 @@ Shader "Toyra/Grass"
             }
             ENDHLSL
         }
+
+        // ★★★**법선 패스가 없으면 화면에 흰 덩어리가 뜬다** (2026-08-11 사용자 "나무에 하얀
+        //   빛나오는버그 또생겼어"). 이 프로젝트의 SSAO 는 `Source = Depth Normals` 라
+        //   (실측: PC_Renderer.asset 의 `Source: 1`), 이 패스가 없는 물체는 법선 텍스처에
+        //   **아무것도 안 적고** SSAO 가 그 자리에서 쓰레기 값을 읽어 **흰색**으로 터진다.
+        //   ☆2026-08-09 에 `단색나무` 만 고쳤는데, 나무 **밑동에 나는 풀**(`GrassField`)이
+        //     같은 병을 앓고 있었다 — 그래서 "나무에서" 다시 나온 것이다.
+        Pass
+        {
+            Name "DepthNormals"
+            Tags { "LightMode" = "DepthNormals" }
+            ZWrite On
+
+            HLSLPROGRAM
+            #pragma vertex normVert
+            #pragma fragment normFrag
+            #pragma multi_compile_instancing
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+            TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
+            CBUFFER_START(UnityPerMaterial)
+                float4 _BaseMap_ST;
+                float4 _Tint;
+                float  _WorldSize;
+                float  _Cutoff;
+            CBUFFER_END
+
+            struct NormIn
+            {
+                float4 positionOS : POSITION;
+                float3 normalOS : NORMAL;
+                float2 uv : TEXCOORD0;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
+            };
+            struct NormOut
+            {
+                float4 positionCS : SV_POSITION;
+                float3 normalWS : TEXCOORD0;
+                float2 uv : TEXCOORD1;
+            };
+
+            NormOut normVert(NormIn IN)
+            {
+                NormOut OUT;
+                UNITY_SETUP_INSTANCE_ID(IN);
+                OUT.positionCS = TransformObjectToHClip(IN.positionOS.xyz);
+                OUT.normalWS = TransformObjectToWorldNormal(IN.normalOS);
+                OUT.uv = TRANSFORM_TEX(IN.uv, _BaseMap);
+                return OUT;
+            }
+
+            half4 normFrag(NormOut IN) : SV_Target
+            {
+                half a = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv).a;
+                clip(a - _Cutoff);
+                return half4(normalize(IN.normalWS), 0);
+            }
+            ENDHLSL
+        }
     }
 
     FallBack "Universal Render Pipeline/Lit"

@@ -24,8 +24,11 @@ public static class 직소상자
     public static readonly Color C기둥 = new Color(0.56f, 0.54f, 0.48f);
     public static readonly Color C잡동 = new Color(0.58f, 0.53f, 0.40f);
     public static readonly Color C이끼 = new Color(0.30f, 0.38f, 0.24f);
-    public static readonly Color C굴벽 = new Color(0.33f, 0.31f, 0.30f);
-    public static readonly Color C굴바닥 = new Color(0.26f, 0.25f, 0.24f);
+    // ★★바닥과 벽을 **색으로 갈라 놓는다** (2026-08-11) — 셋이 다 0.26~0.33 이라 들어가서
+    //   보면 바닥인지 벽인지 구분이 안 됐다. 벽을 밝게 올려 길이 읽히게 한다
+    public static readonly Color C굴벽 = new Color(0.46f, 0.44f, 0.42f);
+    public static readonly Color C굴바닥 = new Color(0.21f, 0.20f, 0.20f);
+    public static readonly Color C굴덮개 = new Color(0.44f, 0.41f, 0.39f);
 
     // ───────────────────────────────── ① 야외 폐허
 
@@ -164,6 +167,11 @@ public static class 직소상자
         창고정리();
         return new List<직소.주머니>
         {
+            // ★★입구가 첫 조각이다 (2026-08-11 사용자 "밖에서 보면 막힌 지형인데, 입구가
+            //   있고, 들어가면 좀보이드처럼 투시되서 보이는"). 남쪽 담의 틈에는 **이음이
+            //   없어서 막음 조각이 영영 안 온다** — 그 3.2m 가 밖으로 나가는 유일한 틈새다
+            new 직소.주머니 { 이름 = "굴입구",
+                               조각들 = new[] { 굴입구방() } },
             new 직소.주머니 { 이름 = "굴방",
                                조각들 = new[] { 굴방(2), 굴방(3), 큰굴방() },
                                무게   = new[] { 5f,      4f,      1f },
@@ -188,8 +196,26 @@ public static class 직소상자
             바깥담(g, 네방향[i] * 6f, 네방향[i], 12f, 3.6f, i < 길수, C굴벽);
             if (i < 길수) 이음달기(g, "굴통로", 네방향[i] * 6f, 네방향[i]);
         }
+        지붕덮기(g, 12f, 12f);
         슬롯달기(g, "잡동사니", new Vector3(-3.2f, 0f, 2.6f));
         슬롯달기(g, "잡동사니", new Vector3(3.0f, 0f, -2.2f));
+        return g;
+    }
+
+    /// ★입구방 — 남쪽 담의 틈에 **이음을 안 단다.** 이음이 없으니 직소가 막음 조각을 못
+    ///   붙이고, 그 틈이 밖으로 나가는 유일한 「틈새」로 영영 남는다 (2026-08-11)
+    static GameObject 굴입구방()
+    {
+        var g = 새조각("굴_입구", new Vector3(0f, 2f, 0f), new Vector3(12f, 4f, 12f));
+        기단깔기(g, 12f, 12f, default, C굴바닥);
+        바깥담(g, 네방향[2] * 6f, 네방향[2], 12f, 3.6f, true, C굴벽);   // 열려 있되 이음 없음 = 입구
+        for (int i = 0; i < 4; i++)
+        {
+            if (i == 2) continue;
+            바깥담(g, 네방향[i] * 6f, 네방향[i], 12f, 3.6f, i < 2, C굴벽);
+            if (i < 2) 이음달기(g, "굴통로", 네방향[i] * 6f, 네방향[i]);
+        }
+        지붕덮기(g, 12f, 12f);
         return g;
     }
 
@@ -207,6 +233,7 @@ public static class 직소상자
             float a = i * Mathf.PI * 0.5f + 0.4f;
             상자(g, new Vector3(Mathf.Cos(a) * 5f, 2.4f, Mathf.Sin(a) * 5f), new Vector3(1.2f, 4.8f, 1.2f), C굴벽, "돌기둥");
         }
+        지붕덮기(g, 20f, 20f, default, 4.4f);
         슬롯달기(g, "잡동사니", Vector3.zero);
         슬롯달기(g, "잡동사니", new Vector3(-6f, 0f, 4f));
         return g;
@@ -220,6 +247,7 @@ public static class 직소상자
         상자(g, new Vector3(2.2f, 1.6f, 0f), new Vector3(0.6f, 3.2f, 길이), C굴벽, "벽");
         이음달기(g, "굴방", new Vector3(0f, 0f, 길이 * 0.5f), 네방향[0]);
         이음달기(g, "굴방", new Vector3(0f, 0f, -길이 * 0.5f), 네방향[2]);
+        지붕덮기(g, 4f, 길이, default, 3.2f);
         return g;
     }
 
@@ -232,6 +260,8 @@ public static class 직소상자
         상자(g, new Vector3(2f, 1.6f, -2.2f), new Vector3(12f, 3.2f, 0.6f), C굴벽, "벽");
         이음달기(g, "굴방", new Vector3(0f, 0f, 8f), 네방향[0]);
         이음달기(g, "굴방", new Vector3(8f, 0f, 0f), 네방향[1]);
+        지붕덮기(g, 4f, 12f, new Vector3(0f, 0f, 2f), 3.2f);
+        지붕덮기(g, 12f, 4f, new Vector3(2f, 0f, 0f), 3.2f);
         return g;
     }
 
@@ -268,6 +298,19 @@ public static class 직소상자
     static void 기단깔기(GameObject g, float 가로, float 세로, Vector3 자리 = default, Color? 색 = null)
         => 상자(g, 자리 + new Vector3(0f, 0.08f, 0f), new Vector3(가로, 0.16f, 세로), 색 ?? C기단, "바닥");
 
+    /// ★동굴 덮개 — 밖에서는 막힌 바위 더미로 보이고, 들어가면 `굴가림` 이 걷는다 (2026-08-11
+    ///   사용자 "밖에서 보면 막힌 지형인데, 입구가 있고, 들어가면 좀보이드처럼 투시되서 보이는").
+    ///   이름이 「덮개」로 시작해야 한다 — `직소` 가 장애물을 안 깔고, `굴가림` 이 이 이름만 걷는다.
+    ///   판때기 하나면 뚜껑으로 읽혀서, 위에 바위 혹을 얹어 「막힌 지형」으로 만든다
+    static void 지붕덮기(GameObject g, float 가로, float 세로, Vector3 자리 = default, float 높이 = 3.6f)
+    {
+        상자(g, 자리 + new Vector3(0f, 높이 + 0.25f, 0f), new Vector3(가로 + 1.4f, 0.5f, 세로 + 1.4f), C굴덮개, "덮개");
+        상자(g, 자리 + new Vector3(가로 * 0.18f, 높이 + 1.1f, -세로 * 0.12f),
+             new Vector3(가로 * 0.5f, 1.8f, 세로 * 0.45f), C굴덮개, "덮개혹");
+        상자(g, 자리 + new Vector3(-가로 * 0.2f, 높이 + 0.8f, 세로 * 0.15f),
+             new Vector3(가로 * 0.36f, 1.2f, 세로 * 0.3f), C굴덮개, "덮개혹2");
+    }
+
     /// 한 면의 담. `열림` 이면 가운데를 비워 두 토막으로 세운다.
     /// ★야외는 `높이` 를 낮게 준다 — 담이 높으면 아이소 시점에서 안이 안 보인다
     static void 바깥담(GameObject g, Vector3 자리, Vector3 밖, float 길이, float 높이, bool 열림, Color? 색 = null)
@@ -299,7 +342,9 @@ public static class 직소상자
         b.transform.localPosition = 자리;
         b.transform.localScale = 크기;
         Grey.Strip(b);
-        b.GetComponent<MeshRenderer>().sharedMaterial = Grey.Mat(색);
+        // ★격자 재질 (2026-08-11 사용자 "바닥이고 벽이고 모두 격자형식으로") —
+        //   땅의 칸 규칙이 동굴의 바닥·벽·덮개에도 그대로 얹힌다
+        b.GetComponent<MeshRenderer>().sharedMaterial = Grey.격자Mat(색);
     }
 
     /// ★이음 표식은 **+Z 가 바깥**을 봐야 한다 — 조립기가 그걸로 방향을 맞춘다

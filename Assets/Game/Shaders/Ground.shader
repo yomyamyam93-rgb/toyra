@@ -33,6 +33,7 @@ Shader "Toyra/Ground"
         //   비어 땅이 안 나왔다. (float·벡터배열은 안 적어도 들어가서 더 헷갈렸다)
         [NoScaleOffset] _PhotoArr("사진 배열", 2DArray) = "" {}
         _RockMap("바위지대 분포", 2D) = "black" {}
+        _ThemeMap("테마 권역 바닥색 (A 세기)", 2D) = "black" {}
         _PhotoTiling("사진 반복 (1m 당 몇 장)", Float) = 0.25
         _PhotoBand("섞이는 폭 (작을수록 또렷하게 갈린다)", Range(0.02,0.6)) = 0.18
         _PhotoShade("큰 명암 흔들기", Range(0,0.5)) = 0.12
@@ -76,6 +77,7 @@ Shader "Toyra/Ground"
             TEXTURE2D(_BaseMap);  SAMPLER(sampler_BaseMap);
             TEXTURE2D(_MaskMap);  SAMPLER(sampler_MaskMap);
             TEXTURE2D(_RockMap);  SAMPLER(sampler_RockMap);
+            TEXTURE2D(_ThemeMap); SAMPLER(sampler_ThemeMap);
             TEXTURE2D(_GrassTex); SAMPLER(sampler_GrassTex);
             TEXTURE2D(_DirtTex);  SAMPLER(sampler_DirtTex);
             TEXTURE2D(_SandTex);  SAMPLER(sampler_SandTex);
@@ -217,6 +219,13 @@ Shader "Toyra/Ground"
                     albedo = base.rgb * f;
                 }
 
+                // ★테마 권역 바닥 (2026-08-11 사용자 "바닥색은 그대로인데? 다 풀아님 흙인데?")
+                //   — 권역 색으로 바닥을 물들인다. 9×9 지도를 부드럽게 늘려 읽으니 경계가
+                //   스르르 넘어간다. 물(mask.a = 0)에는 안 얹는다. 결·명암은 밑색에 이미
+                //   들어 있어 완전히 덮지 않고 A(세기)만큼만 섞는다.
+                half4 theme = SAMPLE_TEXTURE2D(_ThemeMap, sampler_ThemeMap, IN.uv);
+                albedo = lerp(albedo, theme.rgb, theme.a * mask.a);
+
                 // ★★칸마다 밝기를 조금씩 흔든다 (2026-08-09 사용자 "칸칸마다 색이 조금
                 //   달라야하는데말이지"). **월드 좌표로 계산**해서 판때기와 격자 메시가
                 //   같은 무늬를 받는다 — 정점 색을 쓰면 판때기엔 그 스트림이 없어 못 쓴다.
@@ -279,6 +288,34 @@ Shader "Toyra/Ground"
             }
 
             half4 depthFrag(DepthOut IN) : SV_Target { return 0; }
+            ENDHLSL
+        }
+
+        // ★법선 패스 — 없으면 SSAO(Depth Normals)가 이 면에서 쓰레기 값을 읽어 흰 덩어리가
+        //   생긴다 (2026-08-11, `Grass.shader` 와 같은 병). 땅은 완전 평지라 법선은 늘 위다
+        Pass
+        {
+            Name "DepthNormals"
+            Tags { "LightMode" = "DepthNormals" }
+            ZWrite On
+
+            HLSLPROGRAM
+            #pragma vertex normVert
+            #pragma fragment normFrag
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+            struct NormIn  { float4 positionOS : POSITION; float3 normalOS : NORMAL; };
+            struct NormOut { float4 positionCS : SV_POSITION; float3 normalWS : TEXCOORD0; };
+
+            NormOut normVert(NormIn IN)
+            {
+                NormOut OUT;
+                OUT.positionCS = TransformObjectToHClip(IN.positionOS.xyz);
+                OUT.normalWS = TransformObjectToWorldNormal(IN.normalOS);
+                return OUT;
+            }
+
+            half4 normFrag(NormOut IN) : SV_Target { return half4(normalize(IN.normalWS), 0); }
             ENDHLSL
         }
     }
