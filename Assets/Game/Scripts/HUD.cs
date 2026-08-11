@@ -79,6 +79,8 @@ public class HUD : MonoBehaviour
         // ── 생존 — ★평소엔 아무것도 안 뜬다. 문턱을 넘을 때만 뜬다 (5-5 · 11장)
         생존그리기(h);
 
+        채집그리기(h);
+
         // ── 모닥불 — 짓는 게이지 · 남은 불 · 알림 (수치와 상태만)
         모닥불그리기(h);
 
@@ -191,6 +193,20 @@ public class HUD : MonoBehaviour
 
         if (!string.IsNullOrEmpty(불.알림))
             GUI.Label(new Rect(x, y + 12f, 140f, 18f), 불.알림, s);
+    }
+
+    /// ★★채집 게이지 — **캘 때만** 뜬다 (11장 · 기획 5-7 "상시로 뜨는 것은 무게 막대 하나뿐").
+    ///   머리 위에 띄운다 — 몸이 하는 일(쪼그려 앉아 뒤적임)과 같은 자리라야 읽힌다.
+    ///   ☆글자를 안 쓴다. 막대가 스스로 말한다 (11장 "이 문장이 없으면 화면을 못 읽는가?").
+    void 채집그리기(Hero h)
+    {
+        if (!HeroAttack.채집중) return;
+        var cam = Camera.main;
+        if (cam == null) return;
+        var sp = cam.WorldToScreenPoint(h.transform.position + Vector3.up * (h.height + 0.45f));
+        if (sp.z <= 0f) return;
+        Bar(sp.x - 34f, Screen.height - sp.y, 68f, 7f,
+            HeroAttack.채집게이지, new Color(0.85f, 0.80f, 0.55f));
     }
 
     void Bar(float x, float y, float w, float h, float t, Color c)

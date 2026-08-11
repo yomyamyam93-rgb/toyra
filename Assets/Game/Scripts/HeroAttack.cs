@@ -32,7 +32,21 @@ using UnityEngine.InputSystem;
 [ExecuteAlways]
 public class HeroAttack : MonoBehaviour
 {
-    enum State { 쉼, 예비, 휘두름, 여운 }
+    // ★★★★**채집** (2026-08-11 사용자 "갈무리, 쪼그려앉아서 뒤적이는 모션 넣어줄래?
+    //   그런다음 게이지 다 차게되면…" · "나무나 돌 캐기도 클릭하면 동작이 있고 게이지로").
+    //   옛 방식은 **휘두름 한 번 = 한 칸**이라 캐는 것도 때리는 것과 같은 몸짓이었다.
+    //   이제 **누르고 있으면 게이지가 찬다** — 갈무리는 쪼그려 앉아 뒤적이고,
+    //   나무·돌은 몸을 숙여 계속 판다.
+    enum State { 쉼, 예비, 휘두름, 여운, 채집 }
+
+    [Header("★채집 (누르고 있으면 캔다)")]
+    [Tooltip("이만큼 누르고 있으면 채집으로 넘어간다 (초) — 짧게 딸깍하면 그냥 공격이다")]
+    [Range(0.05f, 0.6f)] public float 채집지연 = 0.16f;
+    [Tooltip("채집하는 동안의 걷는 속도 배")] [Range(0f, 1f)] public float 채집이속 = 0.3f;
+    Harvest 채집대상;
+    /// HUD 가 읽는다 — 상시로 안 띄우고 **캘 때만** 뜬다 (11장 · 기획 5-7)
+    public static bool 채집중;
+    public static float 채집게이지;
 
     [Header("때리기 — 3막")]
     [Tooltip("예비 동작 (초) — 뒤로 감는 시간")] public float 예비 = 0.14f;
@@ -478,8 +492,9 @@ public class HeroAttack : MonoBehaviour
             if (state == State.쉼 && cd <= 0f)
                 감은시간 = 좌 ? Mathf.Min(예비, 감은시간 + dt)
                              : Mathf.Max(0f, 감은시간 - dt * 2f);   // 놓으면 스르륵 풀린다
-            bool 또칠건가 = 좌 || Time.time <= 공격예약;
-            bool 싸우는중 = 또칠건가 || state != State.쉼;
+            bool 또칠건가 = (좌 || Time.time <= 공격예약) && state != State.채집;
+            // ★채집 중엔 팔을 들지 않는다 — 쪼그려 앉아 뒤적이는 것이라 손이 아래에 있다
+            bool 싸우는중 = 또칠건가 || (state != State.쉼 && state != State.채집);
             // ★클립이 꽂혀 있으면 **팔 자세 코드는 아예 안 돈다** — 같은 뼈를 놓고 다투면
             //   HeroHold 가 들어 올린 것을 클립이 다시 덮어써서 헛돌기만 한다.
             드는자세.목표 = 공격클립 != null ? 0f : (싸우는중 ? 1f : 0f);
@@ -515,8 +530,41 @@ public class HeroAttack : MonoBehaviour
         // ── 상태 진행
         switch (state)
         {
+            case State.채집:
+            {
+                t += dt;
+                hero.MoveMul = 채집이속;              // 쪼그려 앉아 뒤적이는 동안은 느리다
+                채집중 = true;
+                if (채집대상 == null || !누름중) { 채집끝(); break; }
+                var v채 = 채집대상.transform.position - transform.position; v채.y = 0f;
+                if (v채.magnitude - 채집대상.반경 > 사거리 + 1.2f) { 채집끝(); break; }   // 멀어지면 끊긴다
+                채집게이지 += 채집대상.캐는속도() * dt;
+                if (채집게이지 >= 1f)
+                {
+                    채집게이지 = 0f;
+                    var 방향 = v채.sqrMagnitude > 1e-4f ? v채.normalized : transform.forward;
+                    if (!채집대상.한칸(방향)) 채집끝();      // 다 캐서 사라졌다
+                }
+                break;
+            }
+
             case State.쉼:
                 hero.MoveMul = 1f;
+                채집중 = false; 채집게이지 = 0f;
+                // ★★★★**누르고 있으면 캔다** — 「앞에 무엇이 있느냐가 정한다」(4장).
+                //   짧게 딸깍하면 공격, 대상을 두고 **길게 누르면 채집**이다.
+                //   ☆지연을 두는 이유: 없으면 나무 옆에서 짐승을 때릴 수가 없다.
+                //     `감은시간` 은 누르고 있는 동안 흐르므로 그대로 자로 쓴다.
+                if (누름중 && cd <= 0f && 감은시간 >= 채집지연)
+                {
+                    var 대상 = Harvest.찾기(transform.position, hero.LookDir, 사거리 + 0.4f);
+                    if (대상 != null)
+                    {
+                        채집대상 = 대상; 채집게이지 = 0f; 감은시간 = 0f; 공격예약 = 0f;
+                        state = State.채집; t = 0f; 채집중 = true;
+                        break;
+                    }
+                }
                 // ★입력 버퍼 (2026-08-07 사용자 "짧게 클릭하면 공격이 안 나가네") —
                 //   쿨 중에 떼면 입력이 그냥 버려져서 손만 들다 말았다. 0.4초 안에
                 //   쿨이 풀리면 예약된 공격이 나간다. 격투 게임의 표준 수법이다.
@@ -601,6 +649,14 @@ public class HeroAttack : MonoBehaviour
                 if (t >= 여운) { state = State.쉼; cd = 공격쿨; Pose(0f, 0f); }   // 쿨이 리듬을 만든다
                 break;
         }
+    }
+
+    /// 채집을 끝낸다 — 놓았거나, 멀어졌거나, 다 캤거나
+    void 채집끝()
+    {
+        채집대상 = null; 채집게이지 = 0f; 채집중 = false;
+        state = State.쉼; t = 0f; 감은시간 = 0f;
+        cd = Mathf.Max(cd, 0.12f);      // 놓자마자 공격이 튀어나가지 않게 한 박자
     }
 
     /// 무기와 몸의 자세 — 예비엔 뒤로 감고, 휘두르면 앞으로 지나간다
@@ -884,6 +940,17 @@ public class HeroAttack : MonoBehaviour
                 빠르기 = 40f;                             // 이 구간만은 즉각 따라붙는다
                 break;
             }
+            // ★쪼그려 앉아 뒤적인다 — 몸을 낮추고 앞으로 숙인 채, 손이 오르내린다
+            case State.채집:
+            {
+                목표웅크림 = 1f;
+                목표무게 = 0.5f;
+                목표pitch = 16f + Mathf.Sin(t * 7f) * 4f;    // 뒤적이는 상하 움직임
+                목표yaw = Mathf.Sin(t * 3.1f) * 5f;          // 좌우로 조금씩 헤집는다
+                빠르기 = 12f;
+                break;
+            }
+
             case State.여운:
             {
                 float sm = Mathf.SmoothStep(0f, 1f, t / Mathf.Max(0.01f, 여운));

@@ -164,7 +164,41 @@ public class Harvest : MonoBehaviour
     [Tooltip("켜면 바라보는 방향을 안 본다 — 옆에 있기만 하면 된다 (사체가 그렇다)")]
     public bool 방향무관 = false;
 
-    public static bool TryHarvest(Vector3 from, Vector3 look, float reach)
+    // ★★★★**게이지 채집** (2026-08-11 사용자 "갈무리, 쪼그려앉아서 뒤적이는 모션 넣어줄래?
+    //   그런다음 게이지 다 차게되면…" · "나무나 돌 캐기도 클릭하면 동작이 있고 게이지로").
+    //   옛 방식은 **휘두름 한 번 = 한 칸**이었다. 이제 **누르고 있으면 게이지가 찬다.**
+    //   ☆속도는 도구가 정한다 (헌법 5-4 "맨손도 되긴 하되 아주 느리다").
+    [Tooltip("도구 성능 3 기준으로 한 칸을 캐는 데 걸리는 시간 (초)")]
+    [Range(0.15f, 3f)] public float 한칸시간 = 0.55f;
+
+    /// 지금 이 대상을 캐는 속도 (초당 몇 칸) — 도구가 없으면 3분의 1
+    public float 캐는속도()
+    {
+        float 일 = 3f;                                   // 도구 개념이 없는 것(사체)은 기준 속도
+        if (맞는쓰임 != null)
+        {
+            var 도구 = 인벤.어느통에든도구(맞는쓰임);
+            일 = 도구 != null ? 도구.종.성능 : 1f;         // 맨손은 3분의 1
+        }
+        return 일 / 3f / Mathf.Max(0.05f, 한칸시간);
+    }
+
+    /// 한 칸 진행 — 도구를 닳리고 실제로 지급한다. **더 캘 수 있으면 true**
+    public bool 한칸(Vector3 방향)
+    {
+        if (맞는쓰임 != null)
+        {
+            var 도구 = 인벤.어느통에든도구(맞는쓰임);
+            if (도구 != null) 인벤.어느통에서든닳음(도구);
+        }
+        bool 흔들던중 = shake > 0f;
+        shake = 1f;
+        if (!흔들던중) StartCoroutine(흔들기());
+        return 한타(방향);
+    }
+
+    /// 앞(또는 옆)의 가장 가까운 대상 — 캐기와 갈무리가 **같은 자**로 잰다
+    public static Harvest 찾기(Vector3 from, Vector3 look, float reach)
     {
         Harvest best = null; float bd = float.MaxValue;
         for (int i = All.Count - 1; i >= 0; i--)
@@ -178,6 +212,12 @@ public class Harvest : MonoBehaviour
                 && Vector3.Dot(v.normalized, look) < 0.2f) continue;   // 앞쪽만 (사체는 안 본다)
             bd = d; best = h;
         }
+        return best;
+    }
+
+    public static bool TryHarvest(Vector3 from, Vector3 look, float reach)
+    {
+        var best = 찾기(from, look, reach);
         if (best == null) return false;
         best.Chop(look);
         return true;
