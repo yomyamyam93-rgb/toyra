@@ -210,11 +210,20 @@ public class 격자바닥 : MonoBehaviour
             tri.Add(i); tri.Add(i + 2); tri.Add(i + 3);
         }
 
+        // ★★★**높이 계산도 나눠서 한다** (2026-08-11 실측 — 이동 중 끊김의 조각 하나).
+        //   코루틴은 **첫 `yield` 를 만날 때까지 부른 자리에서 그대로 실행된다.**
+        //   그래서 이 N×N 반복문이 첫 yield 앞에 있으면 「여러 프레임에 나눠 짓기」가
+        //   여기엔 안 걸리고 **통째로 LateUpdate 에 얹힌다** (실측 N=140 → 19,600번 · 6.1ms).
+        //   → 시작하자마자 한 번 숨을 돌리고, 높이도 몇 줄씩 끊어 계산한다.
+        yield return null;
         if (H == null || H.GetLength(0) < N) H = new float[N, N];   // 커질 때만 새로
         for (int z = 0; z < N; z++)
+        {
             for (int x = 0; x < N; x++)
                 H[x, z] = 땅격자.높이(x * 칸 - 반 + 원점.x + 칸 * 0.5f,
                                        z * 칸 - 반 + 원점.z + 칸 * 0.5f);
+            if ((z & 15) == 15) yield return null;      // 열여섯 줄마다 숨을 돌린다
+        }
 
         // 칸 하나의 세 겹: 안쪽 윗면(±안) → 베벨 링(±밖, 조금 낮게) → 홈벽(아래로)
         float 밖 = Mathf.Max(0.02f, 칸 * 0.5f - 틈 * 0.5f);
