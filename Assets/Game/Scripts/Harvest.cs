@@ -140,18 +140,27 @@ public class Harvest : MonoBehaviour
     }
 
     /// 앞쪽 가장 가까운 자원을 한 번 캔다
+    // ★★★**몸집을 봐 준다** (2026-08-11 사용자 "팻 죽이고나서 파밍하려하는데 파밍이
+    //   잘안돼, 범위가 좀 이상해"). 갈무리는 **중심 한 점**까지의 거리만 봤다.
+    //   그런데 사슴처럼 누운 사체는 몸이 1~2m 뻗어 있어서, **몸 옆에 딱 붙어 서 있어도
+    //   중심은 범위 밖**이었다. 때리는 쪽은 뼈 점 전부(`실루엣판정`)로 재니
+    //   "때릴 땐 맞는데 갈무리는 안 된다" 가 났다 — 두 자가 달랐던 것이다.
+    //   → 그 물체의 반경만큼 거리에서 빼 준다. `Carcass` 가 몸을 재서 넣어 준다.
+    [Tooltip("이 물체의 반경 (m) — 갈무리 거리에서 빼 준다. 사체는 몸을 재서 넣는다")]
+    public float 반경 = 0f;
+
     public static bool TryHarvest(Vector3 from, Vector3 look, float reach)
     {
-        Harvest best = null; float bd = reach * reach;
+        Harvest best = null; float bd = float.MaxValue;
         for (int i = All.Count - 1; i >= 0; i--)
         {
             var h = All[i];
             if (h == null) continue;
             var v = h.transform.position - from; v.y = 0f;
-            float d2 = v.sqrMagnitude;
-            if (d2 > bd) continue;
-            if (d2 > 0.01f && Vector3.Dot(v.normalized, look) < 0.2f) continue;   // 앞쪽만
-            bd = d2; best = h;
+            float d = Mathf.Max(0f, v.magnitude - h.반경);   // ★몸집만큼 봐 준다
+            if (d > reach || d > bd) continue;
+            if (v.sqrMagnitude > 0.01f && Vector3.Dot(v.normalized, look) < 0.2f) continue;   // 앞쪽만
+            bd = d; best = h;
         }
         if (best == null) return false;
         best.Chop(look);

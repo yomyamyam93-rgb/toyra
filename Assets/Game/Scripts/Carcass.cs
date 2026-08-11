@@ -47,6 +47,10 @@ public class Carcass : MonoBehaviour
         h.hits = 3;                                        // 세 번 갈라야 다 챙긴다
         h.perHit = Mathf.Max(1, Mathf.CeilToInt(고기량 / 3f));
         h.장애물치우기 = false;
+        // ★★**몸집을 재서 넣는다** — 갈무리 거리가 중심 한 점만 보면 큰 사체는
+        //   옆에 붙어 서도 손이 안 닿는다 (`Harvest.반경` 참고).
+        //   ☆종의 반지름이 아니라 **누운 몸의 실제 폭**을 쓴다 — 눕히면 키만큼 길어진다.
+        h.반경 = Mathf.Max(c.Radius, c.종.키 * 0.45f);
 
         var car = go.AddComponent<Carcass>();
         car.몸 = go.transform.childCount > 0 ? go.transform.GetChild(0) : null;
