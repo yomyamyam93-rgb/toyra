@@ -920,12 +920,22 @@ public class Critter : MonoBehaviour, IHittable
         return best;
     }
 
+    /// ★★**벽 너머는 못 본다** (2026-08-11 사용자 "동굴안에있는데 동굴 밖에있는것들이
+    ///   어떻게 보고 안쪽으로 애드를 내고 오는걸까? 그러면 안돼지않나?").
+    ///   맞는 지적이다 — 굴 안과 굴 밖 사이엔 **바위가 있다.** 그런데 감지는 거리와 각도만
+    ///   봐서 바위를 통째로 투시하고 있었다. 굴에 숨는다는 선택이 아무 뜻이 없었다.
+    ///   ☆헌법 7과 한 몸이다 — 「굴에 들어갈 이유」가 여기서 나온다. 못 보면 못 쫓아온다.
+    ///   ☆은퇴는 스위치 — 이상하면 `벽이시야막기` 를 끄면 옛날처럼 돌아간다.
+    public static bool 벽이시야막기 = true;
+
     bool 보이나(Vector3 p, float cos, ref float bd)
     {
         var v = p - transform.position; v.y = 0f;
         float d2 = v.sqrMagnitude;
         if (d2 > bd) return false;
         if (d2 > 0.01f && Vector3.Dot(v.normalized, transform.forward) < cos) return false;
+        // 굴 안팎이 갈리면 사이에 바위가 있다 — 안 보인다
+        if (벽이시야막기 && WorldGen.벽에막혔나(transform.position, p)) return false;
         bd = d2;
         return true;
     }

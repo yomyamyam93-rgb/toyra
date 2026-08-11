@@ -182,7 +182,12 @@ public class VisionCone : MonoBehaviour
             float ang = dd > 0.01f ? Vector3.Angle(look, v / dd) : 0f;
             float cone = 1f - Mathf.SmoothStep(halfAngle + 옆각, halfAngle + 옆각 + Mathf.Max(0.5f, edgeSoft), ang);
 
-            float lit = Mathf.Max(cone * far, near);
+            // ★★**벽 너머는 나도 못 본다** (2026-08-11 사용자 "동굴안에있을때는 바깥쪽에
+            //   있는데 시야차단되니까 안보여야하는게 맞지않아?"). 짐승이 나를 못 보는 것과
+            //   **같은 자로** 재야 한다 — 한쪽만 막으면 "쟨 보이는데 날 못 보네" 가 된다.
+            float lit = WorldGen.벽에막혔나(p, c.transform.position)
+                      ? 0f
+                      : Mathf.Max(cone * far, near);
             c.보이기(lit >= 숨김문턱);
         }
     }

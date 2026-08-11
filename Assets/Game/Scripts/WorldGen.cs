@@ -843,7 +843,22 @@ public class WorldGen : MonoBehaviour
     ///   ★9-4 「몇 개가 되나」: 작은 굴 26 × 약 60상자 + 큰 굴 5 × 약 400상자 ≒ 3,500 렌더러.
     ///     전부 정적 상자라 매 프레임 도는 것은 없다. 굴가림은 굴마다 범위 비교 한 번뿐(31번/프레임).
     // ★굴이 파낸 칸 (2m 격자) — 굴을 다 판 뒤 **그 자리의 나무·돌을 치우는** 데 쓴다
-    readonly HashSet<(int ix, int iz)> 굴판칸 = new HashSet<(int ix, int iz)>();
+    // ★★★그리고 **「벽 너머는 못 본다」를 판별하는 창구**다 (2026-08-11 사용자 "동굴 밖에
+    //   있는것들이 어떻게 보고 안쪽으로 애드를 내고 오는걸까?").
+    //   굴 안과 굴 밖은 **바위가 가로막고 있다.** 짐승도 나도 그 너머를 보면 안 된다.
+    //   ☆static 이라 어디서든 묻는다. 조회는 해시 한 번이라 사실상 공짜다 (9-4 ②).
+    static readonly HashSet<(int ix, int iz)> 굴판칸 = new HashSet<(int ix, int iz)>();
+
+    /// 이 자리가 굴 **안**인가 (파낸 칸 위인가)
+    public static bool 굴안인가(Vector3 p)
+    {
+        if (굴판칸.Count == 0) return false;
+        return 굴판칸.Contains((Mathf.RoundToInt(p.x / 2f), Mathf.RoundToInt(p.z / 2f)));
+    }
+
+    /// ★두 자리 사이를 **바위가 막고 있나** — 하나는 굴 안, 하나는 굴 밖이면 막힌 것이다.
+    ///   (굴 안끼리는 서로 보인다 — 굽이진 통로 너머까지 보이는 건 나중 문제다)
+    public static bool 벽에막혔나(Vector3 a, Vector3 b) => 굴안인가(a) != 굴안인가(b);
 
     void 굴흩기(int seed)
     {
