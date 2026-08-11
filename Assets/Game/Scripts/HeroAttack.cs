@@ -745,6 +745,42 @@ public class HeroAttack : MonoBehaviour
     }
 
     /// 채집을 끝낸다 — 놓았거나, 멀어졌거나, 다 캤거나
+    /// ★★★★**갈무리는 애니메이터의 「갈무리」 상태가 그린다** (2026-08-11 사용자 "없는데..?"
+    ///   — 클립만 굽고 컨트롤러에 안 넣어서 애니메이터 목록에 없었다).
+    ///   공격과 **똑같은 방식**이다: 공격층·공격하체층 두 층에 같은 클립을 얹고, 시간을
+    ///   코드가 정한다. 그래야 걷기(0층)와 안 싸우고, 애니메이션 창에서도 잡힌다.
+    ///   ☆앞 `갈무리앉는데`(0.30초)는 **앉는 구간**이라 한 번만 돌고, 그 뒤가 되풀이된다.
+    static readonly int 갈무리해시 = Animator.StringToHash("갈무리");
+    void 갈무리그리기()
+    {
+        if (애니 == null || !애니.isActiveAndEnabled)
+        { 애니 = GetComponentInChildren<Animator>(); 몸뿌리 = 애니 != null ? 애니.gameObject : gameObject; }
+        if (애니 == null) return;
+        if (공격층 < 0) 공격층 = 층찾기("공격층");
+        if (하체층 < 0) 하체층 = 층찾기("공격하체층");
+
+        float 앉기 = Mathf.Max(0.01f, 갈무리앉는데);
+        float 길이 = Mathf.Max(0.05f, 갈무리클립.length);
+        float 초 = t <= 앉기 ? t : 앉기 + Mathf.Repeat(t - 앉기, Mathf.Max(0.05f, 길이 - 앉기));
+        float n = Mathf.Clamp01(초 / 길이);
+
+        if (공격층 > 0)
+        {
+            애니.SetLayerWeight(공격층, 1f);
+            애니.Play(갈무리해시, 공격층, n);
+        }
+        if (하체층 > 0)
+        {
+            하체무게 = Mathf.MoveTowards(하체무게, 1f, Time.deltaTime * 12f);   // 다리도 앉아야 한다
+            애니.SetLayerWeight(하체층, 하체무게);
+            애니.Play(갈무리해시, 하체층, n);
+        }
+        하체정함 = false;
+        클립돌던중 = true;
+        // 팔 자세 코드는 손을 뗀다 — 같은 뼈를 두고 다투면 떨린다
+        if (드는자세 != null) { 드는자세.목표 = 0f; 드는자세.침 = 0f; }
+    }
+
     /// 상체·하체 공격 레이어를 부드럽게 내린다 — 걷기(0층)가 다시 몸을 갖는다
     void 상체층내리기()
     {
@@ -1333,16 +1369,7 @@ public class HeroAttack : MonoBehaviour
         //   ☆나무·돌을 팰 때는 클립이 맞다 — 도끼질은 저작된 동작이라야 읽힌다.
         //     사체 뒤적임은 저작된 클립이 없으므로 절차 쪽이 그린다.
         bool 뒤적임 = state == State.채집 && !채집팸;
-        if (뒤적임 && 갈무리클립 != null)
-        {
-            // ★★**클립이 그린다** — 앞 0.30초는 앉는 구간이라 한 번만, 그 뒤가 되풀이된다
-            상체층내리기();                   // 걷기·공격 레이어를 내려놓아야 안 다툰다
-            float 앉기 = Mathf.Max(0.01f, 갈무리앉는데);
-            float 초 = t <= 앉기 ? t
-                     : 앉기 + Mathf.Repeat(t - 앉기, Mathf.Max(0.05f, 갈무리클립.length - 앉기));
-            if (몸뿌리 == null) { 애니 = GetComponentInChildren<Animator>(); 몸뿌리 = 애니 != null ? 애니.gameObject : gameObject; }
-            갈무리클립.SampleAnimation(몸뿌리, 초);
-        }
+        if (뒤적임 && 갈무리클립 != null) 갈무리그리기();
         else if (공격클립 != null && !뒤적임) 클립으로그리기();
         else
         {
