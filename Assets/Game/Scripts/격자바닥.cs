@@ -75,7 +75,30 @@ public class 격자바닥 : MonoBehaviour
         return cam.orthographicSize * Mathf.Sqrt(1f + a * a) + 여유;
     }
 
+    // ★스스로 시간을 잰다 (2026-08-11) — 스파이크에 「Late 24ms」 라고만 찍히면
+    //   어느 부품인지 알 수가 없다. 오래 걸린 프레임에 무엇을 했는지 남긴다
+    [Tooltip("이보다 오래 걸린 프레임을 콘솔에 남긴다 (ms · 0 이면 안 남김)")]
+    public float 스스로재기 = 6f;
+
     void LateUpdate()
+    {
+        var 시계 = 스스로재기 > 0f ? System.Diagnostics.Stopwatch.StartNew() : null;
+        bool 지었나 = false;
+        try { 실제LateUpdate(ref 지었나); }
+        finally
+        {
+            if (시계 != null)
+            {
+                시계.Stop();
+                double ms = 시계.Elapsed.TotalMilliseconds;
+                if (ms >= 스스로재기)
+                    Debug.LogFormat("[격자바닥-느림] {0:F0}ms · 다시지음={1} · 칸수={2} · 짓는중={3}",
+                                    ms, 지었나, 지은칸수, 짓는중 != null);
+            }
+        }
+    }
+
+    void 실제LateUpdate(ref bool 지었나)
     {
         if (주인공 == null)
         {
@@ -100,6 +123,7 @@ public class 격자바닥 : MonoBehaviour
         if (지은칸수 < N || 지은칸수 > N + 8 || 남은반폭 < 필요)
         {
             칸수 = N;
+            지었나 = true;
             짓기();      // ★자리는 `짓기속` 이 주인공 기준으로 잡고 맨 끝에 옮긴다
         }
     }

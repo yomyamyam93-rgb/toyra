@@ -70,7 +70,22 @@ public class 렉재기 : MonoBehaviour
         gc재개 = ProfilerRecorder.StartNew(ProfilerCategory.Memory, "GC Allocated In Frame", 1);
         if (켤때자동) 예약(기다림);
     }
-    void OnDisable() { 치우기(); 감시끄기(); }
+    void OnDisable() { 치우기(); 감시끄기(); 스파이크파일쓰기(); }
+
+    // ★스파이크 줄을 파일에 쌓는다 — 콘솔을 찍어 보내는 왕복이 느리고 잘리기 때문
+    readonly System.Collections.Generic.List<string> 스파이크줄 = new System.Collections.Generic.List<string>();
+
+    void 스파이크파일쓰기()
+    {
+        if (스파이크줄.Count == 0) return;
+        try
+        {
+            var 길 = System.IO.Path.Combine(Application.dataPath, "..", "렉_스파이크.txt");
+            System.IO.File.AppendAllText(길, string.Join("\n", 스파이크줄) + "\n");
+            스파이크줄.Clear();
+        }
+        catch { }
+    }
 
     void 예약(float 지연) { 대기 = 지연; 남은 = 0f; }
 
@@ -128,6 +143,16 @@ public class 렉재기 : MonoBehaviour
         }
 
         Debug.Log("[범인찾기] 결과 (절약 0.3ms 넘는 것만)\n  " + string.Join("\n  ", 결과));
+        // ★★결과를 **파일로도 남긴다** (2026-08-11) — 콘솔은 스크롤해서 찍어 보내야 하는데
+        //   그 왕복이 느리고 잘린다. 파일이면 그대로 읽을 수 있다.
+        try
+        {
+            var 길 = System.IO.Path.Combine(Application.dataPath, "..", "렉_범인찾기.txt");
+            System.IO.File.WriteAllText(길, "[범인찾기] 결과 (절약 0.3ms 넘는 것만)\n"
+                + string.Join("\n", 결과) + "\n");
+            Debug.Log("[범인찾기] 파일로도 남겼다 → 렉_범인찾기.txt");
+        }
+        catch (System.Exception e) { Debug.LogWarning("[범인찾기] 파일 못 씀: " + e.Message); }
         범인찾는중 = false;
     }
 
@@ -204,6 +229,11 @@ public class 렉재기 : MonoBehaviour
                 야생, 지난야생 < 0 ? "?" : (야생 - 지난야생).ToString("+#;-#;0"), gcKB,
                 Time.unscaledTime);
             지난야생 = 야생;
+            // ★파일에도 쌓는다 — 콘솔을 찍어 보내는 왕복을 없앤다
+            스파이크줄.Add(string.Format("{0,6:F0}ms · Update {1,4:F0} · Late {2,4:F0} · 애니 {3,3:F0} · 렌더 {4,3:F0} · 컬링 {5,3:F0} · GPU {6,3:F0}/{7,3:F0} · 셰이더 {8,3:F0} · 설명안됨 {9,4:F0} · 야생 {10,2}({11}) · GC {12,7:F0}KB · t={13:F1}s",
+                ms, u, lu, an, rd, cu, g1, g2, sh, 나머지, 야생,
+                지난야생 < 0 ? "?" : "0", gcKB, Time.unscaledTime));
+            if (스파이크줄.Count >= 40) 스파이크파일쓰기();
         }
         else if (스파이크감시 && Time.frameCount % 30 == 0)
         {
