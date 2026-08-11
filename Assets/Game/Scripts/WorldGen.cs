@@ -1365,8 +1365,10 @@ public class WorldGen : MonoBehaviour
     //   8.7m 짜리 요새가 서서 들판이 아니라 유적 단지가 된다 (실측 폭: 요새 8.7m · 콘솔 3.8m).
     static readonly (string 이름조각, float 키작게, float 키크게, bool 막나, float 흔함)[] 황야치수표 =
     {
-        ("Brick_Built_Bare_Tree", 6.0f, 9.0f, true,  1.00f),  // 벽돌 마른나무 — 이 권역의 「나무」다
-        ("Brickbuilt_Winter",     6.0f, 9.0f, true,  0.80f),
+        // ★고목을 낮췄다 (2026-08-12 사용자 "고목들이 사이즈가 너무커" — 7.5m 는 사람 1.8m 의
+        //   네 배라 받침판 위에 얹힌 브릭 나무로 안 읽히고 탑이 됐다)
+        ("Brick_Built_Bare_Tree", 3.2f, 5.0f, true,  1.00f),  // 벽돌 마른나무 — 이 권역의 「나무」다
+        ("Brickbuilt_Winter",     3.2f, 5.0f, true,  0.80f),
         ("Bamboo_Grove",          4.0f, 7.0f, true,  0.70f),
         ("Bamboo_Burst",          3.0f, 5.0f, true,  0.70f),
         ("Cactus_Bricks",         2.4f, 4.0f, true,  1.00f),
@@ -1420,6 +1422,13 @@ public class WorldGen : MonoBehaviour
         return 값;
     }
 
+    /// 땅 격자 칸 가운데로 물린다 — 블록이 바닥 줄눈과 어긋나지 않게
+    static Vector3 칸에물리기(Vector3 p)
+    {
+        float 칸 = Mathf.Max(0.01f, 땅격자.칸);
+        return new Vector3((Mathf.Floor(p.x / 칸) + 0.5f) * 칸, p.y, (Mathf.Floor(p.z / 칸) + 0.5f) * 칸);
+    }
+
     /// 황야 소품 하나를 **제 키로 세운다**. 프리팹이 없으면 false
     bool 황야소품(Vector3 at)
     {
@@ -1430,16 +1439,24 @@ public class WorldGen : MonoBehaviour
         var (제키, 제밑) = 프리팹치수(pf);
         float 배 = Random.Range(키작게, 키크게) / 제키;
 
-        var inst = Instantiate(pf, at, Quaternion.Euler(0f, Random.value * 360f, 0f), holder);
+        // ★★★★**블록은 직각으로 선다** (2026-08-12 사용자 "황야는 블록이거든? 그래서
+        //   직각을 맞춰 배치해줘야해"). 레고 브릭이 비스듬히 꽂혀 있으면 블록이 아니다.
+        //   ①회전은 **90° 단위**만 ②자리는 **땅 격자 칸 가운데**로 물린다.
+        //   ☆세상의 격자와 같은 자를 쓴다 (`땅격자.칸` = 1.406m · 11-1) — 바닥 줄눈과
+        //     받침판이 어긋나면 「블록을 얹었다」가 아니라 「굴러다닌다」로 보인다.
+        var 자리 = 칸에물리기(at);
+        var 돌기 = Quaternion.Euler(0f, Random.Range(0, 4) * 90f, 0f);
+
+        var inst = Instantiate(pf, 자리, 돌기, holder);
         inst.transform.localScale = pf.transform.localScale * 배;
         // ★밑면을 땅에 붙인다 — 재서 얻은 값이라 모델이 바뀌어도 안 틀린다
-        inst.transform.position = at + Vector3.up * (-제밑 * 배);
+        inst.transform.position = 자리 + Vector3.up * (-제밑 * 배);
         환경손질(inst);
 
         if (막나)
         {
             float 폭 = 모델폭(pf) * 배;
-            if (폭 >= 막는돌지름) Blocker.Add(at, 폭 * 0.4f);
+            if (폭 >= 막는돌지름) Blocker.Add(자리, 폭 * 0.4f);
         }
         return true;
     }
@@ -1841,9 +1858,10 @@ public class WorldGen : MonoBehaviour
                     if (물인가(at)) continue;
                     float w = Random.Range(0.26f, 0.5f);          // 막는돌지름(1.6m)보다 한참 아래
                     float h = w * Random.Range(0.5f, 1.0f);
+                    // ★여기도 직각이다 — 황야는 블록이라 돌 조각도 축에 맞춰 놓인다
                     var 돌알 = Grey.Box(holder, at + Vector3.up * (h * 0.4f),
                              new Vector3(w, h, w * Random.Range(0.7f, 1.3f)), C바위, "돌멩이",
-                             0f, Random.value * 360f);
+                             0f, Random.Range(0, 4) * 90f);
                     땅무더기.줍이(아이템표.찾기("돌"), 1, 돌알);
                 }
             }
