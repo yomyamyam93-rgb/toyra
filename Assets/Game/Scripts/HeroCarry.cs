@@ -23,6 +23,11 @@ public class HeroCarry : MonoBehaviour
     [Tooltip("이 무게까지는 끌고 간다 (맨손)")] public float 끄는무게 = 3f;
     [Tooltip("★밧줄이 있으면 끄는 한계가 이 배가 된다 — 묶어서 끈다")]
     [Range(1f, 4f)] public float 밧줄배 = 2.2f;
+    [Tooltip("★끌차가 있으면 이 배 — 싣고 끈다. 생포의 마지막 칸")]
+    [Range(1f, 8f)] public float 끌차배 = 4f;
+    [Tooltip("끌차를 끌 때의 이동 속도 배수 (밧줄보다 느리다)")] [Range(0.2f, 1f)] public float 끌차때 = 0.4f;
+    bool 밧줄로, 끌차로;
+    Transform 줄, 수레;
 
     [Header("데려가기")]
     [Header("★집어들기")]
@@ -135,9 +140,15 @@ public class HeroCarry : MonoBehaviour
         }
         else
         {
+            // ★★★**끌차에 실으면 수레가 따라오고 그 위에 얹힌다** (2026-08-12).
+            //   밧줄은 짐승이 제 발로 끌려오지만, 끌차는 **수레가 짐승을 태우고** 온다 —
+            //   그래서 버티지도 않고 더 무거운 놈도 간다. 대신 느리다.
+            if (끌차로) hero.MoveMul = 끌차때;
+
             // 끌면 뒤따라온다 — 가끔 버틴다
-            var 뒤 = transform.position - transform.forward * 1.5f;
+            var 뒤 = transform.position - transform.forward * (끌차로 ? 2.1f : 1.5f);
             데려가는것.끌림(뒤, dt, out bool 버팀);
+            줄그리기();
             float d = Vector3.Distance(
                 new Vector3(transform.position.x, 0f, transform.position.z),
                 new Vector3(데려가는것.transform.position.x, 0f, 데려가는것.transform.position.z));
@@ -166,16 +177,22 @@ public class HeroCarry : MonoBehaviour
         //     ①밧줄이 있어도 무거운 놈을 못 끌었다 ②거절 메시지가 **대안을 안 알려줬다**.
         //   ★밧줄은 「크기가 방법을 정한다」(5-2)의 그 자리다 — 맨손으로 끄는 한계를 넘긴다.
         float w = best.종.무게;
-        bool 밧줄있나 = 인벤.어느통에든도구("밧줄") != null
-                      || 인벤.다합쳐개수("밧줄") > 0;
-        float 끌한계 = 밧줄있나 ? 끄는무게 * 밧줄배 : 끄는무게;
+        bool 밧줄있나 = 인벤.어느통에든도구("밧줄") != null || 인벤.다합쳐개수("밧줄") > 0;
+        bool 끌차있나 = 인벤.어느통에든도구("끌기") != null || 인벤.다합쳐개수("끌차") > 0;
+        // ★도구가 좋을수록 더 무거운 놈을 데려간다 — 맨손 < 밧줄 < 끌차
+        float 끌한계 = 끌차있나 ? 끄는무게 * 끌차배
+                     : 밧줄있나 ? 끄는무게 * 밧줄배 : 끄는무게;
         if (w > 끌한계)
         {
             // ☆못 끄는 이유만 말하지 않는다 — **무엇을 할 수 있는지**를 같이 말한다
-            띄움(밧줄있나 ? $"{best.종.이름} — 밧줄로도 못 끈다. 먹여서 길들여라"
-                          : $"{best.종.이름} — 너무 무겁다. 밧줄이 있거나, 먹여서 길들여라");
+            띄움(끌차있나 ? $"{best.종.이름} — 끌차로도 못 끈다. 먹여서 길들여라"
+                : 밧줄있나 ? $"{best.종.이름} — 밧줄로도 못 끈다. 끌차가 있거나, 먹여서 길들여라"
+                           : $"{best.종.이름} — 너무 무겁다. 밧줄·끌차가 있거나, 먹여서 길들여라");
             return;
         }
+        // 무엇으로 데려가나 — 안기 < 밧줄 < 끌차
+        끌차로 = 끌차있나 && w > 끄는무게 * 밧줄배 * 0.6f;   // 무거운 놈은 실어야 한다
+        밧줄로 = !끌차로 && 밧줄있나 && w > 안는무게;
 
         데려가는것 = best;
         안는중 = w <= 안는무게;
@@ -284,8 +301,62 @@ public class HeroCarry : MonoBehaviour
         return best;
     }
 
+    // ★★★**줄과 수레가 실제로 보인다** (2026-08-12 사용자 D·E).
+    //   전에는 짐승이 그냥 뒤따라왔다 — **무엇으로 끌고 있는지**가 화면에 없으면
+    //   밧줄을 만든 보람이 없고, 끌차는 아예 있는지도 모른다.
+    //   ☆규칙 12: 지우면 무슨 일이 일어나는지 못 알아보는 것 — 그러니 넣는다.
+    //   ☆9-4: 만들고 부수지 않는다. 한 번 만들어 껐다 켠다. 매 프레임 하는 일은
+    //     길이·각도 얹기뿐이다 (상자 하나를 늘렸다 줄인다).
+    void 줄그리기()
+    {
+        if (데려가는것 == null) return;
+        var a = transform.position + Vector3.up * (hero.height * 0.45f);
+        var b = 데려가는것.transform.position + Vector3.up * (데려가는것.종.키 * 0.35f);
+
+        if (줄 == null)
+        {
+            var g = Grey.Box(null, Vector3.zero, new Vector3(0.05f, 0.05f, 1f),
+                             new Color(0.78f, 0.70f, 0.48f), "끌줄");
+            g.AddComponent<NoOutline>();
+            줄 = g.transform;
+        }
+        줄.gameObject.SetActive(true);
+        var v = b - a;
+        줄.position = (a + b) * 0.5f;
+        줄.rotation = v.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(v) : Quaternion.identity;
+        줄.localScale = new Vector3(0.05f, 0.05f, Mathf.Max(0.1f, v.magnitude));
+
+        // 끌차 — 사람과 짐승 사이에 수레가 놓인다. 짐승은 그 위에 얹혀 온다
+        if (끌차로)
+        {
+            if (수레 == null)
+            {
+                var g = Grey.Box(null, Vector3.zero, new Vector3(1.3f, 0.22f, 1.9f),
+                                 new Color(0.46f, 0.33f, 0.20f), "끌차");
+                g.GetComponent<MeshRenderer>().sharedMaterial =
+                    Grey.격자Mat(new Color(0.46f, 0.33f, 0.20f));   // 표면은 격자다 (11-1)
+                g.AddComponent<NoOutline>();
+                수레 = g.transform;
+            }
+            수레.gameObject.SetActive(true);
+            수레.position = 데려가는것.transform.position + Vector3.up * 0.22f;
+            수레.rotation = transform.rotation;
+            // 짐승은 수레 위에 눕는다 — 끌려오는 게 아니라 실려 온다
+            데려가는것.transform.position += Vector3.up * 0.34f;
+        }
+        else if (수레 != null) 수레.gameObject.SetActive(false);
+    }
+
+    void 줄치우기()
+    {
+        if (줄 != null) 줄.gameObject.SetActive(false);
+        if (수레 != null) 수레.gameObject.SetActive(false);
+    }
+
     void 해제()
     {
+        줄치우기();
+        밧줄로 = false; 끌차로 = false;
         if (데려가는것 != null) 데려가는것.잡힘 = false;
         데려가는것 = null;
         안는중 = false;
