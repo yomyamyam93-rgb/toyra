@@ -531,7 +531,13 @@ public class 인벤창 : MonoBehaviour
                 GUI.Label(new Rect(행.x + 150f, 행.y + 3f, 80f, 18f), it.곁들임, cs);
                 GUI.Label(new Rect(행.x + 232f, 행.y + 3f, 행.width - 238f, 18f), $"{it.무게:F1}kg", cs);
 
-                if (위에 && Event.current.type == EventType.MouseDown)
+                // ★★★**메뉴가 떠 있으면 그 아래는 안 받는다** (2026-08-12 사용자 "우클릭
+                //   손에쥐기를 했는데 땅에 버리네").
+                //   ☆IMGUI 는 **그리는 순서대로** 이벤트를 준다. 목록이 메뉴보다 먼저 그려지니,
+                //     메뉴 항목을 눌러도 **그 밑의 아이템 행이 먼저** 클릭을 받아 「집기」가 돌았다.
+                //     그리고 손을 뗄 때 메뉴가 떠 있던 자리(오른쪽 패널 = 땅)에 놓아 버렸다.
+                //   ☆메뉴는 뜬 순간부터 **덮개**다 — 닫히기 전엔 아래가 아무것도 안 받는다.
+                if (위에 && Event.current.type == EventType.MouseDown && 메뉴대상 == null)
                 {
                     // ★★★**스크롤뷰 안의 `mousePosition` 은 화면 좌표가 아니다** (2026-08-12
                     //   사용자 "마우스 우클릭한 위치가아니라 그 메뉴가").
