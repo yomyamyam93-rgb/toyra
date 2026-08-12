@@ -138,6 +138,7 @@ public class Critter : MonoBehaviour, IHittable
     public float 닿는사거리 => 종.사거리 * 사거리배 + 종.반지름 + Mathf.Max(0.2f, 종.키) * 사거리키몫;
 
     float 기절든지;                 // 엎어진 지 얼마나 됐나 (엎어지는 동작에 쓴다)
+    기절표시 표시;                  // 머리 위 동글뱅이 — 한 번 만들고 껐다 켠다
 
     /// ★둔기로 맞았다 — 기절값이 쌓인다. 뾰족한 무기는 이걸 안 부른다
     public void 기절값먹임(float 값)
@@ -150,6 +151,8 @@ public class Critter : MonoBehaviour, IHittable
         기절든지 = 0f;
         target = null;
         지금상태(상태.어슬렁);                          // 하던 걸 다 놓는다
+        // ★머리 위에 동글뱅이를 띄운다 — 멀리서도 「엎어졌다」가 읽혀야 잡으러 갈지 고른다
+        (표시 ??= 기절표시.붙이기(transform, 종.키)).켜기(true);
     }
 
     // ★★★**붙잡을 수 있는 건 「진짜 기절했을 때」뿐이다** (2026-08-12 사용자 "팻 잡을 수
@@ -467,7 +470,11 @@ public class Critter : MonoBehaviour, IHittable
             기절든지 += dt;
             기절치 -= 기절빠짐 * dt;
             그로기몸();
-            if (기절치 <= 0f) { 기절치 = 0f; 기절중 = false; 몸복구(); }
+            if (기절치 <= 0f)
+            {
+                기절치 = 0f; 기절중 = false; 몸복구();
+                if (표시 != null) 표시.켜기(false);       // 깼다 — 동글뱅이를 끈다 (부수진 않는다)
+            }
             return;
         }
         if (기절치 > 0f) 기절치 = Mathf.Max(0f, 기절치 - 기절식음 * dt);   // 안 맞으면 식는다
@@ -1113,6 +1120,7 @@ public class Critter : MonoBehaviour, IHittable
     ///   (2026-08-03 사용자: "모든 행동에는 인과관계와 행동이 있어야 한다")
     void Die()
     {
+        if (표시 != null) 표시.켜기(false);      // 죽으면 동글뱅이도 없다
         if (무리 != null) 무리.죽었다(새끼);
 
         // ★야생은 그 자리에서 **사체로 전환**한다 (2026-08-07). `Destroy` 를 먼저 하면

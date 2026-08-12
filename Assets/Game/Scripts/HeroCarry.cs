@@ -129,6 +129,9 @@ public class HeroCarry : MonoBehaviour
         데려가는것 = best;
         안는중 = w <= 안는무게;
         best.잡힘 = true;
+        // ★붙잡았으면 동글뱅이를 끈다 — 이제 「기절해 누워 있는 놈」이 아니라 「내 손 안」이다
+        var 표 = best.GetComponent<기절표시>();
+        if (표 != null) 표.켜기(false);
 
         // 안고 있으면 무기를 못 쓴다
         var atk = GetComponent<HeroAttack>();
