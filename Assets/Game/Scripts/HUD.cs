@@ -206,7 +206,8 @@ public class HUD : MonoBehaviour
         var sp = cam.WorldToScreenPoint(h.transform.position + Vector3.up * (h.height + 0.45f));
         if (sp.z <= 0f) return;
         Bar(sp.x - 34f, Screen.height - sp.y, 68f, 7f,
-            HeroAttack.채집게이지, new Color(0.85f, 0.80f, 0.55f));
+            // ★한 칸이 아니라 **전체 과정**을 그린다 (2026-08-12) — 바가 서너 번 차던 것을 없앤다
+            HeroAttack.채집진행, new Color(0.85f, 0.80f, 0.55f));
     }
 
     void Bar(float x, float y, float w, float h, float t, Color c)

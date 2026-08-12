@@ -69,7 +69,17 @@ public class HeroAttack : MonoBehaviour
     bool 이번칸때림;              // 이번 게이지 한 바퀴에서 이미 때렸나
     /// HUD 가 읽는다 — 상시로 안 띄우고 **캘 때만** 뜬다 (11장 · 기획 5-7)
     public static bool 채집중;
+    /// **한 칸**의 진행도 (0~1) — 도끼질 모션이 이걸 탄다. 한 번 캘 때마다 0 으로 돌아온다
     public static float 채집게이지;
+    // ★★★**화면 바는 「전체 과정」을 그린다** (2026-08-12 사용자 "게이지가 3번 4번 연속으로
+    //   반복되는데, 그냥 전체 과정을 하나의 바로 진행되게해줄래?" · "좀보이드도 그렇지 않나?").
+    //   맞는 말이다 — 좀보이드도 뒤적이거나 캘 때는 **바 하나가 쭉** 찬다. 사체가 네 칸이면
+    //   바가 네 번 차는 건 「네 번 일했다」가 아니라 그냥 **읽기 어려운 표시**다.
+    //   ☆안쪽 박자(한 칸씩 때리기·도끼 스윙)는 그대로 둔다 — 그건 몸이 하는 일이고,
+    //     바꾸면 도끼가 닿는 프레임과 나무가 흔들리는 프레임이 어긋난다.
+    //   → 그래서 값을 **둘로 나눈다**: `채집게이지`(한 칸, 모션용)와 `채집진행`(전체, 화면용).
+    public static float 채집진행;
+    int 채집총칸, 채집한칸;
 
     [Header("때리기 — 3막")]
     [Tooltip("예비 동작 (초) — 뒤로 감는 시간")] public float 예비 = 0.14f;
@@ -590,7 +600,11 @@ public class HeroAttack : MonoBehaviour
                     var 방향 = v채.sqrMagnitude > 1e-4f ? v채.normalized : transform.forward;
                     if (!채집대상.한칸(방향)) { 채집끝(); break; }   // 다 캐서 사라졌다
                 }
-                if (채집게이지 >= 1f) { 채집게이지 = 0f; 이번칸때림 = false; }
+                if (채집게이지 >= 1f) { 채집게이지 = 0f; 이번칸때림 = false; 채집한칸++; }
+                // ★화면 바 — 전체 과정에서 어디쯤인가 (끝난 칸 + 지금 칸의 진행분)
+                채집진행 = 채집총칸 > 0
+                    ? Mathf.Clamp01((채집한칸 + Mathf.Clamp01(채집게이지)) / 채집총칸)
+                    : Mathf.Clamp01(채집게이지);
                 break;
             }
 
@@ -612,6 +626,8 @@ public class HeroAttack : MonoBehaviour
                     if (대상 != null)
                     {
                         채집대상 = 대상; 채집게이지 = 0f; 이번칸때림 = false; 공격예약 = 0f;
+                        // ★시작할 때 **남은 칸 수**를 적어 둔다 — 화면 바가 전체를 그리는 잣대다
+                        채집총칸 = Mathf.Max(1, 대상.hits); 채집한칸 = 0; 채집진행 = 0f;
                         state = State.채집; t = 0f; 채집중 = true; F먹음 = true;
                         break;
                     }
@@ -804,7 +820,8 @@ public class HeroAttack : MonoBehaviour
 
     void 채집끝()
     {
-        채집대상 = null; 채집게이지 = 0f; 채집중 = false; F먹음 = false;
+        채집대상 = null; 채집게이지 = 0f; 채집진행 = 0f; 채집총칸 = 0; 채집한칸 = 0;
+        채집중 = false; F먹음 = false;
         if (hero != null) hero.시선고정 = false;      // 마우스로 되돌린다
         state = State.쉼; t = 0f; 감은시간 = 0f;
         공격예약 = 0f;                   // F 로 캐다 놓았다고 공격이 튀어나가면 안 된다
