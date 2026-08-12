@@ -49,6 +49,7 @@ public class IsoCam : MonoBehaviour
 
     Camera cam;
     PixelSnapper snapper;
+    인벤창 창열림; 제작창 제작열림;   // ★창이 열려 있으면 줌·마우스 밀림을 잠근다 (한 번만 찾는다)
     PixelScreen 픽셀;
     float sizeT;
     Vector3 look;
@@ -100,7 +101,19 @@ public class IsoCam : MonoBehaviour
         var px = GetComponent<PixelScreen>();
         bool 픽셀이쥠 = px != null && px.enabled && px.켬;
 
-        if (!픽셀이쥠)
+        // ★★★**창을 열면 카메라를 잠근다** (2026-08-12 사용자 "인벤토리 열었을때 카메라
+        //   마우스 방향으로 따라가면서 밀리는거 없애주고, 스크롤로 확대축소 되는것도 막아줘").
+        //   맞는 지적이다 — 창 안에서 마우스를 움직이면 그건 **칸을 고르는 손**이지
+        //   시선이 아닌데, 카메라가 따라 밀리면 뒤에서 화면이 출렁인다.
+        //   휠도 마찬가지다: 창에서 휠은 **목록을 굴리는 것**이라 줌이 같이 먹으면 안 된다.
+        //   ☆WASD 는 그대로 둔다 — 창을 열어도 게임이 안 멈추는 것이 이 게임의 규칙이고
+        //     (기획 5-7), 짐 정리하다 습격당하면 걸어서 피할 수 있어야 한다.
+        //   ☆제작창(C)도 같이 본다 — 같은 이유다
+        if (창열림 == null) 창열림 = FindFirstObjectByType<인벤창>();
+        if (제작열림 == null) 제작열림 = FindFirstObjectByType<제작창>();
+        bool 창 = (창열림 != null && 창열림.열림) || (제작열림 != null && 제작열림.열림);
+
+        if (!픽셀이쥠 && !창)
         {
             // 줌 — 휠. 회전 입력은 아예 읽지 않는다 (고정 카메라)
 #if ENABLE_INPUT_SYSTEM
@@ -124,7 +137,8 @@ public class IsoCam : MonoBehaviour
         //   한 칸씩 튄다. **끊기 전 진짜 자리**를 따라가야 부드럽다 (2026-08-04).
         if (snapper == null) snapper = FindFirstObjectByType<PixelSnapper>();
         var 기준 = snapper != null ? snapper.진짜자리(target) : target.position;
-        var want = 기준 + MouseLead();
+        // ★창이 열려 있으면 마우스 쪽으로 안 민다 — 캐릭터 정중앙을 본다 (위 설명)
+        var want = 기준 + (창 ? Vector3.zero : MouseLead());
         // ★★프레임률에 안 흔들리는 따라가기 (2026-08-04 사용자 "카메라가 너무 저프레임으로
         //   움직이는 느낌이 나"). `follow * dt` 를 그대로 섞으면 **한 프레임이 길어질 때마다
         //   더 많이 따라잡아** 프레임이 튀는 만큼 카메라가 덜컥거린다. 프레임이 고르지
