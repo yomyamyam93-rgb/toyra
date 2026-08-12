@@ -27,7 +27,7 @@ public class HeroCarry : MonoBehaviour
     [Tooltip("숙여서 집어드는 데 걸리는 시간 (초)")] [Range(0.1f, 1.5f)] public float 드는데 = 0.55f;
     [Tooltip("등에 맨 높이 — 사람 키에 대한 비율")] [Range(0.3f, 1.2f)] public float 등높이 = 0.72f;
     [Tooltip("걸을 때 등에서 흔들리는 각 (°)")] [Range(0f, 20f)] public float 흔들각 = 7f;
-    float 줍기t; Vector3 잡은자리; HeroAttack 손;
+    float 줍기t; Vector3 잡은자리; HeroAttack 손; HeroHold 팔;
 
     [Tooltip("안고 있을 때 이동 속도 배수")] [Range(0.2f, 1f)] public float 안았을때 = 0.7f;
     [Tooltip("끌고 있을 때 이동 속도 배수")] [Range(0.2f, 1f)] public float 끌때 = 0.55f;
@@ -109,7 +109,13 @@ public class HeroCarry : MonoBehaviour
 
             // 몸 자세는 `HeroAttack` 이 쥐고 있다 — 얼마나 숙일지만 넘긴다
             if (손 == null) 손 = GetComponent<HeroAttack>();
+            if (팔 == null) 팔 = GetComponent<HeroHold>();
+            // ★★온몸이 같이 움직인다 — 다리·골반·척추는 `HeroAttack.줍기굽힘` 이,
+            //   어깨·팔·팔뚝·머리는 `HeroHold.줍기` 가 맡는다 (각자 제 뼈만 만진다).
+            //   ☆숙임은 처음에 깊고 펴지는데, 팔은 **끝까지 감싸 안은 채**로 남는다 —
+            //     다 들고 나서도 새끼를 붙잡고 있어야 하니까
             if (손 != null) 손.줍기굽힘 = 1f - 듦;          // 처음에 깊게 숙였다 펴진다
+            if (팔 != null) 팔.줍기 = Mathf.Max(0.55f, 1f - 듦 * 0.45f);
 
             if (듦 < 1f) hero.MoveMul = 0.25f;              // 드는 동안은 거의 못 간다
 
@@ -269,6 +275,8 @@ public class HeroCarry : MonoBehaviour
         hero.MoveMul = 1f;
         var atk = GetComponent<HeroAttack>();
         if (atk != null) { atk.enabled = true; atk.줍기굽힘 = 0f; }   // ★숙임이 남으면 계속 굽은 채 걷는다
+        var 팔c = GetComponent<HeroHold>();
+        if (팔c != null) 팔c.줍기 = 0f;                                // 팔도 풀어 준다 — 안 그러면 계속 감싼 채다
     }
 
     void 띄움(string s) { 알림 = s; 알림T = 2.5f; }
