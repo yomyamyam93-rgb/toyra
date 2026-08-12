@@ -1185,26 +1185,52 @@ public class Critter : MonoBehaviour, IHittable
     ///     기절은 **앞으로** 엎어져 코를 박고 들썩인다. 둘이 같으면 무엇에 당했는지 못 읽는다.
     ///   ☆낑낑대는 건 큰 몸짓이 아니라 **잔 떨림**이다 — 기운이 빠져 못 일어나는 것이라
     ///     크게 움직이면 오히려 멀쩡해 보인다.
+    // ★★★★**기절은 죽음과 달라 보여야 한다** (2026-08-12 사용자 "기절한 모습이랑, 죽은
+    //   모습이랑 같으면안돼.. 팔다리가 쭉 사방으로 퍼치면서 바닥에 업드려지는듯한 모습으로,
+    //   머리도 흔들흔들하고").
+    //
+    //   ☆죽음은 **저작된 클립**이 그린다 (`몸짓` 의 죽음) — 옆으로 넘어가 굳는다.
+    //   ☆기절은 절차 모션이다. 그러니 **다른 문법**을 써야 갈린다:
+    //       ①옆으로가 아니라 **정면으로 엎어진다** (90°, 코를 박는다)
+    //       ②**납작하게 퍼진다** — 넓어지고(가로 1.3배) 낮아진다(세로 0.5배).
+    //         리깅 없이 「팔다리가 사방으로 퍼진」 모습을 내는 길은 이것뿐이다
+    //         (6장 — 펫은 휘고 구부러지는 방식으로 표현한다). 장난감이라 눌린 게 어울린다
+    //       ③**계속 흔들흔들한다** — 죽은 것은 굳고, 기절한 것은 움직인다.
+    //         이 하나로 멀리서도 둘이 갈린다
+    [Header("기절한 모습")]
+    [Tooltip("엎어지면서 옆으로 퍼지는 정도 (1 = 안 퍼짐)")] [Range(1f, 1.8f)] public float 기절퍼짐 = 1.3f;
+    [Tooltip("엎어지면서 납작해지는 정도 (1 = 안 눌림)")] [Range(0.3f, 1f)] public float 기절눌림 = 0.5f;
+    [Tooltip("흔들흔들하는 폭 (°)")] [Range(0f, 20f)] public float 기절흔들 = 9f;
+
     void 그로기몸()
     {
         if (body == null) return;
-        body.localScale = bodyScale;
 
         const float 엎어지는데 = 0.28f;
         float 엎 = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(기절든지 / 엎어지는데));
 
-        // 깨어날 때가 가까우면 들썩임이 커진다 — 곧 일어난다는 예고
+        // 깨어날 때가 가까우면 흔들림이 커진다 — 곧 일어난다는 예고
         float 깰때쯤 = 1f - Mathf.Clamp01(기절치 / Mathf.Max(1f, 기절한계));
-        float 낑 = Mathf.Sin(Time.time * (6.5f + 깰때쯤 * 5f) + GetInstanceID());
-        float 폭 = (0.35f + 깰때쯤 * 0.65f) * 엎;
+        float 세기 = (0.45f + 깰때쯤 * 0.55f) * 엎;
 
-        // 앞으로 코를 박는다 (x 축으로 78°) + 잔 떨림
-        body.localRotation = bodyRot * Quaternion.Euler(78f * 엎 + 낑 * 3.2f * 폭,
-                                                        낑 * 5f * 폭,
-                                                        낑 * 3f * 폭);
-        // 엎어지면 무게중심이 내려가고, 숨 쉬듯 조금 들썩인다
-        float 들썩 = Mathf.Abs(Mathf.Sin(Time.time * 3.4f)) * 0.035f * 종.키 * 엎;
-        body.localPosition = bodyPos - Vector3.up * (bodyPos.y * 0.62f * 엎) + Vector3.up * 들썩;
+        // ★흔들흔들 — 두 박자를 겹쳐서 규칙적으로 안 보이게 (고개를 젓는 느낌)
+        float 흔 = Mathf.Sin(Time.time * 5.2f + GetInstanceID()) * 0.7f
+                 + Mathf.Sin(Time.time * 8.7f + GetInstanceID() * 0.5f) * 0.3f;
+
+        // ①정면으로 엎어진다 + ③흔들흔들 (좌우로 젓는 폭이 제일 크다)
+        body.localRotation = bodyRot * Quaternion.Euler(
+            90f * 엎 + 흔 * 2.5f * 세기,
+            흔 * 기절흔들 * 세기,
+            흔 * 기절흔들 * 0.5f * 세기);
+
+        // ②납작하게 퍼진다 — 팔다리가 사방으로 뻗은 모습을 리깅 없이 내는 길
+        float 퍼 = Mathf.Lerp(1f, 기절퍼짐, 엎);
+        float 눌 = Mathf.Lerp(1f, 기절눌림, 엎);
+        body.localScale = new Vector3(bodyScale.x * 퍼, bodyScale.y * 눌, bodyScale.z * 퍼);
+
+        // 바닥에 붙는다 — 눌린 만큼 더 내려앉는다. 숨 쉬듯 아주 조금 오르내린다
+        float 숨 = Mathf.Abs(Mathf.Sin(Time.time * 3.4f)) * 0.03f * 종.키 * 엎;
+        body.localPosition = bodyPos - Vector3.up * (bodyPos.y * 0.72f * 엎) + Vector3.up * 숨;
     }
 
     void 몸복구()
