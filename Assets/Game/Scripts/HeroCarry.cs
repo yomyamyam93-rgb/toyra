@@ -27,7 +27,34 @@ public class HeroCarry : MonoBehaviour
     [Range(1f, 8f)] public float 끌차배 = 4f;
     [Tooltip("끌차를 끌 때의 이동 속도 배수 (밧줄보다 느리다)")] [Range(0.2f, 1f)] public float 끌차때 = 0.4f;
     bool 밧줄로, 끌차로;
-    Transform 줄, 수레;
+    Transform 수레;
+
+    // ★★★★**끌기는 「자세 한 벌」이 아니라 순서가 있는 동작이다** (2026-08-12 사용자
+    //   "각 단계별로 동작을 계산해서 순서대로 넣어야지").
+    //   ☆여태는 각도 한 벌을 통째로 켰다. 그러니 **무기를 든 채** 두 팔이 대칭으로 꺾였고,
+    //     몸도 안 돌아 뒤로걷기가 안 나왔다. 순서가 없으니 「집는 동작」도 아니었다.
+    [Header("★끌 때 단계 (초) — 순서가 있다")]
+    [Tooltip("③ 두 손이 줄을 쥐기 시작하는 시각")] [Range(0f, 0.6f)] public float 쥠시작 = 0.18f;
+    [Tooltip("③ 쥐는 데 걸리는 시간")] [Range(0.1f, 1f)] public float 쥠시간 = 0.38f;
+    [Tooltip("④ 몸을 젖히기 시작하는 시각 — **쥔 뒤여야 한다**")] [Range(0f, 1f)] public float 젖힘시작 = 0.42f;
+    [Tooltip("④ 젖히는 데 걸리는 시간")] [Range(0.1f, 1f)] public float 젖힘시간 = 0.4f;
+    float 끌기t;
+
+    [Header("★줄 그리기")]
+    // ★★맨손 조항은 **스위치로 남긴다** (2026-08-12 사용자 "밧줄이 아예 안보이고").
+    //   맨손은 목덜미를 잡는 것이라 줄이 없는 게 기획엔 맞다. 그런데 이걸 켜 두니
+    //   **밧줄을 안 들고 있으면 줄도 고리도 통째로 안 보여서** 만든 걸 확인할 수가 없었다.
+    //   → 기본은 꺼 둔다 (맨손이어도 줄이 보인다). 은퇴는 삭제가 아니라 스위치다 (9-3).
+    [Tooltip("켜면 밧줄·끌차가 있어야 줄이 보인다 (맨손은 목덜미를 잡는 것)")]
+    public bool 맨손엔줄없음 = false;
+    [Tooltip("줄이 늘어지는 정도 — 가까울수록 많이 처진다 (거리에 대한 비율)")]
+    [Range(0f, 0.5f)] public float 줄처짐 = 0.22f;
+    [Tooltip("줄 굵기 (m)")] [Range(0.02f, 0.12f)] public float 줄굵기 = 0.05f;
+    // ★★한 번 만들어 껐다 켠다 (9-4) — 매 프레임 하는 일은 자리·각도 얹기뿐이다.
+    //   토막 6 + 고리판 8 + 수레 1 = 15개, 그것도 **한 마리 끌 때만** 켜진다
+    const int 토막수 = 6;
+    const int 고리수 = 2;              // 고리 하나가 판 4개(위·아래·좌·우)로 몸을 두른다
+    Transform[] 줄토막, 고리판;
 
     [Header("데려가기")]
     [Header("★집어들기")]
@@ -145,9 +172,27 @@ public class HeroCarry : MonoBehaviour
             //   그래서 버티지도 않고 더 무거운 놈도 간다. 대신 느리다.
             if (끌차로) hero.MoveMul = 끌차때;
 
-            // 끌면 뒤따라온다 — 가끔 버틴다
-            var 뒤 = transform.position - transform.forward * (끌차로 ? 2.1f : 1.5f);
-            데려가는것.끌림(뒤, dt, out bool 버팀);
+            // ★★★**내 자리를 넘긴다 — 내 「경로」가 아니다** (2026-08-12 사용자 "내 경로가
+            //   아니라 내 쪽으로 끌려오게해야할듯하고?").
+            //   ☆옛 코드는 「사람 뒤 ○m」라는 **목표점**을 만들어 넘겼다. 그러면 짐승이
+            //     내가 지나온 길을 밟는다 — 끌리는 게 아니라 뒤를 따라 걷는 것이다.
+            //     서 있을 자리를 게임이 정해 주는 셈이라, 몸을 돌리기만 해도 목표가 튀었다.
+            //   ☆이제 그냥 **내 자리**를 넘긴다. 뒤에 설 자리를 정해 줄 필요가 없다 —
+            //     **줄 길이가 정한다** (`Critter.끌림`). 줄이 팽팽한 만큼만 이쪽으로 딸려온다.
+            데려가는것.끌림(transform.position, dt, out bool 버팀);
+
+            // ── ★네 단계가 순서대로 온다
+            끌기t += dt;
+            무기등에(true);                                     // ① 두 손을 비운다
+            짐승쪽보기();                                       // ② 몸이 돌아간다 → 뒤로걷기가 나온다
+            if (팔 == null) 팔 = GetComponent<HeroHold>();
+            if (팔 != null)
+            {
+                팔.끌기 = 단계(끌기t, 쥠시작, 쥠시간);           // ③ 두 손이 줄을 쥔다
+                팔.끌기젖힘 = 단계(끌기t, 젖힘시작, 젖힘시간)    // ④ 쥔 뒤에 무게를 싣는다
+                            * (버팀 ? 1f : 0.78f);              //    버티는 순간 더 깊이 젖힌다
+            }
+
             줄그리기();
             float d = Vector3.Distance(
                 new Vector3(transform.position.x, 0f, transform.position.z),
@@ -203,6 +248,9 @@ public class HeroCarry : MonoBehaviour
         // ★붙잡았으면 동글뱅이를 끈다 — 이제 「기절해 누워 있는 놈」이 아니라 「내 손 안」이다
         var 표 = best.GetComponent<기절표시>();
         if (표 != null) 표.켜기(false);
+
+        // ★줄로 데려간다면 여기서 **몸에 감는다** (한 번만 재서 몸에 붙인다)
+        if (!안는중) { 고리붙이기(best); 끌기t = 0f; }    // 단계는 언제나 ①부터 다시 시작한다
 
         // 안고 있으면 무기를 못 쓴다
         var atk = GetComponent<HeroAttack>();
@@ -310,52 +358,183 @@ public class HeroCarry : MonoBehaviour
     void 줄그리기()
     {
         if (데려가는것 == null) return;
-        var a = transform.position + Vector3.up * (hero.height * 0.45f);
-        var b = 데려가는것.transform.position + Vector3.up * (데려가는것.종.키 * 0.35f);
 
-        if (줄 == null)
+        if (맨손엔줄없음 && !밧줄로 && !끌차로) { 줄치우기(); return; }
+
+        // 고리는 몸에 **붙어 있다** — 자식이라 몸이 눌리든 돌든 저절로 따라간다
+        if (고리판 != null) foreach (var p in 고리판) if (p != null) p.gameObject.SetActive(true);
+
+        // 줄은 사람의 두 손 → **앞 고리**로 간다. 고리가 곧 매듭이다
+        var 매듭 = (고리판 != null && 고리판[0] != null)
+                 ? 고리판[0].position
+                 : 데려가는것.transform.position + Vector3.up * (데려가는것.종.반지름 * 0.6f);
+        var 손 = transform.position + transform.forward * 0.34f + Vector3.up * (hero.height * 0.55f);
+        줄토막그리기(손, 매듭, 데려가는것.줄길이);
+
+        수레그리기();
+    }
+
+    /// ★①몸에 감긴 고리 — **붙잡을 때 한 번** 몸 크기를 재서 **몸의 자식으로** 붙인다.
+    ///
+    ///   ☆옛 방식은 매 프레임 `짐승 뿌리 + 반지름 어림값` 자리에 그렸다. 그런데 진짜 모델은
+    ///     기준점이 발밑이고 메시 크기도 종마다 제각각이라, 고리가 몸을 벗어나 **공중에 떴다**
+    ///     (2026-08-12 사용자 "몸에 감긴 밧줄도 몸이 아니라 공중에 떠서 묶여있어").
+    ///   ☆자식으로 붙이면 자리·각도는 물론 **기절해 눌린 것까지** 저절로 따라간다.
+    ///     같이 눌리는 게 맞다 — 몸에 감긴 줄이니까.
+    ///   ☆링 메시가 없으니 **판 넷(위·아래·좌·우)으로 사각 고리**를 만든다. 각진 게 오히려
+    ///     장난감답다 (6장 — 색은 크게 나눈 면으로만, 경계는 뚜렷하게).
+    ///   ☆`GetComponentsInChildren` 은 **붙잡는 순간 한 번뿐**이다 (9-4)
+    void 고리붙이기(Critter c)
+    {
+        var 몸t = c.몸;
+        if (몸t == null) return;
+        if (고리판 == null) 고리판 = new Transform[고리수 * 4];
+
+        // 몸의 실제 크기를 잰다 — 어림값이 아니라 **메시가 차지하는 자리**를 쓴다
+        var rs = 몸t.GetComponentsInChildren<Renderer>();
+        var 스 = 몸t.lossyScale;
+        Vector3 중심L, 반L;
+        if (rs.Length > 0)
         {
-            var g = Grey.Box(null, Vector3.zero, new Vector3(0.05f, 0.05f, 1f),
-                             new Color(0.78f, 0.70f, 0.48f), "끌줄");
-            g.AddComponent<NoOutline>();
-            줄 = g.transform;
+            var b = rs[0].bounds;
+            foreach (var r in rs) b.Encapsulate(r.bounds);
+            중심L = 몸t.InverseTransformPoint(b.center);
+            반L = new Vector3(b.extents.x / Mathf.Max(1e-4f, 스.x),
+                              b.extents.y / Mathf.Max(1e-4f, 스.y),
+                              b.extents.z / Mathf.Max(1e-4f, 스.z));
         }
-        줄.gameObject.SetActive(true);
-        var v = b - a;
-        줄.position = (a + b) * 0.5f;
-        줄.rotation = v.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(v) : Quaternion.identity;
-        줄.localScale = new Vector3(0.05f, 0.05f, Mathf.Max(0.1f, v.magnitude));
+        else { 중심L = Vector3.zero; 반L = Vector3.one * Mathf.Max(0.12f, c.종.반지름); }
 
-        // 끌차 — 사람과 짐승 사이에 수레가 놓인다. 짐승은 그 위에 얹혀 온다
-        if (끌차로)
+        float 평균 = (스.x + 스.y + 스.z) / 3f;
+        float t = 줄굵기 / Mathf.Max(1e-4f, 평균);          // 부모 크기를 상쇄해 굵기를 맞춘다
+        float rx = 반L.x * 1.08f, ry = 반L.y * 1.14f;       // 몸보다 아주 조금 크게 — 살을 파고들지 않게
+
+        for (int i = 0; i < 고리수; i++)
         {
-            if (수레 == null)
+            var c0 = new Vector3(중심L.x, 중심L.y, 중심L.z + 반L.z * (i == 0 ? 0.45f : -0.4f));  // 앞뒤로 하나씩
+            for (int j = 0; j < 4; j++)
             {
-                var g = Grey.Box(null, Vector3.zero, new Vector3(1.3f, 0.22f, 1.9f),
-                                 new Color(0.46f, 0.33f, 0.20f), "끌차");
-                g.GetComponent<MeshRenderer>().sharedMaterial =
-                    Grey.격자Mat(new Color(0.46f, 0.33f, 0.20f));   // 표면은 격자다 (11-1)
-                g.AddComponent<NoOutline>();
-                수레 = g.transform;
+                int k = i * 4 + j;
+                if (고리판[k] == null) 고리판[k] = 새줄상자("고리");
+                var p = 고리판[k];
+                p.SetParent(몸t, false);
+                p.localRotation = Quaternion.identity;
+                switch (j)
+                {
+                    case 0: p.localPosition = c0 + Vector3.up * ry;    p.localScale = new Vector3(rx * 2f + t, t, t); break;
+                    case 1: p.localPosition = c0 - Vector3.up * ry;    p.localScale = new Vector3(rx * 2f + t, t, t); break;
+                    case 2: p.localPosition = c0 - Vector3.right * rx; p.localScale = new Vector3(t, ry * 2f, t); break;
+                    default:p.localPosition = c0 + Vector3.right * rx; p.localScale = new Vector3(t, ry * 2f, t); break;
+                }
+                p.gameObject.SetActive(true);
             }
-            수레.gameObject.SetActive(true);
-            수레.position = 데려가는것.transform.position + Vector3.up * 0.22f;
-            수레.rotation = transform.rotation;
-            // 짐승은 수레 위에 눕는다 — 끌려오는 게 아니라 실려 온다
-            데려가는것.transform.position += Vector3.up * 0.34f;
         }
-        else if (수레 != null) 수레.gameObject.SetActive(false);
+    }
+
+    /// ★②줄이 처진다 — 토막 여럿을 포물선으로 늘어뜨린다.
+    ///   ☆★**그림이 실제 규칙과 같은 자를 쓴다**: 처짐이 `줄길이` 를 기준으로 정해지므로,
+    ///     **줄이 팽팽해 보이는 순간이 곧 짐승이 딸려오기 시작하는 순간**이다
+    ///     (`Critter.끌림` 이 같은 값으로 끈다). 화면이 규칙을 그대로 비춘다.
+    void 줄토막그리기(Vector3 a, Vector3 b, float 줄길이)
+    {
+        if (줄토막 == null) 줄토막 = new Transform[토막수];
+        var v = b - a;
+        float 길이 = v.magnitude;
+        float 팽 = Mathf.Clamp01(길이 / Mathf.Max(0.1f, 줄길이));
+        float 처짐 = (1f - 팽) * 줄처짐 * 길이;
+
+        var 이전 = a;
+        for (int i = 0; i < 토막수; i++)
+        {
+            float t1 = (i + 1f) / 토막수;
+            var 다음 = Vector3.Lerp(a, b, t1) - Vector3.up * (처짐 * 4f * t1 * (1f - t1));
+            if (줄토막[i] == null) 줄토막[i] = 새줄상자("끌줄");
+            var s = 줄토막[i];
+            s.gameObject.SetActive(true);
+            var d = 다음 - 이전;
+            s.position = (이전 + 다음) * 0.5f;
+            s.rotation = d.sqrMagnitude > 1e-6f ? Quaternion.LookRotation(d) : Quaternion.identity;
+            s.localScale = new Vector3(줄굵기, 줄굵기, Mathf.Max(0.02f, d.magnitude));
+            이전 = 다음;
+        }
+    }
+
+    /// 끌차 — 사람과 짐승 사이에 수레가 놓인다. 짐승은 그 위에 얹혀 온다
+    void 수레그리기()
+    {
+        if (!끌차로) { if (수레 != null) 수레.gameObject.SetActive(false); return; }
+
+        if (수레 == null)
+        {
+            var g = Grey.Box(null, Vector3.zero, new Vector3(1.3f, 0.22f, 1.9f),
+                             new Color(0.46f, 0.33f, 0.20f), "끌차");
+            g.GetComponent<MeshRenderer>().sharedMaterial =
+                Grey.격자Mat(new Color(0.46f, 0.33f, 0.20f));   // 표면은 격자다 (11-1)
+            g.AddComponent<NoOutline>();
+            수레 = g.transform;
+        }
+        수레.gameObject.SetActive(true);
+        수레.position = 데려가는것.transform.position + Vector3.up * 0.22f;
+        수레.rotation = 데려가는것.transform.rotation;   // ★사람이 아니라 **짐승**을 따른다 (시선이 자유로우니)
+        데려가는것.transform.position += Vector3.up * 0.34f;
+    }
+
+    /// 순서가 있는 동작 — 제 차례가 와야 오르기 시작하고, 양 끝이 완만하다
+    static float 단계(float t, float 시작, float 길이)
+        => Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((t - 시작) / Mathf.Max(0.01f, 길이)));
+
+    /// ★② **줄을 쥐고 있으면 늘 짐승 쪽을 본다** (2026-08-12 사용자 "줄을 잡고있으면 항상
+    ///   짐승쪽을 보고있어야지").
+    ///   ☆`Hero` 에 이미 있는 `시선고정` 을 그대로 쓴다 — 채집이 쓰는 것과 같은 자리다.
+    ///     새 축을 만들지 않는다.
+    ///   ☆★몸이 짐승을 보면 **걷기 블렌드가 저절로 뒤로걷기가 된다** (`HeroAnim` 은 네 방향
+    ///     클립을 **시선 기준**으로 섞는다). 뒷걸음질 클립을 따로 만들 필요가 없었다 —
+    ///     여태 안 나온 건 몸이 짐승을 안 보고 있어서였다.
+    void 짐승쪽보기()
+    {
+        if (데려가는것 == null) return;
+        var 향 = 데려가는것.transform.position - transform.position; 향.y = 0f;
+        if (향.sqrMagnitude < 0.01f) return;
+        hero.시선고정 = true;
+        hero.고정시선 = 향.normalized;
+    }
+
+    /// ★① **두 손이 비어야 줄을 잡는다** — 무기를 등으로 넘긴다.
+    ///   ☆처음엔 `장비붙이기` 의 뼈 이름을 바꾸는 방식으로 짰는데, **씬에 그 컴포넌트가
+    ///     아예 없었다** (2026-08-12 실측). 무기는 `HeroAttack` 이 제 손으로 붙이고 있다.
+    ///     조용히 아무 일도 안 하고 있었던 것이다 — 9-2 의 *"부르는 데가 있나"* 그대로다.
+    ///   ☆그래서 무기를 쥔 쪽(`HeroAttack`)에 스위치 하나만 켠다. 자리는 거기 인스펙터에서
+    ///     눈으로 맞춘다 (`등짐자리`·`등짐기울임`)
+    void 무기등에(bool 켬)
+    {
+        if (손 == null) 손 = GetComponent<HeroAttack>();
+        if (손 != null) 손.등에멨나 = 켬;
+    }
+
+    Transform 새줄상자(string 이름)
+    {
+        var g = Grey.Box(null, Vector3.zero, Vector3.one, new Color(0.78f, 0.70f, 0.48f), 이름);
+        g.AddComponent<NoOutline>();
+        return g.transform;
     }
 
     void 줄치우기()
     {
-        if (줄 != null) 줄.gameObject.SetActive(false);
+        if (줄토막 != null) foreach (var s in 줄토막) if (s != null) s.gameObject.SetActive(false);
+        // ★고리는 **떼어낸다** — 짐승 몸의 자식으로 남겨 두면 그 짐승이 사라질 때 같이 없어진다
+        if (고리판 != null)
+            foreach (var p in 고리판)
+                if (p != null) { p.SetParent(null, true); p.gameObject.SetActive(false); }
         if (수레 != null) 수레.gameObject.SetActive(false);
     }
 
     void 해제()
     {
         줄치우기();
+        // ★단계를 **거꾸로 되돌린다** — 무기가 손으로 돌아오고, 시선이 마우스로 풀린다
+        무기등에(false);
+        if (hero != null) hero.시선고정 = false;
+        끌기t = 0f;
         밧줄로 = false; 끌차로 = false;
         if (데려가는것 != null) 데려가는것.잡힘 = false;
         데려가는것 = null;
@@ -365,7 +544,7 @@ public class HeroCarry : MonoBehaviour
         var atk = GetComponent<HeroAttack>();
         if (atk != null) { atk.enabled = true; atk.줍기굽힘 = 0f; }   // ★숙임이 남으면 계속 굽은 채 걷는다
         var 팔c = GetComponent<HeroHold>();
-        if (팔c != null) 팔c.줍기 = 0f;                                // 팔도 풀어 준다 — 안 그러면 계속 감싼 채다
+        if (팔c != null) { 팔c.줍기 = 0f; 팔c.끌기 = 0f; 팔c.끌기젖힘 = 0f; }   // 팔도 풀어 준다
     }
 
     void 띄움(string s) { 알림 = s; 알림T = 2.5f; }

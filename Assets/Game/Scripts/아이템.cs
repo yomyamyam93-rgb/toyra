@@ -59,6 +59,10 @@ public class 아이템종
     public float 배부름 = 0f;
 
     /// ★손에 쥘 수 있나 — 쥐면 `HeroAttack` 이 이 수치로 때린다
+    /// ★★몸의 어느 칸에 걸치나 — `"머리"`·`"상의"`… **비어 있으면 못 입는다.**
+    ///   ☆5-7 의 *"아이템 종류를 코드에 박지 않는다 — 표로 돈다"* 그대로다.
+    ///     옷을 만들 때 이 한 줄만 적으면 장비창이 저절로 받아 준다.
+    public string 입는칸 = null;
     public bool 무기;
     public float 무기피해 = 0f;
     /// 둔기면 기절값이 쌓인다. 뾰족한 것은 0 (기획 5-1 · 사용자 확정)
@@ -77,9 +81,11 @@ public static class 아이템표
                      float 내구 = 0f, string 도구쓰임 = null, float 성능 = 1f,
                      쓰임[] 쓸것 = null, float 가방 = 0f,
                      float 회복 = 0f, float 배부름 = 0f,
-                     bool 무기 = false, float 무기피해 = 0f, float 무기기절 = 0f, float 무기사거리 = 0f)
+                     bool 무기 = false, float 무기피해 = 0f, float 무기기절 = 0f, float 무기사거리 = 0f,
+                     string 입는칸 = null)
     {
         var d = new 아이템종 {
+            입는칸 = 입는칸,
             이름 = 이름, 갈래 = g, 무게 = 무게, 색 = 색,
             상하는데 = 상하는데, 상하면 = 상하면, 내구 = 내구,
             도구쓰임 = 도구쓰임, 성능 = 성능,

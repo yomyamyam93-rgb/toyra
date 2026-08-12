@@ -96,8 +96,21 @@ public class Critter : MonoBehaviour, IHittable
 
     /// 쌓인 기절값 — 둔기로 맞을 때만 오른다
     [HideInInspector] public float 기절치;
-    /// 이만큼 쌓이면 엎어진다 — 무겁고 튼튼할수록 높다
-    public float 기절한계 => 30f + 종.무게 * 22f + 종.체력 * 0.25f;
+    // ★★★★**기절한계는 체력을 따라간다** (2026-08-12 사용자 "팻이 기절을하지않고 뒤져버리네").
+    //
+    //   옛 식은 `30 + 무게×22 + 체력×0.25` 였다. 죽는 데 걸리는 대수는 **체력에 정비례**하는데
+    //   기절한계는 체력 몫이 0.25배뿐이라, **체력이 낮은 놈일수록 기절 전에 먼저 죽었다.**
+    //   실측(몽둥이 기준): 사슴 9.3대 기절 / 10.7대 죽음 — 간신히.
+    //   그런데 다람쥐는 3.7 / 3.0, **새끼 늑대는 3.1 / 2.2** 로 뒤집혔다.
+    //   ☆★그게 기획과 정반대였다 — 5-2 는 *"새끼는 잘 길든다 → 새끼를 노린다"* 인데
+    //     **제일 노려야 할 새끼가 제일 먼저 죽었다.**
+    //   → 체력에 비례시키면 **모든 종이 「죽기까지의 절반쯤」에 눕는다.** 다람쥐든 티라노든
+    //     새끼든 같은 비율이라, 어느 놈을 노려도 생포가 성립한다.
+    //   ☆무게 몫은 남긴다 — 무거운 놈은 여전히 더 오래 패야 한다 (헌법 5 의 「급」)
+    [Tooltip("★기절한계 = 체력 × 이것 + 무게 × 아래것")] [Range(0.2f, 1.5f)] public float 기절체력몫 = 0.5f;
+    [Tooltip("무게가 더하는 몫 — 무거운 놈은 더 오래 패야 눕는다")] [Range(0f, 20f)] public float 기절무게몫 = 6f;
+    /// 이만큼 쌓이면 엎어진다 — 튼튼하고 무거울수록 높다
+    public float 기절한계 => 종.체력 * 기절체력몫 + 종.무게 * 기절무게몫;
     /// 지금 기절해 엎어져 있나
     public bool 기절중 { get; private set; }
 
@@ -290,24 +303,69 @@ public class Critter : MonoBehaviour, IHittable
         body.localRotation = bodyRot * Quaternion.Euler((1f - 기운) * 18f, w * 14f, w * 5f);
     }
 
-    /// 붙잡힌 채 끌려간다 — 사람이 매 프레임 부른다
-    public void 끌림(Vector3 목표, float dt, out bool 버팀)
+    // ★★★★**끌리는 것은 「따라오는 것」이 아니다 — 줄의 팽팽함이 끈다** (2026-08-12 사용자
+    //   "바로 뒤에서 따라오는 개념으로하면안됄거같은데, 텐션을 적용해야하고, 내 경로가 아니라
+    //   내 쪽으로 끌려오게해야할듯하고? 기절한놈이 방향이 계속 바뀌면서 따라오는데 전혀 그냥
+    //   질질 끌려온다는 느낌이 안들어서").
+    //
+    //   ☆옛 방식은 **목표점을 주고 제 속도로 걸어가게** 했다. 그래서 셋이 다 어긋났다:
+    //     ①제 이속으로 갔다 = 끌리는 게 아니라 **따라오는** 것
+    //     ②목표가 「사람 뒤 1.5m」였다 = **내 경로**를 밟는다 (사람 쪽이 아니다)
+    //     ③매 프레임 목표를 보게 돌았다 = **방향이 계속 바뀐다**
+    //
+    //   ☆★새 방식은 **줄이 안 늘어난다**는 것 하나로 셋을 다 푼다:
+    //     · 줄 길이 안이면 **아무 일도 안 일어난다** (줄이 늘어져 있다 — 멈추면 같이 선다)
+    //     · 넘어선 만큼 **그대로 사람 쪽으로 딸려온다** (제 속도가 아니라 내가 간 만큼)
+    //     · 몸은 제 발로 돌지 않는다 — 끌리는 쪽으로 **아주 천천히 쓸린다**
+    [Header("끌릴 때")]
+    [Tooltip("줄 길이 (m) — 이보다 멀어져야 팽팽해져 끌린다. 안쪽에선 안 움직인다")]
+    [Range(0.6f, 6f)] public float 줄길이 = 2.9f;
+    [Tooltip("사람과 이만큼은 떨어진다 — 다가가면 밀려날 뿐 겹치지 않는다 (몸 반지름에 더한다)")]
+    [Range(0.2f, 2f)] public float 안겹치는틈 = 0.75f;
+    [Tooltip("끌리는 쪽으로 몸이 쓸려 도는 빠르기 — **0 이면 아예 안 돈다**")]
+    [Range(0f, 4f)] public float 끌릴때회전 = 1f;
+
+    /// 붙잡힌 채 끌려간다 — 사람이 **자기 자리**를 매 프레임 넘긴다
+    public void 끌림(Vector3 사람자리, float dt, out bool 버팀)
     {
         버팀 = false;
-        var d = 목표 - transform.position; d.y = 0f;
+        var d = 사람자리 - transform.position; d.y = 0f;
         float dist = d.magnitude;
-        if (dist < 0.05f) return;
+        if (dist < 0.001f) return;
+
+        // ★★★**몸이 겹치지는 않는다** (2026-08-12 사용자 "끌려오는거리도 너무 가까지 딱붙어
+        //   따라오고"). 줄이 늘어져 있으면 짐승은 안 움직이는데, 그 사이 **사람이 짐승 쪽으로
+        //   걸어가면 그대로 뚫고 들어가** 발밑에 겹쳤다. 늘어진 줄은 끌지 못할 뿐,
+        //   몸뚱이가 서로를 통과해도 된다는 뜻이 아니다.
+        float 최소 = 종.반지름 + 안겹치는틈;
+        if (dist < 최소)
+        {
+            var 밀 = 사람자리 - d / dist * 최소;
+            밀 = Blocker.Resolve(밀, 종.반지름);
+            밀.y = 땅격자.걷는높이(밀.x, 밀.z);
+            transform.position = 밀;
+            return;
+        }
+
+        // ★줄이 늘어져 있으면 끌릴 일이 없다 — 사람이 다가오면 짐승은 그 자리 그대로다
+        float 넘은만큼 = dist - 줄길이;
+        if (넘은만큼 <= 0f) return;
 
         // 가끔 발을 뻗대고 버틴다 — 신뢰가 없으니 순순히 안 온다
         버팀 = Mathf.PerlinNoise(GetInstanceID() * 0.01f, Time.time * 0.7f) > 0.72f;
         if (버팀) return;
 
-        var pos = transform.position + d / dist * 종.이속 * 0.9f * dt;
+        // ★★**줄은 안 늘어난다** — 넘어선 만큼 그대로 딸려온다. 속도가 아니라 **거리**다
+        var 방향 = d / dist;
+        var pos = transform.position + 방향 * 넘은만큼;
         pos = Blocker.Resolve(pos, 종.반지름);
         pos.y = 땅격자.걷는높이(pos.x, pos.z);
         transform.position = pos;
-        transform.rotation = Quaternion.Slerp(transform.rotation,
-            Quaternion.LookRotation(d / dist, Vector3.up), 8f * dt);
+
+        // ★몸은 제 발로 돌지 않는다 — 끌리는 쪽으로 천천히 쓸릴 뿐이다
+        if (끌릴때회전 > 0.001f)
+            transform.rotation = Quaternion.Slerp(transform.rotation,
+                Quaternion.LookRotation(방향, Vector3.up), 끌릴때회전 * dt);
     }
 
     /// 집에 도착 — 내 편이 된다
@@ -400,6 +458,9 @@ public class Critter : MonoBehaviour, IHittable
     }
 
     Transform body;
+    /// ★몸(모델) 자체 — **몸에 얹는 것**(밧줄 고리 같은)이 기절 자세까지 따라가려면 이게 필요하다.
+    ///   뿌리(transform)는 늘 똑바로 서 있어서, 엎어진 몸에 얹으면 허공에 뜬다
+    public Transform 몸 => body;
     Vector3 bodyScale, bodyPos;
     Quaternion bodyRot;
     float downTotal, downSign = 1f;
@@ -473,7 +534,18 @@ public class Critter : MonoBehaviour, IHittable
         }
 
         // 붙잡혀 있는 동안은 스스로 판단하지 않는다 (사람이 끌고 간다)
-        if (잡힘) { Squash(dt); return; }
+        // ★★★**기절한 채로 잡혔으면 엎어진 자세 그대로 끌려간다** (2026-08-12 사용자
+        //   "끌고가는데 팻이 바둥바둥 움직이는 걷는모션이 들어가있네" → **기절한 채 질질 끌린다**).
+        //   ☆옛 코드는 `Squash` 를 태웠는데, 그건 몸 크기를 **원래대로 되돌린다** —
+        //     기절해 눌려 있던 몸이 붙잡는 순간 펴져서 「멀쩡한 놈을 끌고 가는」 그림이 됐다.
+        //   ☆기절값은 여기서 안 줄인다 — 붙잡힌 동안은 안 깬다 (끌려오다 깨서 달아나면
+        //     그건 별개의 「행동」이라 따로 여쭤야 한다).
+        if (잡힘)
+        {
+            if (기절중) { 기절든지 += dt; 그로기몸(); }
+            else Squash(dt);
+            return;
+        }
         // 매여 있는 동안도 마찬가지 — 먹이를 기다린다
         if (묶임) { 묶인채(dt); Squash(dt); return; }
 
@@ -1214,7 +1286,17 @@ public class Critter : MonoBehaviour, IHittable
     //         (6장 — 펫은 휘고 구부러지는 방식으로 표현한다). 장난감이라 눌린 게 어울린다
     //       ③**계속 흔들흔들한다** — 죽은 것은 굳고, 기절한 것은 움직인다.
     //         이 하나로 멀리서도 둘이 갈린다
+    // ★★★★**「엎드린다」는 돌리는 게 아니라 누르는 것이다** (2026-08-12 사용자 "기절된 게
+    //   아니라 땅에 박혀 들어가는디..?").
+    //
+    //   옛 코드는 몸을 **90° 돌렸다**. 그런데 짐승은 몸통이 **앞뒤로 길다** —
+    //   `Euler(90,0,0)` 은 몸의 앞(z)을 아래로 보내므로, 엎드리는 게 아니라
+    //   **코를 처박고 곤두선다.** 길이의 절반이 그대로 땅 밑으로 들어갔다.
+    //   ☆거기에 위치까지 `bodyPos.y × 0.72` 만큼 내리니 더 박혔다.
+    //   → 회전은 **코가 처지는 정도**로만 조금 준다. 납작하게 퍼지는 건 **크기**가 낸다.
+    //     (6장 — 펫은 리깅 없이 **휘고 눌리는 방식**으로 표현한다. 그 문법 그대로다.)
     [Header("기절한 모습")]
+    [Tooltip("코가 땅으로 처지는 각 (°) — 크게 주면 곤두선다")] [Range(0f, 45f)] public float 기절엎각 = 18f;
     [Tooltip("엎어지면서 옆으로 퍼지는 정도 (1 = 안 퍼짐)")] [Range(1f, 1.8f)] public float 기절퍼짐 = 1.3f;
     [Tooltip("엎어지면서 납작해지는 정도 (1 = 안 눌림)")] [Range(0.3f, 1f)] public float 기절눌림 = 0.5f;
     [Tooltip("흔들흔들하는 폭 (°)")] [Range(0f, 20f)] public float 기절흔들 = 9f;
@@ -1234,20 +1316,25 @@ public class Critter : MonoBehaviour, IHittable
         float 흔 = Mathf.Sin(Time.time * 5.2f + GetInstanceID()) * 0.7f
                  + Mathf.Sin(Time.time * 8.7f + GetInstanceID() * 0.5f) * 0.3f;
 
-        // ①정면으로 엎어진다 + ③흔들흔들 (좌우로 젓는 폭이 제일 크다)
+        // ①코가 땅으로 처진다 + ③흔들흔들 (좌우로 젓는 폭이 제일 크다)
         body.localRotation = bodyRot * Quaternion.Euler(
-            90f * 엎 + 흔 * 2.5f * 세기,
+            기절엎각 * 엎 + 흔 * 2.5f * 세기,
             흔 * 기절흔들 * 세기,
             흔 * 기절흔들 * 0.5f * 세기);
 
-        // ②납작하게 퍼진다 — 팔다리가 사방으로 뻗은 모습을 리깅 없이 내는 길
+        // ②납작하게 퍼진다 — 팔다리가 사방으로 뻗은 모습을 리깅 없이 내는 길.
+        //   세로를 누르고 가로·앞뒤로 퍼뜨린다 = **배를 깔고 퍼진** 그림
         float 퍼 = Mathf.Lerp(1f, 기절퍼짐, 엎);
         float 눌 = Mathf.Lerp(1f, 기절눌림, 엎);
         body.localScale = new Vector3(bodyScale.x * 퍼, bodyScale.y * 눌, bodyScale.z * 퍼);
 
-        // 바닥에 붙는다 — 눌린 만큼 더 내려앉는다. 숨 쉬듯 아주 조금 오르내린다
+        // ★배가 땅에 닿는다 — **눌린 만큼만** 내려앉는다. 이 한 줄이 두 경우를 다 맞춘다:
+        //   ☆기준점이 발밑이면(진짜 모델) `bodyPos.y` 가 0 이라 내릴 게 없다 — 눌리면 저절로 붙는다
+        //   ☆기준점이 몸 중심이면(상자 몸, `키/2`) 몸이 반으로 눌렸으니 중심도 반으로 내려와야 붙는다
         float 숨 = Mathf.Abs(Mathf.Sin(Time.time * 3.4f)) * 0.03f * 종.키 * 엎;
-        body.localPosition = bodyPos - Vector3.up * (bodyPos.y * 0.72f * 엎) + Vector3.up * 숨;
+        body.localPosition = new Vector3(bodyPos.x,
+                                         bodyPos.y * Mathf.Lerp(1f, 눌, 엎) + 숨,
+                                         bodyPos.z);
     }
 
     void 몸복구()

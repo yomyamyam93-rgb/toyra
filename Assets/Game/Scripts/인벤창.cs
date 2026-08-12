@@ -45,6 +45,25 @@ public class 인벤창 : MonoBehaviour
     Rect 왼칸, 오른칸;
     readonly List<Rect> 통칸 = new List<Rect>();
 
+    // ★★몸의 칸 — **표다** (5-7 의 *"코드에 박지 않는다 — 표로 돈다"*).
+    //   ☆칸 이름은 **좀보이드에 실제로 있는 것**만 골랐다. 지어내지 않았다.
+    //   ☆옷 아이템은 아직 하나도 없다 — **칸만 서 있는다.** 옷을 만드는 날
+    //     `아이템종.입는칸` 에 칸 이름 한 줄만 적으면 그날 바로 걸린다.
+    static readonly (string 이름, int 열, int 줄)[] 몸표 = {
+        ("머리", 0, 0), ("얼굴", 0, 1), ("목",   0, 2), ("장갑", 0, 3),
+        ("가방", 1, 0), ("상의", 1, 1), ("하의", 1, 2), ("신발", 1, 3),
+    };
+    readonly Dictionary<string, Rect> 몸칸자리 = new Dictionary<string, Rect>();
+    Rect 몸칸, 손칸;
+
+    // ★★★**창을 원하는 데로 옮긴다** (2026-08-12 사용자 "좀보이드는 인벤토리 같은것들을
+    //   자유롭게 옮길 수 있나봐?"). 맞다 — 좀보이드는 창을 끌어 옮기고 크기도 바꾼다.
+    //   ☆**제목 줄을 잡아야만** 옮겨진다. 안 그러면 아이템 끌기와 다툰다 —
+    //     칸 위에서 누른 건 이미 이벤트를 먹은 뒤라 창까지 끌리지 않는다.
+    //   ☆옮긴 자리는 창을 닫아도 남는다. 기본 자리로 되돌리려면 제목 줄을 **더블클릭**한다.
+    readonly Vector2?[] 창자리 = new Vector2?[3];
+    int 옮기는창 = -1; Vector2 잡은차이;
+
     string 알림; float 알림T;
 
     void Awake() { hero = GetComponent<Hero>(); 손 = GetComponent<HeroAttack>(); 삶 = GetComponent<생존>(); }
@@ -100,16 +119,34 @@ public class 인벤창 : MonoBehaviour
 
         고른통 = Mathf.Clamp(고른통, 0, Mathf.Max(0, 인벤.통들.Count - 1));
 
-        float w = 330f, h = 400f, 틈 = 8f;
-        float x = Screen.width * 0.5f - w - 틈 * 0.5f;
+        // ★★★**장비 패널이 인벤 창에 붙어 같이 열린다** (2026-08-12 사용자 "인벤토리 말고
+        //   장비착용하는 창도 있지않아? 좀보이드는" → "캐릭터인형 + 슬롯 필요하고, 좀보이드처럼,
+        //   따로인지 합쳐져있는지 보고 만들어줘").
+        //   ☆찾아보니 **좀보이드 바닐라엔 페이퍼돌이 없다.** 그걸 넣는 대표 모드(Equipment UI)가
+        //     쓰는 방식이 **「인벤 창에 붙어 같이 열리고 같이 접히되, 떼어낼 수도 있다」** 였다.
+        //   ☆그대로 따른다 — **키를 안 늘리고**(Tab 하나), 창은 눈으로 갈린다.
+        //     장비도 결국 **물건 옮기기**라 인벤 쪽이 맞다. 「행동」인 제작(C)과는 여전히 갈린다 (5-7).
+        float 장비w = 210f, w = 330f, h = 400f, 틈 = 8f;
+        float 전체 = 장비w + 틈 + w + 틈 + w;
+        float x = Screen.width * 0.5f - 전체 * 0.5f;
         float y = Screen.height * 0.5f - h * 0.5f;
 
         var 무더기 = 땅무더기.가까운것(transform.position, 닿는거리);
 
-        왼칸 = new Rect(x, y, w, h);
-        오른칸 = new Rect(x + w + 틈, y, w, h);
+        // 기본 자리는 늘 이 셋이다 — 옮긴 창만 제 자리로 간다 (하나를 옮겨도 나머지가 안 밀린다)
+        var 몸기본 = new Rect(x, y, 장비w, h);
+        var 왼기본 = new Rect(x + 장비w + 틈, y, w, h);
+        var 오른기본 = new Rect(왼기본.xMax + 틈, y, w, h);
+        몸칸 = 창자리잡기(0, 몸기본);
+        왼칸 = 창자리잡기(1, 왼기본);
+        오른칸 = 창자리잡기(2, 오른기본);
+
+        장비패널(몸칸);
         왼쪽패널(왼칸);
         오른쪽패널(오른칸, 무더기);
+
+        // ★그린 뒤에 본다 — 칸이 먼저 이벤트를 먹을 기회를 준다
+        창끌기(0, 몸칸); 창끌기(1, 왼칸); 창끌기(2, 오른칸);
 
         if (!string.IsNullOrEmpty(알림))
         {
@@ -125,10 +162,11 @@ public class 인벤창 : MonoBehaviour
     // ══════════════════════════════════════════════════════════ 끌어다 놓기
 
     /// 누르는 순간엔 **잡아만 둔다** — 옮길지 말지는 손을 뗄 때 정한다
-    void 집기(아이템 it, 인벤 통, bool 내것인가, 땅무더기 무더기)
+    /// ★자리는 **화면 좌표로 받는다** — 부르는 쪽이 스크롤뷰 안이라 제 손으로는 알 수 없다
+    void 집기(아이템 it, 인벤 통, bool 내것인가, 땅무더기 무더기, Vector2 화면자리)
     {
         끈것 = it; 끈통 = 통; 끈내것 = 내것인가; 끈무더기 = 무더기;
-        누른자리 = Event.current.mousePosition; 끄는중 = false;
+        누른자리 = 화면자리; 끄는중 = false;
     }
 
     void 끌기그리기()
@@ -175,6 +213,11 @@ public class 인벤창 : MonoBehaviour
         // 안 끌었으면 그냥 클릭이다 — 옛 동작 그대로
         if (!끌었다) { 옮기기(it, 출처, 내것, 전부); if (무 != null) 무.갱신(); return; }
 
+        // ⓪ ★장비 칸 위 — **몸에 걸친다.** 「어디에 놓았느냐가 정한다」의 그 길이다
+        if (손칸.Contains(p)) { 손에쥐기(it); if (무 != null) 무.갱신(); return; }
+        foreach (var kv in 몸칸자리)
+            if (kv.Value.Contains(p)) { 몸에걸치기(kv.Key, it, 출처); if (무 != null) 무.갱신(); return; }
+
         // ① 가방 버튼 위 — 그 통에 콕 집어 넣는다
         for (int i = 0; i < 통칸.Count && i < 인벤.통들.Count; i++)
             if (통칸[i].Contains(p)) { 옮기기(it, 출처, 내것, 전부, 인벤.통들[i]); if (무 != null) 무.갱신(); return; }
@@ -186,6 +229,34 @@ public class 인벤창 : MonoBehaviour
         if (오른칸.Contains(p) && 내것) { 옮기기(it, 출처, true, 전부, null, 무); if (무 != null) 무.갱신(); }
     }
 
+    /// 옮겨 둔 자리가 있으면 그리로 — 화면 밖으로는 못 나간다 (되찾을 수 없게 되면 안 된다)
+    Rect 창자리잡기(int i, Rect 기본)
+    {
+        if (!창자리[i].HasValue) return 기본;
+        var p = 창자리[i].Value;
+        p.x = Mathf.Clamp(p.x, -기본.width + 80f, Screen.width - 80f);
+        p.y = Mathf.Clamp(p.y, 0f, Screen.height - 34f);
+        return new Rect(p.x, p.y, 기본.width, 기본.height);
+    }
+
+    /// 제목 줄을 잡아 끈다 — 더블클릭하면 기본 자리로 돌아온다
+    void 창끌기(int i, Rect r)
+    {
+        var e = Event.current;
+        var 손잡이 = new Rect(r.x, r.y, r.width, 26f);
+        if (e.type == EventType.MouseDown && e.button == 0 && 손잡이.Contains(e.mousePosition))
+        {
+            if (e.clickCount >= 2) { 창자리[i] = null; 옮기는창 = -1; }
+            else { 옮기는창 = i; 잡은차이 = e.mousePosition - new Vector2(r.x, r.y); }
+            e.Use();
+        }
+        else if (옮기는창 == i)
+        {
+            if (e.type == EventType.MouseDrag) { 창자리[i] = e.mousePosition - 잡은차이; e.Use(); }
+            else if (e.type == EventType.MouseUp) 옮기는창 = -1;
+        }
+    }
+
     void 테두리(Rect r, Color c)
     {
         GUI.color = c;
@@ -194,6 +265,156 @@ public class 인벤창 : MonoBehaviour
         GUI.DrawTexture(new Rect(r.x, r.y, 2f, r.height), px);
         GUI.DrawTexture(new Rect(r.xMax - 2f, r.y, 2f, r.height), px);
         GUI.color = Color.white;
+    }
+
+    // ══════════════════════════════════════════════════════════ 장비 (몸)
+
+    void 장비패널(Rect r)
+    {
+        바탕(r);
+        var 제목투 = new GUIStyle(GUI.skin.label) { fontSize = 14 };
+        제목투.normal.textColor = new Color(0.85f, 0.85f, 0.88f);
+        GUI.Label(new Rect(r.x + 12f, r.y + 6f, r.width - 24f, 22f), "몸", 제목투);
+
+        const float 칸 = 46f, 여백 = 8f, 줄틈 = 6f, 첫줄 = 34f;
+        인형그리기(new Rect(r.x + r.width * 0.5f - 36f, r.y + 우측첫줄(첫줄), 72f, 190f));
+
+        // ── 칸들 — 인형 좌우로 늘어선다
+        몸칸자리.Clear();
+        for (int i = 0; i < 몸표.Length; i++)
+        {
+            var (이름, 열, 줄) = 몸표[i];
+            float sx = 열 == 0 ? r.x + 여백 : r.xMax - 여백 - 칸;
+            var sr = new Rect(sx, r.y + 첫줄 + 줄 * (칸 + 줄틈), 칸, 칸);
+            몸칸자리[이름] = sr;
+            슬롯(sr, 이름, 걸친것(이름));
+        }
+
+        // ★손(무기)은 아래 가운데 — 좀보이드도 손은 옷과 따로 둔다
+        손칸 = new Rect(r.x + r.width * 0.5f - 32f, r.y + 첫줄 + 4f * (칸 + 줄틈) + 16f, 64f, 64f);
+        슬롯(손칸, "손", 인벤.쥔것);
+
+        // ★칸을 누르면 벗는다 — 끌어다 놓기와 **클릭 한 번** 둘 다 되게 (5-7 의 그 규칙)
+        var e = Event.current;
+        if (e.type == EventType.MouseDown && e.button == 0)
+        {
+            if (손칸.Contains(e.mousePosition) && 인벤.쥔것 != null)
+            {
+                띄움($"{인벤.쥔것.종.이름} 을(를) 놓았다");
+                인벤.쥔것 = null; e.Use();
+            }
+            else foreach (var kv in 몸칸자리)
+            {
+                if (!kv.Value.Contains(e.mousePosition)) continue;
+                if (kv.Key == "가방")
+                {
+                    var 가방통 = 멘가방통();
+                    if (가방통 != null) { 인벤.가방벗기(가방통); 고른통 = 0; 띄움("가방을 벗었다"); e.Use(); }
+                    break;
+                }
+                if (인벤.입은것.TryGetValue(kv.Key, out var 입은) && 입은 != null)
+                {
+                    인벤.입은것.Remove(kv.Key);
+                    인벤.어디든넣기(입은.종, 1);
+                    띄움($"{입은.종.이름} 을(를) 벗었다");
+                    e.Use();
+                }
+                break;
+            }
+        }
+    }
+
+    /// 인형을 칸 줄과 나란히 놓기 위한 자리 (칸 첫 줄과 같은 높이에서 시작한다)
+    static float 우측첫줄(float 첫줄) => 첫줄 + 6f;
+
+    /// 그 칸에 지금 뭐가 걸려 있나 — 가방만 제 길(`통들`)에서 가져온다
+    아이템 걸친것(string 칸)
+    {
+        if (칸 == "가방") return 멘가방();
+        return 인벤.입은것.TryGetValue(칸, out var it) ? it : null;
+    }
+
+    /// ★몸에 걸친다 — 그 칸에 맞는 것이 아니면 거절하고 **왜 안 되는지** 알린다
+    void 몸에걸치기(string 칸, 아이템 it, 인벤 출처)
+    {
+        if (it == null || it.종 == null) return;
+
+        if (칸 == "가방")
+        {
+            if (it.종.가방 > 0f) { 인벤.가방메기(it, 출처); 띄움($"{it.종.이름} 을(를) 멨다"); }
+            else 띄움($"{it.종.이름} — 멜 수 있는 것이 아니다");
+            return;
+        }
+        if (it.종.입는칸 != 칸) { 띄움($"{it.종.이름} — {칸} 에 걸칠 것이 아니다"); return; }
+
+        if (인벤.입은것.TryGetValue(칸, out var 먼저) && 먼저 != null) 인벤.어디든넣기(먼저.종, 1);
+        출처?.꺼내기(it.종.이름, 1);
+        인벤.입은것[칸] = it;
+        띄움($"{it.종.이름} 을(를) 걸쳤다");
+    }
+
+    /// 지금 메고 있는 가방 — 통 목록에 가방으로 붙은 것이 있으면 그것이다
+    아이템 멘가방() => 멘가방통()?.가방아이템;
+
+    인벤 멘가방통()
+    {
+        for (int i = 0; i < 인벤.통들.Count; i++)
+            if (인벤.통들[i].가방아이템 != null) return 인벤.통들[i];
+        return null;
+    }
+
+    /// ★캐릭터 인형 — 상자 몇 개면 충분하다. 6장의 「단순한 형태·크게 나눈 면」 그대로다
+    void 인형그리기(Rect r)
+    {
+        GUI.color = new Color(0.40f, 0.43f, 0.48f);
+        float cx = r.x + r.width * 0.5f;
+        float 머리 = r.width * 0.34f;
+        float 몸y = r.y + 머리 + 4f, 몸h = r.height * 0.40f;
+        GUI.DrawTexture(new Rect(cx - 머리 * 0.5f, r.y, 머리, 머리), px);                        // 머리
+        GUI.DrawTexture(new Rect(cx - r.width * 0.26f, 몸y, r.width * 0.52f, 몸h), px);          // 몸통
+        GUI.DrawTexture(new Rect(cx - r.width * 0.46f, 몸y + 4f, r.width * 0.16f, 몸h * 0.86f), px);  // 왼팔
+        GUI.DrawTexture(new Rect(cx + r.width * 0.30f, 몸y + 4f, r.width * 0.16f, 몸h * 0.86f), px);  // 오른팔
+        float 다리y = 몸y + 몸h + 4f;
+        GUI.DrawTexture(new Rect(cx - r.width * 0.24f, 다리y, r.width * 0.20f, r.height * 0.34f), px);  // 왼다리
+        GUI.DrawTexture(new Rect(cx + r.width * 0.04f, 다리y, r.width * 0.20f, r.height * 0.34f), px);  // 오른다리
+        GUI.color = Color.white;
+    }
+
+    /// 칸 하나 — 비었으면 무슨 칸인지 이름을 띄운다.
+    /// ☆11장의 「설명문 금지」에 안 걸린다 — 빈 칸이 손인지 가방인지 모르면 **화면을 못 읽는다**
+    void 슬롯(Rect r, string 이름, 아이템 it)
+    {
+        bool 위에 = r.Contains(Event.current.mousePosition);
+        bool 놓으려는중 = 끄는중 && 끈것 != null;
+        GUI.color = 놓으려는중 && 위에 ? new Color(0.36f, 0.42f, 0.28f)     // 놓을 수 있다
+                  : 위에 ? new Color(0.26f, 0.28f, 0.32f) : new Color(0.14f, 0.15f, 0.17f);
+        GUI.DrawTexture(r, px);
+        테두리(r, 놓으려는중 && 위에 ? new Color(0.95f, 0.85f, 0.45f) : new Color(0.33f, 0.34f, 0.38f));
+
+        if (it != null && it.종 != null)
+        {
+            GUI.color = it.종.색;
+            GUI.DrawTexture(new Rect(r.x + 11f, r.y + 9f, r.width - 22f, r.height - 28f), px);
+            GUI.color = Color.white;
+            var ns = new GUIStyle(GUI.skin.label) { fontSize = 10, alignment = TextAnchor.MiddleCenter };
+            ns.normal.textColor = new Color(0.95f, 0.9f, 0.75f);
+            GUI.Label(new Rect(r.x, r.yMax - 18f, r.width, 15f), it.종.이름, ns);
+        }
+        else
+        {
+            var ls = new GUIStyle(GUI.skin.label) { fontSize = 11, alignment = TextAnchor.MiddleCenter };
+            ls.normal.textColor = new Color(0.44f, 0.45f, 0.5f);
+            GUI.Label(r, 이름, ls);
+        }
+    }
+
+    /// ★손에 쥔다 — 무기가 아니면 거절하고 **왜 안 되는지** 알린다 (사건 알림은 11장 허용)
+    void 손에쥐기(아이템 it)
+    {
+        if (it == null || it.종 == null) return;
+        if (!it.종.무기) { 띄움($"{it.종.이름} — 손에 쥘 것이 아니다"); return; }
+        인벤.쥔것 = it;
+        띄움($"{it.종.이름} 을(를) 쥐었다");
     }
 
     void 왼쪽패널(Rect r)
@@ -312,8 +533,16 @@ public class 인벤창 : MonoBehaviour
 
                 if (위에 && Event.current.type == EventType.MouseDown)
                 {
-                    if (Event.current.button == 1) 메뉴열기(it, 것, 내것인가, 무더기);   // ★우클릭
-                    else 집기(it, 것, 내것인가, 무더기);        // ★잡아만 둔다 — 판정은 손 뗄 때
+                    // ★★★**스크롤뷰 안의 `mousePosition` 은 화면 좌표가 아니다** (2026-08-12
+                    //   사용자 "마우스 우클릭한 위치가아니라 그 메뉴가").
+                    //   ☆`BeginScrollView` 안에서는 원점이 **스크롤 내용의 왼쪽 위**로 바뀐다.
+                    //     그 값을 그대로 들고 나가면, 메뉴는 스크롤뷰 **바깥**에서 그려지므로
+                    //     화면 왼쪽 위 엉뚱한 데 떴다. 목록을 아래로 굴릴수록 더 어긋난다.
+                    //   ☆끌기 판정도 같이 틀어져 있었다 — 누른 자리는 로컬인데 뗀 자리는
+                    //     화면 좌표라, 두 값의 차가 커서 **누르자마자 「끄는 중」**이 됐다.
+                    var 화면p = Event.current.mousePosition + 안.position - 스크롤;
+                    if (Event.current.button == 1) 메뉴열기(it, 것, 내것인가, 무더기, 화면p);   // ★우클릭
+                    else 집기(it, 것, 내것인가, 무더기, 화면p);   // ★잡아만 둔다 — 판정은 손 뗄 때
                     Event.current.Use();
                 }
                 yy += 26f;
@@ -325,10 +554,10 @@ public class 인벤창 : MonoBehaviour
     // ══════════════════════════════════════════════════════════ 우클릭 메뉴
 
     /// ★메뉴는 **아이템 표에서 나온다** — 여기에 행동을 박지 않는다
-    void 메뉴열기(아이템 it, 인벤 통, bool 내것인가, 땅무더기 무더기)
+    void 메뉴열기(아이템 it, 인벤 통, bool 내것인가, 땅무더기 무더기, Vector2 화면자리)
     {
         메뉴.Clear();
-        메뉴대상 = it; 메뉴통 = 통; 메뉴자리 = Event.current.mousePosition;
+        메뉴대상 = it; 메뉴통 = 통; 메뉴자리 = 화면자리;   // ★화면 좌표다 (스크롤뷰 로컬이 아니라)
 
         var 불 = 모닥불.가까운것(transform.position, 3f);
         var d = it.종;
@@ -359,6 +588,9 @@ public class 인벤창 : MonoBehaviour
                         break;
                 }
             }
+            // ★입고 벗기는 **우클릭과 장비창 둘 다** 된다 (2026-08-12 사용자 확정).
+            //   ☆5-7 의 태도 그대로다 — *"끌기를 더하되 클릭 한 번을 없애지 않는다."*
+            //     길을 늘리는 것과 길을 갈아치우는 것은 다르다.
             if (d.무기) 메뉴.Add((인벤.쥔것 == it ? "손에서 놓기" : "손에 쥐기", () => 쥐기(it)));
             if (d.가방 > 0f) 메뉴.Add(($"메기 (+{d.가방:F0}kg)", () => { 인벤.가방메기(it, 통); 메뉴닫기(); }));
             if (통.가방아이템 != null) 메뉴.Add(("이 가방 벗기", () => { 인벤.가방벗기(통); 고른통 = 0; 메뉴닫기(); }));

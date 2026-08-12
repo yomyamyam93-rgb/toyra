@@ -23,6 +23,16 @@ public class Boot : MonoBehaviour
     //
     //  ☆지우지 않고 꺼 둔다 (9장 3조 — 은퇴는 삭제가 아니라 스위치).
     //    크기를 다시 견줘 볼 일이 생기면 그때만 잠깐 켠다.
+    // ★★**시험용 시작 장비** (2026-08-12 사용자 "밧줄도 우선 들고있게해줘").
+    //   ☆밧줄로 끄는 걸 확인하려면 제작부터 해야 해서 매번 한참 걸렸다.
+    //   ☆**시험용이다** — 9장 0번(*"모든 결과에는 인과와 행위가 있어야 한다"*)에 걸린다.
+    //     제작으로 얻는 길이 자리를 잡으면 이 스위치를 끈다. 지우지 않고 끈다 (9-3).
+    [Header("★시험용 — 시작할 때 들고 있을 것")]
+    [Tooltip("켜면 아래 것들을 주고 시작한다. 시험이 끝나면 끈다")]
+    public bool 장비주고시작 = true;
+    [Tooltip("줄 것 — 아이템 이름. 이미 갖고 있으면 안 준다")]
+    public string[] 시작장비 = { "몽둥이", "밧줄" };
+
     // ══════════════════════════════════════════════════════════
     [Header("동행 펫 — ★은퇴한 시험용 자. 평소엔 꺼 둔다")]
     [Tooltip("크기 견주기용 옛 자다. 펫은 잡아서 기르는 것으로 바뀌었다 — 위 주석 참고")]
@@ -69,6 +79,27 @@ public class Boot : MonoBehaviour
     [Tooltip("프레임을 화면 주사율에 맞춘다 (기본 끔) — 스파이크를 없애지는 못한다")]
     public bool 주사율맞추기 = false;
 
+    /// ★시험용 — 시작할 때 손에 쥐여 준다.
+    ///   ☆인벤은 static 이라 **플레이를 다시 켜도 남아 있을 수 있다** — 그대로 두면 켤 때마다
+    ///     밧줄이 쌓인다. 이미 있으면 건너뛴다.
+    void 시작장비주기()
+    {
+        if (!장비주고시작 || 시작장비 == null) return;
+        foreach (var 이름 in 시작장비)
+        {
+            if (string.IsNullOrEmpty(이름)) continue;
+            if (인벤.어느통에든도구(이름) != null || 인벤.다합쳐개수(이름) > 0) continue;
+            var 종 = 아이템표.찾기(이름);
+            if (종 == null) { Debug.LogWarning($"시작장비 「{이름}」 — 아이템표에 없다"); continue; }
+            // ★★**가방에 넣기만 한다 — 쥐여 주지 않는다** (2026-08-12 사용자 "처음부터 그럼
+            //   이제 몽둥이를 끼고있으면안돼지").
+            //   ☆장비창이 생기기 전엔 쥐여 주지 않으면 **맨손으로 때리게** 되어 어쩔 수 없었다.
+            //     이제 Tab 을 열어 손 칸에 끌어다 놓으면 된다 — **입는 것은 내가 한다.**
+            //   ☆9장 0번(*"모든 결과에는 인과와 행위가 있어야 한다"*)에도 이쪽이 맞다.
+            인벤.어디든넣기(종, 1);
+        }
+    }
+
     void Start()
     {
         if (주사율맞추기 && QualitySettings.vSyncCount == 0) QualitySettings.vSyncCount = 1;
@@ -80,6 +111,7 @@ public class Boot : MonoBehaviour
         if (시험모드키 && GetComponent<시험모드>() == null) gameObject.AddComponent<시험모드>();
 
         Stock.Clear();
+        인벤.새판();          // ★가진 것도 새로 시작한다 — static 이라 안 지우면 지난 판이 남는다
         if (world != null) world.Generate();
 
         if (hero == null) return;
@@ -93,6 +125,8 @@ public class Boot : MonoBehaviour
         // 집 칸 한가운데 — 부화터 바로 옆에 선다
         var c = WorldGrid.Center;
         hero.transform.position = new Vector3(c.x, 0f, c.z - 12f);
+
+        시작장비주기();
 
         if (!펫데리고시작) return;
 
