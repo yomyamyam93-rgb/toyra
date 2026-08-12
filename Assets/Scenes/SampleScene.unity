@@ -5539,6 +5539,36 @@ MonoBehaviour:
   "\uC8FC\uAE30": 1
   "\uBB38\uD131": 236
   "\uCD5C\uC18C\uD53D\uC140": 30
+--- !u!21 &321508641
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: "\uACA9\uC790\uBC14\uB2E5_\uC784\uC2DC\uC717\uBA74"
+  m_Shader: {fileID: 4800000, guid: 6559b520a6d8ce54ba9c792be9c323fe, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs: []
+    m_Ints: []
+    m_Floats:
+    - _ShadowLift: 0.32
+    - _Steps: 3
+    m_Colors: []
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1
 --- !u!4 &399861229 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -3910990755373119420, guid: ce9c7bcdc09c96b41b758d2882f4d251, type: 3}
@@ -7327,8 +7357,8 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2120578595}
-  - {fileID: 1355084218}
+  - {fileID: 321508641}
+  - {fileID: 1426659424}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -7831,6 +7861,8 @@ MonoBehaviour:
   "\uC170\uC774\uB354\uC608\uC5F4": 1
   "\uC2A4\uC2A4\uB85C\uC7AC\uAE30": 8
   "\uD55C\uD504\uB808\uC784\uCE58\uC6B0\uAE30": 2
+  "\uB178\uBA40\uBE44\uC911": 5
+  "\uBC88\uD638\uAC04\uACA9": 0.12
   "\uC2A4\uD3F0\uB85C\uADF8": 0
   "\uC5B4\uBBF8\uC0C8\uB07C": 1
   "\uCCB4\uB825\uC9C0\uC218": 2.4
@@ -7874,6 +7906,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Boot
   world: {fileID: 0}
   hero: {fileID: 0}
+  "\uC7A5\uBE44\uC8FC\uACE0\uC2DC\uC791": 1
+  "\uC2DC\uC791\uC7A5\uBE44":
+  - "\uBABD\uB465\uC774"
+  - "\uBC27\uC904"
   "\uD3AB\uB370\uB9AC\uACE0\uC2DC\uC791": 0
   "\uB3D9\uC791\uC9C4\uC5F4\uD0A4": 1
   "\uC2DC\uD5D8\uBAA8\uB4DC\uD0A4": 1
@@ -8054,6 +8090,9 @@ MonoBehaviour:
   "\uB3CC\uCE78\uB2F9\uCD5C\uB300": 3
   "\uAE38\uBE44\uC6B0\uAE30": 8
   "\uB9C9\uB294\uB3CC\uC9C0\uB984": 1.6
+  "\uD669\uC57C\uAC04\uACA9": 11
+  "\uD669\uC57C\uBC00\uB3C4": 0.5
+  "\uD669\uC57C\uB3CC\uD655\uB960": 0.3
   "\uD480\uD504\uB9AC\uD339": []
   "\uAF43\uD504\uB9AC\uD339": []
   "\uAF43\uC11E\uAE30": 0.22
@@ -8376,7 +8415,7 @@ MonoBehaviour:
   "\uB36E\uC740\uBE44\uC728": 0.42
   "\uD574\uC0C1\uB3C4": 256
   "\uC528": 3
---- !u!21 &1355084218
+--- !u!21 &1426659424
 Material:
   serializedVersion: 8
   m_ObjectHideFlags: 0
@@ -8663,6 +8702,19 @@ MonoBehaviour:
   "\uC190\uB2FF\uB294\uAC70\uB9AC": 2.2
   "\uC548\uB294\uBB34\uAC8C": 0.8
   "\uB044\uB294\uBB34\uAC8C": 3
+  "\uBC27\uC904\uBC30": 2.2
+  "\uB04C\uCC28\uBC30": 4
+  "\uB04C\uCC28\uB54C": 0.4
+  "\uC960\uC2DC\uC791": 0.18
+  "\uC960\uC2DC\uAC04": 0.38
+  "\uC816\uD798\uC2DC\uC791": 0.42
+  "\uC816\uD798\uC2DC\uAC04": 0.4
+  "\uB9E8\uC190\uC5D4\uC904\uC5C6\uC74C": 0
+  "\uC904\uCC98\uC9D0": 0.22
+  "\uC904\uAD75\uAE30": 0.05
+  "\uB4DC\uB294\uB370": 0.55
+  "\uB4F1\uB192\uC774": 0.72
+  "\uD754\uB4E4\uAC01": 7
   "\uC548\uC558\uC744\uB54C": 0.7
   "\uB04C\uB54C": 0.55
   "\uB04A\uAE30\uB294\uAC70\uB9AC": 3.5
@@ -8688,6 +8740,7 @@ MonoBehaviour:
   "\uAC08\uBB34\uB9AC\uD074\uB9BD": {fileID: 7400000, guid: 597f38887f9def14ea48c2e45135d90c, type: 2}
   "\uAC08\uBB34\uB9AC\uC549\uB294\uB370": 0.9
   "\uCC44\uC9D1\uB04A\uB294\uC18D\uB3C4": 0.35
+  "\uC90D\uAE30\uAD7D\uD798": 0
   "\uC608\uBE44": 0.14
   "\uD718\uB450\uB984": 0.16
   "\uC5EC\uC6B4": 0.22
@@ -8727,13 +8780,22 @@ MonoBehaviour:
   "\uC8FC\uBA39\uBF08\uC774\uB984": []
   "\uC8FC\uBA39\uBF08\uC790\uC138": []
   "\uACF5\uACA9\uD074\uB9BD": {fileID: 7400000, guid: 70e0dd7d72e10a841903c34d702274a8, type: 2}
+  "\uC8FC\uBA39\uC624\uB978\uD074\uB9BD": {fileID: 7400000, guid: 09a8644321f39ab4e809aad21b7c86b4, type: 2}
+  "\uC8FC\uBA39\uC67C\uD074\uB9BD": {fileID: 0}
+  "\uBC1C\uCC28\uAE30\uD074\uB9BD": {fileID: 7400000, guid: 5c95d77861214aa47997673b67c7eec8, type: 2}
   "\uD788\uD2B8\uC2A4\uD1B1": 0.045
+  "\uB4F1\uC5D0\uBA68\uB098": 0
+  "\uB4F1\uC9D0\uC790\uB9AC": {x: -0.16, y: 1.15, z: -0.18}
+  "\uB4F1\uC9D0\uAE30\uC6B8\uC784": {x: 0, y: 0, z: 52}
   "\uD310\uC815\uAC01\uC5EC\uC720": 14
   "\uD310\uC815\uAC70\uB9AC\uC5EC\uC720": 0.12
   "\uAC00\uB85C\uD3ED": 0.45
   "\uC0AC\uAC70\uB9AC\uC5EC\uC720": 0.1
   "\uBAB8\uAC10\uAE30": 34
   "\uBAB8\uCE58\uAE30": 26
+  "\uCC28\uAE30\uD5C8\uBC85": -58
+  "\uCC28\uAE30\uC815\uAC15": 42
+  "\uCC28\uAE30\uBC1C\uBAA9": -20
   "\uC6C5\uD06C\uB9BC\uAE4A\uC774": 0.09
   "\uC2A4\uD0E0\uC2A4": 11
   "\uB0B4\uB51B\uAE30\uAC01": 14
@@ -8846,6 +8908,25 @@ MonoBehaviour:
   "\uC2DC\uCC28": 0.18
   "\uBAA9\uD45C": 0
   "\uCE68": 0
+  "\uC90D\uC744\uB54C\uC5B4\uAE68": {x: 38, y: 0, z: 0}
+  "\uC90D\uC744\uB54C\uD314": {x: 62, y: 0, z: -8}
+  "\uC90D\uC744\uB54C\uD314\uB69D": {x: -46, y: 0, z: 0}
+  "\uC90D\uC744\uB54C\uBA38\uB9AC": {x: 26, y: 0, z: 0}
+  "\uC90D\uAE30": 0
+  "\uB04C\uB54C\uC5B4\uAE68": {x: 18, y: 0, z: 0}
+  "\uB04C\uB54C\uD314": {x: 48, y: 0, z: -6}
+  "\uB04C\uB54C\uD314\uB69D": {x: -32, y: 0, z: 0}
+  "\uB04C\uB54C\uC67C\uD314": {x: 34, y: 0, z: 20}
+  "\uB04C\uB54C\uC67C\uD314\uB69D": {x: -56, y: 0, z: 0}
+  "\uB04C\uB54C\uBAB8\uD1B5": {x: -16, y: 0, z: 0}
+  "\uB04C\uB54C\uBA38\uB9AC": {x: -6, y: 0, z: 0}
+  "\uB04C\uAE30": 0
+  "\uB04C\uAE30\uC816\uD798": 0
+  "\uC9C0\uB97C\uB54C\uC5B4\uAE68": {x: 8, y: 0, z: 0}
+  "\uC9C0\uB97C\uB54C\uD314": {x: -86, y: -16, z: 10}
+  "\uC9C0\uB97C\uB54C\uD314\uB69D": {x: -8, y: 0, z: 0}
+  "\uC9C0\uB974\uAE30": 0
+  "\uC67C\uC8FC\uBA39": 0
 --- !u!114 &1648256981
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -10052,36 +10133,6 @@ Material:
     - _OutlineWidth: 0.0012
     m_Colors:
     - _OutlineColor: {r: 0.08, g: 0.07, b: 0.1, a: 1}
-  m_BuildTextureStacks: []
-  m_AllowLocking: 1
---- !u!21 &2120578595
-Material:
-  serializedVersion: 8
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_Name: "\uACA9\uC790\uBC14\uB2E5_\uC784\uC2DC\uC717\uBA74"
-  m_Shader: {fileID: 4800000, guid: 6559b520a6d8ce54ba9c792be9c323fe, type: 3}
-  m_Parent: {fileID: 0}
-  m_ModifiedSerializedProperties: 0
-  m_ValidKeywords: []
-  m_InvalidKeywords: []
-  m_LightmapFlags: 4
-  m_EnableInstancingVariants: 0
-  m_DoubleSidedGI: 0
-  m_CustomRenderQueue: -1
-  stringTagMap: {}
-  disabledShaderPasses: []
-  m_LockedProperties: 
-  m_SavedProperties:
-    serializedVersion: 3
-    m_TexEnvs: []
-    m_Ints: []
-    m_Floats:
-    - _ShadowLift: 0.32
-    - _Steps: 3
-    m_Colors: []
   m_BuildTextureStacks: []
   m_AllowLocking: 1
 --- !u!1660057539 &9223372036854775807

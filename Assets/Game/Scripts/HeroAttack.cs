@@ -242,6 +242,16 @@ public class HeroAttack : MonoBehaviour
     [Tooltip("때리는 동작 클립 — 넣으면 HeroHold·몸통스윙 대신 이게 그린다")]
     public AnimationClip 공격클립;
 
+    // ★★맨손 몸짓도 **클립으로 그린다** (2026-08-12 사용자 "제발 모션은 제작하면 좀
+    //   넣어주면안돼?"). 여태 주먹·발차기는 절차 모션뿐이라 애니메이션 창에 고칠 것이
+    //   없었다 — `Tools/토이라/맨손 몸짓을 클립으로 굽기` 가 이 세 칸을 채운다.
+    //   ☆비워 두면 옛날처럼 절차 쪽(`몸통스윙`·`HeroHold.지르기`)이 그린다. 은퇴는 삭제가
+    //     아니라 스위치라, 클립을 빼면 그대로 되돌아간다.
+    [Header("맨손 몸짓 클립 (비우면 코드가 그린다)")]
+    [Tooltip("오른주먹 — 맨손짓 0")] public AnimationClip 주먹오른클립;
+    [Tooltip("왼주먹 — 맨손짓 1")]   public AnimationClip 주먹왼클립;
+    [Tooltip("발차기 — 맨손짓 2")]   public AnimationClip 발차기클립;
+
     [Header("느낌")]
     [Tooltip("맞히는 순간 아주 짧게 멈춘다 (초) — 0 이면 안 씀")] public float 히트스톱 = 0.045f;
 
@@ -1082,6 +1092,24 @@ public class HeroAttack : MonoBehaviour
     int 맨손짓, 지난맨손짓 = -1;      // 0 = 오른주먹 · 1 = 왼주먹 · 2 = 발차기
     float 차기;
     State 지난state = State.쉼;
+
+    /// ★★★**한 타가 시작될 때 이번 몸짓을 뽑는다** — 직전과 다른 것으로.
+    ///   ☆여태 이 뽑기가 `몸통스윙` 안에 있었다. 그런데 클립을 쓰면 `몸통스윙` 이 통째로
+    ///     안 돌아서 **영영 오른주먹만 나온다** — 9-2 그대로다. 그래서 그리는 방식과
+    ///     상관없이 매번 도는 자리로 꺼냈다. (절차 쪽에서 보면 하는 일은 그대로다)
+    void 맨손짓뽑기()
+    {
+        if (state == 지난state) return;
+        if (state == State.예비 && 맨손)
+        {
+            // ★**왼주먹(1)은 은퇴했다** (2026-08-12 사용자 "왼손은 지워주고").
+            //   코드와 각도는 남겨 둔다 — 은퇴는 삭제가 아니라 스위치다. 뽑기에서만 뺀다.
+            //   ☆남은 게 둘뿐이라 「직전과 다른 것」 규칙이 곧 번갈아 나오기가 된다.
+            맨손짓 = 지난맨손짓 == 0 ? 2 : 0;      // 오른주먹 ↔ 발차기
+            지난맨손짓 = 맨손짓;
+        }
+        지난state = state;
+    }
     /// 손에 쥔 무기가 없나 — 수치를 읽는 자리(`인벤.쥔것`)와 **같은 것**을 본다
     bool 맨손 => 인벤.쥔것 == null || 인벤.쥔것.종 == null || !인벤.쥔것.종.무기;
 
@@ -1093,7 +1121,18 @@ public class HeroAttack : MonoBehaviour
     ///     맨손이면 절차 쪽에 넘긴다.
     ///   ☆★채집은 예외다 — 도끼질은 저작된 클립이라야 읽힌다. 게다가 채집 도구는
     ///     「쥔 것」과 별개로 저절로 골라 쓰므로(5-7), 맨손으로 잘못 읽힌다.
-    bool 클립쓴다 => 공격클립 != null && (!맨손 || state == State.채집);
+    ///   ☆★**맨손도 이제 클립이 있으면 클립이 그린다** (2026-08-12). 아래 `이번클립` 이
+    ///     맨손일 때 몸짓별 클립을 고르므로, 그게 꽂혀 있으면 절차 대신 그쪽으로 간다.
+    ///     안 꽂혀 있으면 null 이라 여기가 꺼지고 **옛 절차 길로 그대로 돌아간다.**
+    bool 클립쓴다 => 이번클립 != null;
+
+    /// 이번 타를 그릴 클립 — 맨손이면 몸짓별 클립, 무기를 쥐었거나 채집이면 스윙 클립.
+    AnimationClip 이번클립 => (맨손 && state != State.채집) ? 맨손클립 : 공격클립;
+    AnimationClip 맨손클립 => 맨손짓 == 2 ? 발차기클립 : 맨손짓 == 1 ? 주먹왼클립 : 주먹오른클립;
+    /// 그 클립이 들어앉은 컨트롤러 **상태 이름**의 해시 — 클립과 짝이 어긋나면 딴 몸짓이 나온다
+    int 이번해시 => (맨손 && state != State.채집)
+                  ? (맨손짓 == 2 ? 발차기해시 : 맨손짓 == 1 ? 주먹왼해시 : 주먹오른해시)
+                  : 공격해시;
 
     Transform 등뼈2, 등뼈1, 가슴뼈, 머리뼈;
     Transform 골반뼈, 왼허벅, 오른허벅, 왼정강, 오른정강, 왼발목, 오른발목;
@@ -1138,17 +1177,6 @@ public class HeroAttack : MonoBehaviour
         //   이 한 값이 앞뒤 다리를 갈라 굽힌다.
         // ★걸음은 **무게와 따로** 둔다. 무게를 그대로 걸음으로 쓰면 가만히 들고만 있어도
         //   (무게 0.3) 앞발이 나가고 떠 있게 된다 — 실제로 6cm 떠 있었다.
-        // ★한 타가 시작될 때 **이번 몸짓을 뽑는다** — 직전과 다른 것으로
-        if (state != 지난state)
-        {
-            if (state == State.예비 && 맨손)
-            {
-                int n; do { n = Random.Range(0, 3); } while (n == 지난맨손짓);
-                맨손짓 = 지난맨손짓 = n;
-            }
-            지난state = state;
-        }
-
         // ★몸짓 세기 — 휘두르는 동안 0 → 1 → 0 (치고 돌아온다)
         float 짓세기 = state == State.휘두름
                      ? Mathf.Sin(Mathf.Clamp01(t / Mathf.Max(0.01f, 휘두름)) * Mathf.PI) : 0f;
@@ -1364,7 +1392,7 @@ public class HeroAttack : MonoBehaviour
                     클립돌던중 = false; return;
                 }
                 float 남은 = Mathf.Clamp01(1f - cd / Mathf.Max(0.01f, 공격쿨));
-                초 = Mathf.Lerp(총, 공격클립.length, 남은);
+                초 = Mathf.Lerp(총, 이번클립.length, 남은);
                 break;
         }
         // 든 자세 코드가 같이 돌면 두 번 그려져 떨린다 — 클립이 쥐는 동안은 재운다
@@ -1373,7 +1401,7 @@ public class HeroAttack : MonoBehaviour
         if (애니 == null || !애니.isActiveAndEnabled) { 애니 = GetComponentInChildren<Animator>(); 몸뿌리 = 애니 != null ? 애니.gameObject : gameObject; }
         if (애니 == null) return;
 
-        float n = Mathf.Clamp01(초 / Mathf.Max(0.01f, 공격클립.length));
+        float n = Mathf.Clamp01(초 / Mathf.Max(0.01f, 이번클립.length));
 
         // ★★★**애니메이터한테 직접 재생시킨다. `SampleAnimation` 은 안 먹는다** (2026-08-09
         //   사용자 "아직 내가 넣은 모션이 아니라").
@@ -1394,7 +1422,7 @@ public class HeroAttack : MonoBehaviour
         if (공격층 > 0)
         {
             애니.SetLayerWeight(공격층, 1f);
-            애니.Play(공격해시, 공격층, n);
+            애니.Play(이번해시, 공격층, n);
 
             // ★★★**서 있을 때는 다리까지 공격 모션이 나온다** (2026-08-09 사용자 "걷거나 다른
             //   동작이 아닐때는, 공격모션이 다리에있는 모션까지 다 나와야지").
@@ -1425,14 +1453,19 @@ public class HeroAttack : MonoBehaviour
                     하체목표 = 0f;
                 하체무게 = Mathf.MoveTowards(하체무게, 하체목표, Time.deltaTime * 12f);
                 애니.SetLayerWeight(하체층, 하체무게);
-                if (하체무게 > 0.001f) 애니.Play(공격해시, 하체층, n);
+                if (하체무게 > 0.001f) 애니.Play(이번해시, 하체층, n);
             }
         }
-        else 공격클립.SampleAnimation(몸뿌리, Mathf.Clamp(초, 0f, 공격클립.length));  // 층이 없으면 옛길
+        else 이번클립.SampleAnimation(몸뿌리, Mathf.Clamp(초, 0f, 이번클립.length));  // 층이 없으면 옛길
         클립돌던중 = true;
     }
     bool 클립돌던중; GameObject 몸뿌리; Quaternion? 자리기본; Animator 애니; bool 누름중; float 감은시간;
     static readonly int 공격해시 = Animator.StringToHash("공격");
+    // ★이름이 `맨손클립굽기` 가 만드는 **컨트롤러 상태 이름**과 같아야 한다. 어긋나면
+    //   유니티가 조용히 무시하고 아무 일도 안 난다 (9-2 — 경로가 틀려도 에러를 안 낸다).
+    static readonly int 주먹오른해시 = Animator.StringToHash("주먹오른");
+    static readonly int 주먹왼해시   = Animator.StringToHash("주먹왼");
+    static readonly int 발차기해시   = Animator.StringToHash("발차기");
     int 공격층 = -1, 하체층 = -1; float 하체무게, 하체목표; bool 하체정함;
 
     [Header("공격 클립 — 하체")]
@@ -1484,6 +1517,7 @@ public class HeroAttack : MonoBehaviour
         //   안 돌아서** 내가 넣은 자세가 한 번도 실행된 적이 없었다.
         //   ☆나무·돌을 팰 때는 클립이 맞다 — 도끼질은 저작된 동작이라야 읽힌다.
         //     사체 뒤적임은 저작된 클립이 없으므로 절차 쪽이 그린다.
+        맨손짓뽑기();                      // ★그리는 방식과 상관없이 먼저 정한다 (아래 주석)
         bool 뒤적임 = state == State.채집 && !채집팸;
         if (뒤적임 && 갈무리클립 != null) 갈무리그리기();
         else if (클립쓴다 && !뒤적임) 클립으로그리기();
