@@ -80,11 +80,25 @@ public static class 맨손클립굽기
 
         // 뼈 잡기 — ★★★경로는 **애니메이터가 붙은 몸 기준**이다. 캐릭터 뿌리 기준으로 구우면
         //   애니메이션 창이 아무것도 못 잡는다 (다른 클립들이 전부 `Armature/…` 인 이유).
+        //
+        // ★★★★**뼈를 골라 담지 않는다 — 전부 담는다** (2026-08-12 사용자 "키프레임 전부다
+        //   찍어서 전체 싹다 모든 부위 모든키프레임").
+        //   ☆옛 방식은 미리 정한 17개 목록만 담고, 그중에서도 0.5° 미만으로 움직인 뼈는
+        //     뺐다. 그래서 「왜 이 뼈는 애니메이션 창에 없냐」가 계속 생겼다.
+        //   ☆이제 `Armature` 아래 **모든 뼈**를 담는다. 안 움직이는 뼈도 커브가 생기므로
+        //     애니메이션 창에서 바로 잡고 고칠 수 있다.
         var 뼈 = new Dictionary<string, Transform>();
         var 길 = new Dictionary<string, string>();
-        foreach (var t in an.GetComponentsInChildren<Transform>(false))
-            if (System.Array.IndexOf(뼈들, t.name) >= 0 && !뼈.ContainsKey(t.name))
-            { 뼈[t.name] = t; 길[t.name] = 뼈길(an.transform, t); }
+        Transform 뿌리뼈 = null;
+        foreach (var t in an.GetComponentsInChildren<Transform>(true))
+            if (t.name == "Armature") { 뿌리뼈 = t; break; }
+        var 담을것 = 뿌리뼈 != null ? 뿌리뼈.GetComponentsInChildren<Transform>(true)
+                                    : an.GetComponentsInChildren<Transform>(true);
+        foreach (var t in 담을것)
+        {
+            if (t == an.transform || 뼈.ContainsKey(t.name)) continue;
+            뼈[t.name] = t; 길[t.name] = 뼈길(an.transform, t);
+        }
         if (뼈.Count == 0) { Debug.LogError("[맨손클립] 뼈를 하나도 못 찾았다."); return; }
 
         // 절차 모션을 손으로 돌리기 위한 준비 (전부 private 이라 리플렉션)
@@ -100,6 +114,8 @@ public static class 맨손클립굽기
         var f맨손짓     = typeof(HeroAttack).GetField("맨손짓", 숨);
         var f지난맨손짓 = typeof(HeroAttack).GetField("지난맨손짓", 숨);
         var f지난state  = typeof(HeroAttack).GetField("지난state", 숨);
+        var f가드       = typeof(HeroAttack).GetField("가드", 숨);      // 킥표가 정하는 팔 가드
+        var f킥t        = typeof(HeroAttack).GetField("킥t", 숨);       // 킥표 시계 — 굽기 시작마다 0 으로
         if (f지금 == null || f지르기지금 == null || m잡기 == null || f상태 == null || m몸통 == null
             || 상태형 == null || f맨손짓 == null || f지난state == null)
         { Debug.LogError("[맨손클립] 절차 모션 내부를 못 잡았다 — 코드가 바뀌었으면 이 도구도 고쳐야 한다."); return; }
@@ -127,7 +143,7 @@ public static class 맨손클립굽기
         foreach (var 몸짓 in 굽을것)
             구운것.Add(한벌굽기(몸짓.짓, $"{몸짓.이름}_{뒷말}", hero, hold, an, 기본, 뼈, 길,
                              f지금, f지르기지금, m잡기, f상태, f시각, m몸통, 상태형,
-                             f맨손짓, f지난맨손짓, f지난state, f지난자리, f이동평활));
+                             f맨손짓, f지난맨손짓, f지난state, f지난자리, f이동평활, f가드, f킥t));
 
         // 원래대로 되돌린다 (씬에 공격 자세가 눌러붙지 않게)
         기본.SampleAnimation(an.gameObject, 0f);
@@ -178,13 +194,16 @@ public static class 맨손클립굽기
         Dictionary<string, Transform> 뼈, Dictionary<string, string> 길,
         FieldInfo f지금, FieldInfo f지르기지금, MethodInfo m잡기, FieldInfo f상태, FieldInfo f시각,
         MethodInfo m몸통, System.Type 상태형, FieldInfo f맨손짓, FieldInfo f지난맨손짓,
-        FieldInfo f지난state, FieldInfo f지난자리, FieldInfo f이동평활)
+        FieldInfo f지난state, FieldInfo f지난자리, FieldInfo f이동평활, FieldInfo f가드, FieldInfo f킥t)
     {
         // ★★이동 평활값을 재우고 시작한다 — 첫 프레임에 속도가 튀면 `목표웅크림` 이 0으로
         //   눌려 **다리가 하나도 안 굽은 채로** 구워진다 (`공격클립굽기` 가 겪은 그대로).
         f지난자리?.SetValue(hero, hero.transform.position);
         f이동평활?.SetValue(hero, 0f);
-        foreach (var n in new[] { "웅크림", "무게", "내딛음", "몸yaw", "몸pitch" })
+        // ★★킥표 시계를 0 으로 되돌린다 — 실행 중엔 `맨손짓뽑기` 가 하는 일이다.
+        //   안 하면 앞 몸짓을 굽던 시계가 이어져 **발차기가 이미 끝난 자세로** 구워진다.
+        f킥t?.SetValue(hero, 0f);
+        foreach (var n in new[] { "웅크림", "무게", "내딛음", "몸yaw", "몸pitch", "무릎듦", "뻗음정도", "가드", "킥젖힘값" })
             typeof(HeroAttack).GetField(n, BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(hero, 0f);
 
         var 회전 = new Dictionary<string, AnimationCurve[]>();
@@ -241,9 +260,8 @@ public static class 맨손클립굽기
             f맨손짓.SetValue(hero, 짓);
             f지난맨손짓?.SetValue(hero, 짓);
 
-            // ★★**발차기면 팔을 안 든다** — `HeroAttack` 이 실행 중에 하는 것과 같게 맞춘다
-            //   (거기선 `드는자세.목표 = (클립쓴다 || 발차기짓) ? 0f : …`). 이 줄이 없으면
-            //   도구는 그 코드를 안 거치므로 **클립에 몽둥이 팔 아크가 다시 구워진다.**
+            // ★발차기는 팔이 몽둥이 아크를 안 그린다 — 「든 자세」를 가드로 빌려 쓸 뿐이라
+            //   침(내려침)은 0 이고, 얼마나 들지는 **몸통스윙이 정한 뒤에** 아래에서 넣는다.
             if (짓 == 2) { 든정도 = 0f; 침 = 0f; }
 
             hold.목표 = 든정도; hold.침 = 침;
@@ -253,6 +271,15 @@ public static class 맨손클립굽기
             //   ★자리는 안 움직이니 매 프레임 지난자리를 지금 자리로 못박는다 (속도 0)
             f지난자리?.SetValue(hero, hero.transform.position);
             m몸통.Invoke(hero, new object[] { 1f / 초당 });
+
+            // ★★**킥표가 정한 가드를 팔에 넣는다** — `HeroAttack` 이 실행 중에 하는 것과 같게
+            //   (거기선 `드는자세.목표 = 가드 * 가드세기`). 이 줄이 없으면 찰 때 팔이
+            //   축 늘어진 채로 구워진다. 반드시 `몸통스윙` **뒤**여야 한다 — 가드값을 거기서 정한다.
+            if (짓 == 2 && f가드 != null)
+            {
+                float g = Mathf.Clamp01((float)f가드.GetValue(hero) * hero.가드세기);
+                hold.목표 = g; hold.침 = 0f; f지금.SetValue(hold, g);
+            }
 
             // ★★`몸통스윙` 이 방금 정한 주먹 세기를 **그대로 못박는다.** 편집 모드에선
             //   `Time.deltaTime` 이 못 믿을 값이라 `HeroHold` 의 평활이 안 자란다 —
@@ -287,18 +314,16 @@ public static class 맨손클립굽기
         clip.frameRate = 초당;
         clip.name = 이름;
 
-        int 넣은뼈 = 0, 뜬키 = 0, 남긴키 = 0;
+        // ★★**솎아내지 않는다. 모든 뼈에 모든 프레임을 찍는다** (2026-08-12 사용자 지시).
+        //   ☆직전엔 곡선 모양이 안 변하는 중간 키를 지웠는데(RDP), 그러면 뼈마다 키 시각이
+        //     달라지고 「왜 여긴 키가 없냐」가 생긴다. 이제 31프레임을 그대로 남긴다.
+        int 넣은뼈 = 0, 남긴키 = 0;
         foreach (var kv in 뼈)
         {
-            // ★안 움직이는 뼈는 커브를 아예 안 넣는다 — 목록이 지저분하면 고칠 것을 못 찾는다.
-            //   빠진 뼈는 걷기 클립이 계속 갖는다.
-            if (변화(회전[kv.Key]) < 0.5f) continue;
             넣은뼈++;
             string path = 길[kv.Key];
             for (int i = 0; i < 3; i++)
             {
-                뜬키 += 회전[kv.Key][i].length;
-                줄이기(회전[kv.Key][i], 각도허용);        // ★봉우리는 남고 평평한 데만 지워진다
                 남긴키 += 회전[kv.Key][i].length;
                 매끈(회전[kv.Key][i]);
                 // `localEulerAnglesRaw` = 애니메이션 창에 `Rotation X/Y/Z` (도 단위)로 뜬다.
@@ -310,7 +335,6 @@ public static class 맨손클립굽기
             if (kv.Key == "Hips")
                 for (int i = 0; i < 3; i++)
                 {
-                    줄이기(위치[kv.Key][i], 자리허용);
                     매끈(위치[kv.Key][i]);
                     AnimationUtility.SetEditorCurve(clip,
                         EditorCurveBinding.FloatCurve(path, typeof(Transform), "m_LocalPosition." + "xyz"[i]), 위치[kv.Key][i]);
@@ -323,7 +347,7 @@ public static class 맨손클립굽기
 
         if (새로만듦) AssetDatabase.CreateAsset(clip, 저장);
         EditorUtility.SetDirty(clip);
-        Debug.Log($"[맨손클립] {저장} — 움직인 뼈 {넣은뼈}개 · 키 {뜬키}개를 떠서 {남긴키}개로 솎았다");
+        Debug.Log($"[맨손클립] {저장} — 뼈 {넣은뼈}개 전부 · 회전 키 {남긴키}개 (프레임마다 다 찍음)");
         return clip;
     }
 
