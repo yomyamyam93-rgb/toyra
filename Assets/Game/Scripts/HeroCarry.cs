@@ -23,6 +23,12 @@ public class HeroCarry : MonoBehaviour
     [Tooltip("이 무게까지는 끌고 간다")] public float 끄는무게 = 3f;
 
     [Header("데려가기")]
+    [Header("★집어들기")]
+    [Tooltip("숙여서 집어드는 데 걸리는 시간 (초)")] [Range(0.1f, 1.5f)] public float 드는데 = 0.55f;
+    [Tooltip("등에 맨 높이 — 사람 키에 대한 비율")] [Range(0.3f, 1.2f)] public float 등높이 = 0.72f;
+    [Tooltip("걸을 때 등에서 흔들리는 각 (°)")] [Range(0f, 20f)] public float 흔들각 = 7f;
+    float 줍기t; Vector3 잡은자리; HeroAttack 손;
+
     [Tooltip("안고 있을 때 이동 속도 배수")] [Range(0.2f, 1f)] public float 안았을때 = 0.7f;
     [Tooltip("끌고 있을 때 이동 속도 배수")] [Range(0.2f, 1f)] public float 끌때 = 0.55f;
     [Tooltip("끌 때 이 거리를 넘으면 놓친다 (m)")] public float 끊기는거리 = 3.5f;
@@ -93,10 +99,31 @@ public class HeroCarry : MonoBehaviour
 
         if (안는중)
         {
-            // 안고 있으면 몸 앞에 붙어 온다
-            var at = transform.position + transform.forward * 0.55f + Vector3.up * 0.9f;
-            데려가는것.transform.position = at;
-            데려가는것.transform.rotation = transform.rotation;
+            // ★★★**집어들고 등에 맨다** (2026-08-12 사용자 "숙여서 집어들고 머리위 or
+            //   등뒤로 매달아두는거지"). 전에는 몸 앞 90cm 에 **그냥 떠 있었다** —
+            //   드는 동작도, 붙어 있는 자리도 없이 공중에 매달린 그림이었다.
+            //   ☆①숙인다 ②새끼가 바닥에서 등으로 올라온다 ③등에 매달려 흔들린다
+            //   ☆드는 동안은 느리다 — 두 손이 차 있으니 당연하다
+            줍기t = Mathf.Min(줍기t + dt, 드는데);
+            float 듦 = 드는데 > 0.01f ? Mathf.SmoothStep(0f, 1f, 줍기t / 드는데) : 1f;
+
+            // 몸 자세는 `HeroAttack` 이 쥐고 있다 — 얼마나 숙일지만 넘긴다
+            if (손 == null) 손 = GetComponent<HeroAttack>();
+            if (손 != null) 손.줍기굽힘 = 1f - 듦;          // 처음에 깊게 숙였다 펴진다
+
+            if (듦 < 1f) hero.MoveMul = 0.25f;              // 드는 동안은 거의 못 간다
+
+            // 바닥(집은 자리) → 등 뒤 위쪽으로 올라온다
+            var 바닥 = 잡은자리;
+            var 등 = transform.position - transform.forward * 0.32f
+                     + Vector3.up * (hero.height * 등높이)
+                     + transform.right * 0.12f;            // 살짝 한쪽으로 — 정중앙이면 가려진다
+            데려가는것.transform.position = Vector3.Lerp(바닥, 등, 듦);
+
+            // 등에 매달려 걸음마다 흔들린다 — 매달린 것은 흔들려야 매달린 것으로 읽힌다
+            float 흔 = 듦 * Mathf.Sin(Time.time * 6.5f) * 흔들각;
+            데려가는것.transform.rotation = transform.rotation
+                * Quaternion.Euler(28f * 듦 + 흔 * 0.4f, 흔, -14f * 듦 + 흔 * 0.6f);
         }
         else
         {
@@ -129,6 +156,9 @@ public class HeroCarry : MonoBehaviour
         데려가는것 = best;
         안는중 = w <= 안는무게;
         best.잡힘 = true;
+        // ★집어드는 동작의 시작점 — **누워 있던 그 자리**에서 올라와야 「집었다」로 읽힌다
+        줍기t = 0f;
+        잡은자리 = best.transform.position;
         // ★붙잡았으면 동글뱅이를 끈다 — 이제 「기절해 누워 있는 놈」이 아니라 「내 손 안」이다
         var 표 = best.GetComponent<기절표시>();
         if (표 != null) 표.켜기(false);
@@ -235,9 +265,10 @@ public class HeroCarry : MonoBehaviour
         if (데려가는것 != null) 데려가는것.잡힘 = false;
         데려가는것 = null;
         안는중 = false;
+        줍기t = 0f;
         hero.MoveMul = 1f;
         var atk = GetComponent<HeroAttack>();
-        if (atk != null) atk.enabled = true;
+        if (atk != null) { atk.enabled = true; atk.줍기굽힘 = 0f; }   // ★숙임이 남으면 계속 굽은 채 걷는다
     }
 
     void 띄움(string s) { 알림 = s; 알림T = 2.5f; }

@@ -68,6 +68,10 @@ public class HeroAttack : MonoBehaviour
     Harvest 채집대상;
     bool 이번칸때림;              // 이번 게이지 한 바퀴에서 이미 때렸나
     /// HUD 가 읽는다 — 상시로 안 띄우고 **캘 때만** 뜬다 (11장 · 기획 5-7)
+    /// ★밖에서 미는 「숙이는 정도」 (0~1) — `HeroCarry` 가 새끼를 집어들 때 쓴다.
+    ///   자세는 이 파일이 쥐고 있고, 밖에서는 얼마나 숙일지만 넘긴다 (소유권을 안 다툰다)
+    [HideInInspector] public float 줍기굽힘;
+
     public static bool 채집중;
     /// **한 칸**의 진행도 (0~1) — 도끼질 모션이 이걸 탄다. 한 번 캘 때마다 0 으로 돌아온다
     public static float 채집게이지;
@@ -1087,6 +1091,16 @@ public class HeroAttack : MonoBehaviour
             case State.쉼:
                 if (드는자세 != null && 드는자세.목표 > 0.5f)
                 { 목표yaw = -몸감기 * 0.4f; 목표pitch = -2.5f; 목표웅크림 = 0.35f; 목표무게 = 0.3f; }   // 감아 든 채 무게 낮춤
+                // ★★**집어드는 동작** (2026-08-12 사용자 "숙여서 집어들고") —
+                //   `HeroCarry` 가 이 값을 0→1→0 으로 밀어 준다. 자세는 여기가 쥐고 있으므로
+                //   (소유권을 안 다툰다) 밖에서는 **얼마나 숙일지**만 넘긴다.
+                if (줍기굽힘 > 0.001f)
+                {
+                    목표웅크림 = Mathf.Max(목표웅크림, 앉기굽힘 * 0.8f * 줍기굽힘);
+                    목표pitch = Mathf.Lerp(목표pitch, 26f, 줍기굽힘);   // 앞으로 숙인다
+                    목표무게 = Mathf.Lerp(목표무게, 0.7f, 줍기굽힘);    // 앞발에 실린다
+                    빠르기 = 14f;
+                }
                 break;
             case State.예비:
             {
