@@ -245,15 +245,17 @@ public class Wildlife : MonoBehaviour
 
     void Update()
     {
-        var 시계 = 스스로재기 > 0f ? System.Diagnostics.Stopwatch.StartNew() : null;
+        // ★★시계를 **새로 만들지 않는다** (2026-08-12). `Stopwatch.StartNew()` 는 매 프레임
+        //   객체를 하나씩 만들어 버린다 — 지침 9-4 의 「매 프레임 만들고 부수기」다.
+        //   `realtimeSinceStartupAsDouble` 은 그냥 값이라 아무것도 안 만든다.
+        double 잰시작 = 스스로재기 > 0f ? Time.realtimeSinceStartupAsDouble : 0;
         int 지운수기록 = 0, 만든수기록 = 0;
         try { 실제Update(ref 지운수기록, ref 만든수기록); }
         finally
         {
-            if (시계 != null)
+            if (스스로재기 > 0f)
             {
-                시계.Stop();
-                double ms = 시계.Elapsed.TotalMilliseconds;
+                double ms = (Time.realtimeSinceStartupAsDouble - 잰시작) * 1000.0;
                 if (ms >= 스스로재기)
                     Debug.LogFormat("[야생-느림] {0:F0}ms · 지움 {1} · 만듦 {2} · 지금 {3}마리",
                                     ms, 지운수기록, 만든수기록, Critter.All.Count);
@@ -396,8 +398,12 @@ public class Wildlife : MonoBehaviour
         return 멂 >= 순 * 번호간격 ? 1f : 0f;
     }
 
-    [Tooltip("스폰마다 콘솔에 무엇을 넣었는지 찍는다 — 모델이 잘못 들어가면 여기서 바로 보인다")]
-    public bool 스폰로그 = true;
+    // ★★기본은 **끔** (2026-08-12). 스폰마다 문자열을 만들어 `Debug.Log` 를 부르는데,
+    //   유니티의 로그는 한 줄마다 스택 추적을 떠서 비싸다 — 2026-08-11 에 이것 때문에
+    //   프레임이 튀어서 껐다. 씬에는 0 으로 저장돼 있지만 **새 씬을 만들거나 컴포넌트를
+    //   다시 붙이면 코드 기본값이 되살아난다.** 진단 스위치의 기본값은 꺼진 쪽이어야 한다 (9-4).
+    [Tooltip("스폰마다 콘솔에 무엇을 넣었는지 찍는다 — 모델이 잘못 들어갈 때만 잠깐 켠다")]
+    public bool 스폰로그 = false;
 
     [Tooltip("★태생 종은 새끼를 데리고 나온다 (끄면 예전처럼 성체만 나온다)")]
     public bool 어미새끼 = true;

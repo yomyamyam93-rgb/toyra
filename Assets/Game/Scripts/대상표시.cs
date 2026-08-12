@@ -63,12 +63,14 @@ public class 대상표시 : MonoBehaviour
         if (찾을때까지 > 0f) return;
         찾을때까지 = 찾는간격;
 
-        var 시계 = 스스로재기 > 0f ? System.Diagnostics.Stopwatch.StartNew() : null;
+        // ★시계를 새로 만들지 않는다 — `Stopwatch.StartNew()` 는 부를 때마다 객체를 만든다 (9-4)
+        bool 잰다 = 스스로재기 > 0f;
+        double 잰시작 = 잰다 ? Time.realtimeSinceStartupAsDouble : 0;
         double 찾은뒤 = 0;
 
         Transform 대상 = null; Color 색 = 캘것;
         if (hero.Alive) 대상 = 찾기(out 색);
-        if (시계 != null) 찾은뒤 = 시계.Elapsed.TotalMilliseconds;
+        if (잰다) 찾은뒤 = (Time.realtimeSinceStartupAsDouble - 잰시작) * 1000.0;
 
         bool 바뀜 = 대상 != 지금대상;
         if (바뀜) { 치우기(); 지금대상 = 대상; if (대상 != null) 씌우기(대상, 색); }
@@ -100,10 +102,9 @@ public class 대상표시 : MonoBehaviour
             }
         }
 
-        if (시계 != null)
+        if (잰다)
         {
-            시계.Stop();
-            double ms = 시계.Elapsed.TotalMilliseconds;
+            double ms = (Time.realtimeSinceStartupAsDouble - 잰시작) * 1000.0;
             if (ms >= 스스로재기)
                 Debug.LogFormat("[대상표시-느림] {0:F1}ms (찾기 {1:F1} · 씌우기 {2:F1}) · 바뀜={3} · 대상={4}",
                     ms, 찾은뒤, ms - 찾은뒤, 바뀜, 대상 != null ? 대상.name : "없음");

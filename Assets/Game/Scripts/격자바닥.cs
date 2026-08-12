@@ -86,15 +86,15 @@ public class 격자바닥 : MonoBehaviour
 
     void LateUpdate()
     {
-        var 시계 = 스스로재기 > 0f ? System.Diagnostics.Stopwatch.StartNew() : null;
+        // ★시계를 새로 만들지 않는다 — `Stopwatch.StartNew()` 는 매 프레임 객체를 만든다 (9-4)
+        double 잰시작 = 스스로재기 > 0f ? Time.realtimeSinceStartupAsDouble : 0;
         bool 지었나 = false;
         try { 실제LateUpdate(ref 지었나); }
         finally
         {
-            if (시계 != null)
+            if (스스로재기 > 0f)
             {
-                시계.Stop();
-                double ms = 시계.Elapsed.TotalMilliseconds;
+                double ms = (Time.realtimeSinceStartupAsDouble - 잰시작) * 1000.0;
                 if (ms >= 스스로재기)
                     Debug.LogFormat("[격자바닥-느림] {0:F0}ms · 다시지음={1} · 칸수={2} · 짓는중={3}",
                                     ms, 지었나, 지은칸수, 짓는중 != null);
@@ -180,13 +180,12 @@ public class 격자바닥 : MonoBehaviour
         //   ☆한 조각(`MoveNext`)이 예산보다 크면 예산은 못 지킨다 — 특히 마지막 메시 올리기.
         while (true)
         {
-            var 시계 = System.Diagnostics.Stopwatch.StartNew();
+            double 잰시작 = Time.realtimeSinceStartupAsDouble;   // ★객체를 안 만든다 (9-4)
             bool 남음 = true;
-            while (시계.Elapsed.TotalMilliseconds < 1.5 && (남음 = e.MoveNext())) { }
-            시계.Stop();
-            if (조각재기 > 0f && 시계.Elapsed.TotalMilliseconds >= 조각재기)
-                Debug.LogFormat("[격자바닥-조각] {0:F0}ms · 남음={1} · 칸수={2}",
-                                시계.Elapsed.TotalMilliseconds, 남음, 칸수);
+            while ((Time.realtimeSinceStartupAsDouble - 잰시작) * 1000.0 < 1.5 && (남음 = e.MoveNext())) { }
+            double 조각ms = (Time.realtimeSinceStartupAsDouble - 잰시작) * 1000.0;
+            if (조각재기 > 0f && 조각ms >= 조각재기)
+                Debug.LogFormat("[격자바닥-조각] {0:F0}ms · 남음={1} · 칸수={2}", 조각ms, 남음, 칸수);
             if (!남음) break;
             yield return null;
         }
