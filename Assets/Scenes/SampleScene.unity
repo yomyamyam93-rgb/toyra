@@ -181,36 +181,6 @@ Material:
     - _OutlineColor: {r: 0.08, g: 0.07, b: 0.1, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
---- !u!21 &143174789
-Material:
-  serializedVersion: 8
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_Name: "\uACA9\uC790\uBC14\uB2E5_\uC606\uBA74"
-  m_Shader: {fileID: 4800000, guid: 6559b520a6d8ce54ba9c792be9c323fe, type: 3}
-  m_Parent: {fileID: 0}
-  m_ModifiedSerializedProperties: 0
-  m_ValidKeywords: []
-  m_InvalidKeywords: []
-  m_LightmapFlags: 4
-  m_EnableInstancingVariants: 0
-  m_DoubleSidedGI: 0
-  m_CustomRenderQueue: -1
-  stringTagMap: {}
-  disabledShaderPasses: []
-  m_LockedProperties: 
-  m_SavedProperties:
-    serializedVersion: 3
-    m_TexEnvs: []
-    m_Ints: []
-    m_Floats:
-    - _ShadowLift: 0.32
-    - _Steps: 3
-    m_Colors: []
-  m_BuildTextureStacks: []
-  m_AllowLocking: 1
 --- !u!1 &154333715
 GameObject:
   m_ObjectHideFlags: 0
@@ -5372,7 +5342,7 @@ MonoBehaviour:
   yaw: 45
   pitch: 40
   size: 14
-  minSize: 10
+  minSize: 4
   maxSize: 22
   zoomStep: 1.4
   "\uC90C\uBE44\uC728": 0.1
@@ -5569,6 +5539,36 @@ MonoBehaviour:
   "\uC8FC\uAE30": 1
   "\uBB38\uD131": 236
   "\uCD5C\uC18C\uD53D\uC140": 30
+--- !u!21 &352878405
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: "\uACA9\uC790\uBC14\uB2E5_\uC606\uBA74"
+  m_Shader: {fileID: 4800000, guid: 6559b520a6d8ce54ba9c792be9c323fe, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs: []
+    m_Ints: []
+    m_Floats:
+    - _ShadowLift: 0.32
+    - _Steps: 3
+    m_Colors: []
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1
 --- !u!4 &399861229 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -3910990755373119420, guid: ce9c7bcdc09c96b41b758d2882f4d251, type: 3}
@@ -7413,8 +7413,8 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 1395325489}
-  - {fileID: 143174789}
+  - {fileID: 1301328090}
+  - {fileID: 352878405}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -8492,7 +8492,7 @@ MonoBehaviour:
   "\uB36E\uC740\uBE44\uC728": 0.42
   "\uD574\uC0C1\uB3C4": 256
   "\uC528": 3
---- !u!21 &1395325489
+--- !u!21 &1301328090
 Material:
   serializedVersion: 8
   m_ObjectHideFlags: 0
@@ -8776,7 +8776,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7214a8dc031471b4486c79cddb40d23a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::HeroCarry
-  "\uC190\uB2FF\uB294\uAC70\uB9AC": 2.2
+  "\uC190\uB2FF\uB294\uAC70\uB9AC": 1.5
   "\uC548\uB294\uBB34\uAC8C": 0.8
   "\uB044\uB294\uBB34\uAC8C": 3
   "\uBC27\uC904\uBC30": 2.2
@@ -8789,6 +8789,8 @@ MonoBehaviour:
   "\uB9E8\uC190\uC5D4\uC904\uC5C6\uC74C": 0
   "\uC904\uCC98\uC9D0": 0.22
   "\uC904\uAD75\uAE30": 0.05
+  "\uACE0\uB9AC\uD06C\uAE30": 1.15
+  "\uACE0\uB9AC\uC55E\uB4A4": 0.8
   "\uC219\uC784\uC2DC\uAC04": 0.34
   "\uC7A1\uC74C\uC2DC\uAC04": 0.14
   "\uC62C\uB9BC\uC2DC\uAC04": 0.42
@@ -8797,10 +8799,18 @@ MonoBehaviour:
   "\uD754\uB4E4\uAC01": 7
   "\uC548\uC558\uC744\uB54C": 0.7
   "\uB04C\uB54C": 0.55
-  "\uB04A\uAE30\uB294\uAC70\uB9AC": 3.5
+  "\uB04A\uAE30\uB294\uAC70\uB9AC": 6.2
   "\uBA39\uC774\uD0A4\uC500": 0
   "\uBA39\uC774\uAC70\uB9AC": 3
   "\uAD6C\uC6B4\uAC83\uBC30": 1.7
+  "\uBD99\uC77C\uBF08":
+  - spine_shldr
+  - spine_back
+  - spine_hip
+  - Hips
+  "\uB4E4\uB54C\uAE30\uC6B8\uC784": {x: 0, y: 0, z: -90}
+  "\uBA38\uB9AC\uC704\uD2C8": 0.26
+  "\uC190\uC0AC\uC774\uBCF4\uC815": {x: 0, y: 0, z: 0}
 --- !u!114 &1648256976
 MonoBehaviour:
   m_ObjectHideFlags: 0

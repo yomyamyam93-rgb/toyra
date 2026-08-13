@@ -24,7 +24,11 @@ public class HeroCarry : MonoBehaviour
     //     그림이 됐다. 숙여서 손이 실제로 닿는 거리는 그보다 훨씬 짧다.
     //   ☆줄이면 **가까이 가야 잡힌다** — 사람을 저절로 움직이게 하지 않는다 (그건 행동이라
     //     따로 여쭈어야 한다). 규칙으로 막지 않고 거리로 정해지게 한다.
-    [Tooltip("이 거리 안의 지친 놈을 붙잡는다 (m) — 숙여서 손이 닿는 거리")] public float 손닿는거리 = 1.25f;
+    //   ☆★1.25m 로 줄였더니 **아예 못 잡았다** (2026-08-13 사용자 "F키도 안먹혀").
+    //     사슴 몸 반지름이 0.5m 라 몸이 겹칠 만큼 붙어야 닿는 거리였다. 몸 반지름을 더해
+    //     **짐승 크기에 맞게** 잰다 — 큰 놈은 멀리서도, 작은 놈은 가까이 가야 잡힌다.
+    [Tooltip("이 거리 안의 지친 놈을 붙잡는다 (m) — 여기에 짐승 몸 반지름이 더해진다")]
+    public float 손닿는거리 = 1.5f;
     [Tooltip("이 무게까지는 안고 간다 (무기 못 씀)")] public float 안는무게 = 0.8f;
     [Tooltip("이 무게까지는 끌고 간다 (맨손)")] public float 끄는무게 = 3f;
     [Tooltip("★밧줄이 있으면 끄는 한계가 이 배가 된다 — 묶어서 끈다")]
@@ -56,10 +60,23 @@ public class HeroCarry : MonoBehaviour
     [Tooltip("줄이 늘어지는 정도 — 가까울수록 많이 처진다 (거리에 대한 비율)")]
     [Range(0f, 0.5f)] public float 줄처짐 = 0.22f;
     [Tooltip("줄 굵기 (m)")] [Range(0.02f, 0.12f)] public float 줄굵기 = 0.05f;
+    [Tooltip("고리 크기 — 몸통 반지름에 곱한다. 살을 파고들면 키운다")]
+    [Range(0.5f, 2.5f)] public float 고리크기 = 1.15f;
+    [Tooltip("두 고리를 몸통 앞뒤로 얼마나 벌리나 (반지름 배수)")]
+    [Range(0f, 2f)] public float 고리앞뒤 = 0.8f;
     // ★★한 번 만들어 껐다 켠다 (9-4) — 매 프레임 하는 일은 자리·각도 얹기뿐이다.
     //   토막 6 + 고리판 8 + 수레 1 = 15개, 그것도 **한 마리 끌 때만** 켜진다
     const int 토막수 = 6;
-    const int 고리수 = 2;              // 고리 하나가 판 4개(위·아래·좌·우)로 몸을 두른다
+    // ★★★**고리는 뼈에 감고, 크기는 몸통 반지름으로 잰다** (2026-08-13 사용자 "밧줄이 몸통에
+    //   정활히 둘러지지 않던데? 네모낳게 생기고 범위도 엄청 넓고 붕떠있더라고").
+    //   ☆옛 방식은 **렌더러 bounds** 로 크기를 쟀다. 그런데 그건 사슴의 **뿔·다리·꼬리까지**
+    //     다 감싼다 — 실측으로 다람쥐 bounds 가 3.2m 였고 그 대부분이 꼬리였다.
+    //     그래서 고리가 몸통이 아니라 **몸 전체를 두르는 크기**가 됐다.
+    //   ☆→ 자리는 **뼈**(`spine_back` 등), 크기는 **`종.반지름`**. 둘 다 몸통의 자다.
+    //   ☆판 4개(사각)를 **8개(팔각)** 로 늘려 둥글게 보이게 한다 — 링 메시가 없으니
+    //     면을 늘리는 것이 유일한 길이고, 8면이면 밧줄로 읽힌다.
+    const int 고리수 = 2;              // 고리 하나가 판 8개로 몸을 두른다
+    const int 판수 = 8;
     Transform[] 줄토막, 고리판;
 
     [Header("데려가기")]
@@ -85,7 +102,8 @@ public class HeroCarry : MonoBehaviour
 
     [Tooltip("안고 있을 때 이동 속도 배수")] [Range(0.2f, 1f)] public float 안았을때 = 0.7f;
     [Tooltip("끌고 있을 때 이동 속도 배수")] [Range(0.2f, 1f)] public float 끌때 = 0.55f;
-    [Tooltip("끌 때 이 거리를 넘으면 놓친다 (m)")] public float 끊기는거리 = 3.5f;
+    [Tooltip("끌 때 이 거리를 넘으면 놓친다 (m) — ★`Critter.줄길이` 보다 넉넉해야 한다")]
+    public float 끊기는거리 = 6.2f;
 
     // ★★★**「집」이라는 보이지 않는 원을 없앴다** (2026-08-10 사용자 — *"집이라고 바운더리를
     //   가정하지는 않았으면 좋겠어"*).
@@ -248,12 +266,15 @@ public class HeroCarry : MonoBehaviour
 
     void 붙잡기()
     {
-        Critter best = null; float bd = 손닿는거리 * 손닿는거리;
+        // ★★거리에 **짐승 몸 반지름을 더한다** — 큰 놈은 몸이 커서 중심이 멀다.
+        //   반지름을 안 더하면 큰 놈일수록 잡기 어려워진다 (사슴이 그래서 안 잡혔다)
+        Critter best = null; float bd = float.MaxValue;
         foreach (var c in Critter.All)
         {
             if (c == null || !c.지침) continue;
+            float 닿 = 손닿는거리 + c.종.반지름;
             float d2 = (c.transform.position - transform.position).sqrMagnitude;
-            if (d2 > bd) continue;
+            if (d2 > 닿 * 닿 || d2 >= bd) continue;
             bd = d2; best = c;
         }
         if (best == null) return;
@@ -450,8 +471,9 @@ public class HeroCarry : MonoBehaviour
 
         if (맨손엔줄없음 && !밧줄로 && !끌차로) { 줄치우기(); return; }
 
-        // 고리는 몸에 **붙어 있다** — 자식이라 몸이 눌리든 돌든 저절로 따라간다
-        if (고리판 != null) foreach (var p in 고리판) if (p != null) p.gameObject.SetActive(true);
+        // ★고리를 몸통 뼈에 맞춰 얹는다 (world 좌표 — 뼈 스케일이 끼어들지 않는다)
+        if (고리판 == null || 고리판.Length != 고리수 * 판수) 고리판 = new Transform[고리수 * 판수];
+        고리그리기(데려가는것);
 
         // 줄은 사람의 두 손 → **앞 고리**로 간다. 고리가 곧 매듭이다
         var 매듭 = (고리판 != null && 고리판[0] != null)
@@ -473,51 +495,58 @@ public class HeroCarry : MonoBehaviour
     ///   ☆링 메시가 없으니 **판 넷(위·아래·좌·우)으로 사각 고리**를 만든다. 각진 게 오히려
     ///     장난감답다 (6장 — 색은 크게 나눈 면으로만, 경계는 뚜렷하게).
     ///   ☆`GetComponentsInChildren` 은 **붙잡는 순간 한 번뿐**이다 (9-4)
-    void 고리붙이기(Critter c)
+    /// 붙잡을 때 뼈만 찾아 둔다 (실제 배치는 매 프레임 `고리그리기`)
+    void 고리붙이기(Critter c) => 감을뼈 = 뼈찾기(c, 붙일뼈) ?? c.몸;
+    Transform 감을뼈;
+
+    /// ★★★**고리를 world 좌표로 직접 얹는다** (2026-08-13 사용자 "밧줄 모양봐봐 몸에 감긴게
+    ///   아니야 저건 공중에 떠있어").
+    ///   ☆뼈의 **자식**으로 붙였더니 그 뼈의 스케일이 곱해졌다. 모델마다 뼈 스케일이 제각각
+    ///     이라 사슴에서는 고리가 **몸보다 커졌다.** 상쇄식을 넣어도 종마다 또 어긋난다.
+    ///   ☆→ 부모를 두지 않고 **뼈의 자리·축을 읽어 world 로 얹는다.** 스케일이 끼어들 자리가
+    ///     없으니 어느 종이든 같은 굵기·같은 크기로 나온다 (줄·수레와 같은 방식).
+    void 고리그리기(Critter c)
     {
-        var 몸t = c.몸;
-        if (몸t == null) return;
-        if (고리판 == null) 고리판 = new Transform[고리수 * 4];
-
-        // 몸의 실제 크기를 잰다 — 어림값이 아니라 **메시가 차지하는 자리**를 쓴다
-        var rs = 몸t.GetComponentsInChildren<Renderer>();
-        var 스 = 몸t.lossyScale;
-        Vector3 중심L, 반L;
-        if (rs.Length > 0)
-        {
-            var b = rs[0].bounds;
-            foreach (var r in rs) b.Encapsulate(r.bounds);
-            중심L = 몸t.InverseTransformPoint(b.center);
-            반L = new Vector3(b.extents.x / Mathf.Max(1e-4f, 스.x),
-                              b.extents.y / Mathf.Max(1e-4f, 스.y),
-                              b.extents.z / Mathf.Max(1e-4f, 스.z));
-        }
-        else { 중심L = Vector3.zero; 반L = Vector3.one * Mathf.Max(0.12f, c.종.반지름); }
-
-        float 평균 = (스.x + 스.y + 스.z) / 3f;
-        float t = 줄굵기 / Mathf.Max(1e-4f, 평균);          // 부모 크기를 상쇄해 굵기를 맞춘다
-        float rx = 반L.x * 1.08f, ry = 반L.y * 1.14f;       // 몸보다 아주 조금 크게 — 살을 파고들지 않게
+        if (감을뼈 == null || 고리판 == null) return;
+        float r = Mathf.Max(0.10f, c.종.반지름) * 고리크기;
+        var 축 = 감을뼈.forward;                                   // 몸통이 뻗은 방향
+        if (축.sqrMagnitude < 1e-6f) 축 = c.transform.forward;
+        축.Normalize();
+        var 기준밖 = Vector3.Cross(축, Vector3.up).sqrMagnitude > 1e-4f
+                   ? Vector3.Normalize(Vector3.Cross(축, Vector3.up)) : Vector3.right;
+        float 면 = r * 2f * Mathf.Tan(Mathf.PI / 판수) + 줄굵기;    // 팔각형 한 변
 
         for (int i = 0; i < 고리수; i++)
         {
-            var c0 = new Vector3(중심L.x, 중심L.y, 중심L.z + 반L.z * (i == 0 ? 0.45f : -0.4f));  // 앞뒤로 하나씩
-            for (int j = 0; j < 4; j++)
+            var 가운데 = 감을뼈.position + 축 * (r * 고리앞뒤 * (i == 0 ? 1f : -1f));
+            for (int j = 0; j < 판수; j++)
             {
-                int k = i * 4 + j;
+                int k = i * 판수 + j;
                 if (고리판[k] == null) 고리판[k] = 새줄상자("고리");
                 var p = 고리판[k];
-                p.SetParent(몸t, false);
-                p.localRotation = Quaternion.identity;
-                switch (j)
-                {
-                    case 0: p.localPosition = c0 + Vector3.up * ry;    p.localScale = new Vector3(rx * 2f + t, t, t); break;
-                    case 1: p.localPosition = c0 - Vector3.up * ry;    p.localScale = new Vector3(rx * 2f + t, t, t); break;
-                    case 2: p.localPosition = c0 - Vector3.right * rx; p.localScale = new Vector3(t, ry * 2f, t); break;
-                    default:p.localPosition = c0 + Vector3.right * rx; p.localScale = new Vector3(t, ry * 2f, t); break;
-                }
+                if (p.parent != null) p.SetParent(null, true);
+                float a = j * 360f / 판수;
+                var 밖 = Quaternion.AngleAxis(a, 축) * 기준밖;      // 몸통 축 둘레로 돈다
+                var 접선 = Vector3.Cross(축, 밖);                   // 판이 길게 뻗을 방향
+                p.position = 가운데 + 밖 * r;
+                p.rotation = Quaternion.LookRotation(접선, 밖);
+                p.localScale = new Vector3(줄굵기, 줄굵기, 면);
                 p.gameObject.SetActive(true);
             }
         }
+    }
+
+    /// 이름 목록에서 먼저 찾히는 뼈 (없으면 null)
+    static Transform 뼈찾기(Critter c, string[] 이름들)
+    {
+        if (c.몸 == null || 이름들 == null) return null;
+        var 뼈들 = c.몸.GetComponentsInChildren<Transform>(true);
+        foreach (var 이름 in 이름들)
+        {
+            if (string.IsNullOrEmpty(이름)) continue;
+            foreach (var t in 뼈들) if (t.name == 이름) return t;
+        }
+        return null;
     }
 
     /// ★②줄이 처진다 — 토막 여럿을 포물선으로 늘어뜨린다.
@@ -704,9 +733,10 @@ public class HeroCarry : MonoBehaviour
     void 해제()
     {
         줄치우기();
-        // ★놓으면 짐승이 다시 제 몸을 갖는다 (애니메이터를 되켠다)
-        if (짐승애니 != null) { 짐승애니.enabled = true; 짐승애니 = null; }
-        몸중심로컬 = Vector3.zero; 짐승허리 = null;
+        // ★애니메이터는 **`Critter` 가 쥔다** — 기절해 있으면 계속 멈춰 있고 깨면 켜진다.
+        //   여기서 켜 버리면 기절한 놈이 한 프레임 서 있게 된다 (2026-08-13)
+        짐승애니 = null;
+        몸중심로컬 = Vector3.zero; 짐승허리 = null; 감을뼈 = null;
 
         // ★단계를 **거꾸로 되돌린다** — 무기가 손으로 돌아오고, 시선이 마우스로 풀린다
         무기등에(false);

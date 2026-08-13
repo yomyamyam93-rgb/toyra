@@ -1062,6 +1062,7 @@ public class HeroAttack : MonoBehaviour
             {
                 c.Knock(v, 넉백, 비틀);
                 if (낼기절 > 0f) c.기절값먹임(낼기절);   // ★뾰족한 무기(창)는 0 이라 안 돈다
+                c.맞음알림(hero as IHittable);           // ★맞으면 달려든다 — 뒤치기가 공짜가 아니다
             }
             if (쥠 != null) 인벤.도구닳음쥔것();
             hit = true;
@@ -1092,6 +1093,7 @@ public class HeroAttack : MonoBehaviour
             {
                 c.Knock(v, 밀기넉백, 0.3f, 넘어짐);
                 c.기절값먹임(밀기기절);              // 미는 건 언제나 뭉툭한 짓이다
+                c.맞음알림(hero as IHittable);       // ★밀어도 달려든다
             }
         }
 
