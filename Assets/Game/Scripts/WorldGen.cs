@@ -211,9 +211,14 @@ public class WorldGen : MonoBehaviour
         정본 = 정본지금;
     }
 
+    // ★돌 캐기를 세우는 함수가 static 이라 인스펙터 값에 닿지 못한다 — 세상을 짓기 시작할 때
+    //   한 번 넘겨 둔다. `WorldGen` 은 씬에 하나뿐이므로 정적 칸으로 충분하다
+    static GameObject[] 돌맹이캐시; static float 돌맹이크기캐시 = 1f;
+
     public void Generate()
     {
         정본맞추기();
+        돌맹이캐시 = 돌맹이프리팹; 돌맹이크기캐시 = 돌맹이크기;
         int seed = worldSeed != 0 ? worldSeed : Random.Range(1, int.MaxValue);
         var save = Random.state;
 
@@ -1950,11 +1955,26 @@ public class WorldGen : MonoBehaviour
         if (!심지 && Random.value < 0.45f)
         {
             var 가지자리 = p + new Vector3(Random.Range(-1.8f, 1.8f), 0f, Random.Range(-1.8f, 1.8f));
-            var 막대 = Grey.Box(holder, 가지자리 + Vector3.up * 0.035f,
-                     new Vector3(0.08f, 0.06f, Random.Range(0.7f, 1.1f)),
-                     new Color(0.40f, 0.29f, 0.17f), "나뭇가지", 0f, Random.value * 360f);
+            var 막대 = 나뭇가지하나(가지자리)
+                     ?? Grey.Box(holder, 가지자리 + Vector3.up * 0.035f,
+                                 new Vector3(0.08f, 0.06f, Random.Range(0.7f, 1.1f)),
+                                 new Color(0.40f, 0.29f, 0.17f), "나뭇가지", 0f, Random.value * 360f);
             땅무더기.줍이(아이템표.찾기("나무"), 1, 막대);
         }
+    }
+
+    /// ★나뭇가지 모델 하나 — 칸이 비었으면 null 을 돌려 상자로 넘긴다
+    GameObject 나뭇가지하나(Vector3 p)
+    {
+        if (나뭇가지프리팹 == null || 나뭇가지프리팹.Length == 0) return null;
+        var pf = 나뭇가지프리팹[Random.Range(0, 나뭇가지프리팹.Length)];
+        if (pf == null) return null;
+        var g = Instantiate(pf, p + Vector3.up * 0.035f,
+                            Quaternion.Euler(0f, Random.value * 360f, 0f), holder);
+        g.name = "나뭇가지";
+        g.transform.localScale = Vector3.one * 나뭇가지크기;
+        환경손질(g);
+        return g;
     }
 
     /// 프리팹 나무를 **요청한 키에 맞춰** 세운다. 프리팹이 없으면 null.
@@ -2008,6 +2028,16 @@ public class WorldGen : MonoBehaviour
     [Header("★풀·관목·꽃 (비우면 상자로 나온다)")]
     [Tooltip("풀포기·관목 모델")] public GameObject[] 풀프리팹;
     [Tooltip("꽃 모델 — 풀 사이에 섞인다")] public GameObject[] 꽃프리팹;
+
+    // ★★**주울 수 있는 것도 진짜 모델을 쓴다** (2026-08-13 사용자 "나뭇가지 이걸로 바꿔줘
+    //   주울수 있는거" · "주울수 있는 돌은 그냥 네모각지게 되어있던데").
+    //   ☆9-2 의 「자산은 앞서 있고 배선이 뒤처진다」 그대로였다 — 조약돌 모델이 열 개 넘게
+    //     있는데 `Grey.Box` 로 네모를 만들고 있었다.
+    //   ☆비우면 옛날처럼 상자로 짓는다 (은퇴는 삭제가 아니라 스위치)
+    [Tooltip("★나뭇가지 모델 — 나무 밑에 떨어져 있는 줍이. 비우면 상자")] public GameObject[] 나뭇가지프리팹;
+    [Tooltip("나뭇가지 크기 배수 — 눈으로 보고 맞춘다")] [Range(0.1f, 3f)] public float 나뭇가지크기 = 1f;
+    [Tooltip("★돌맹이 모델 — 돌을 캐면 튀어나오는 조약돌. 비우면 상자")] public GameObject[] 돌맹이프리팹;
+    [Tooltip("돌맹이 크기 배수")] [Range(0.1f, 5f)] public float 돌맹이크기 = 1f;
     [Tooltip("밑동에 나는 것 중 꽃이 될 확률")] [Range(0f, 1f)] public float 꽃섞기 = 0.22f;
 
     void 밑동풀(Vector3 c, float 반경, int 수)
@@ -2080,6 +2110,8 @@ public class WorldGen : MonoBehaviour
         var hv = g.AddComponent<Harvest>();
         // ★perHit = 한 히트에 튀는 돌맹이 수 (돌은 인벤 직행이 아니라 튀어 떨어진다)
         hv.kind = Stock.Kind.돌; hv.hits = Mathf.RoundToInt(3f + w); hv.perHit = 1; hv.blockAt = p;
+        // ★캐면 튀어나올 조약돌 모델을 넘긴다 — 비어 있으면 `Harvest` 가 상자로 짓는다
+        hv.돌맹이모델 = 돌맹이캐시; hv.돌맹이크기 = 돌맹이크기캐시;
     }
 
     static readonly Dictionary<GameObject, float> 폭캐시 = new Dictionary<GameObject, float>();

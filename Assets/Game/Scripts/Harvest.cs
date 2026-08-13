@@ -185,13 +185,40 @@ public class Harvest : MonoBehaviour
         return false;
     }
 
+    // ★★★**주울 수 있는 돌은 진짜 조약돌 모델이다** (2026-08-13 사용자 "주울수 있는 돌은
+    //   그냥 네모각지게 되어있던데, 우리 조그마한 돌 모델링 많던데 거기에 왜 연결 안해주는거야?").
+    //   ☆맞는 지적이었다 — `Assets/Game/Models/nature/` 에 `mk_pebble_*` 이 열 개 넘게 있는데
+    //     여기서는 `Grey.Box` 로 네모를 만들고 있었다. 9-2 의 「자산은 앞서 있고 배선이
+    //     뒤처진다」 그대로다.
+    //   ☆`WorldGen` 이 돌 캐기를 만들 때 넣어 준다 (9번 1항의 「교체 자리」).
+    //     비어 있으면 옛날처럼 상자로 짓는다 — 은퇴는 삭제가 아니라 스위치다.
+    [Tooltip("★주울 수 있는 돌맹이 모델 — 비우면 상자로 짓는다")] public GameObject[] 돌맹이모델;
+    [Tooltip("돌맹이 모델 크기 배수 — 눈으로 보고 맞춘다")] [Range(0.1f, 5f)] public float 돌맹이크기 = 1f;
+
+    /// 진짜 조약돌 모델로 하나 — 칸이 비었으면 null 을 돌려 상자로 넘긴다
+    GameObject 모델돌(float s)
+    {
+        if (돌맹이모델 == null || 돌맹이모델.Length == 0) return null;
+        var 본 = 돌맹이모델[Random.Range(0, 돌맹이모델.Length)];
+        if (본 == null) return null;
+        var g = Instantiate(본, transform.position + Vector3.up * 0.6f,
+                            Quaternion.Euler(0f, Random.value * 360f, 0f), transform.parent);
+        g.name = "돌맹이";
+        g.transform.localScale = Vector3.one * (s * 돌맹이크기);
+        return g;
+    }
+
+    /// 옛길 — 색칠한 상자. 모델이 없을 때만 쓴다 (9번 1항: 상자 먼저, 모델 나중)
+    GameObject 상자돌(float s)
+        => Grey.Box(transform.parent, transform.position + Vector3.up * 0.6f,
+                    new Vector3(s, s * 0.7f, s * Random.Range(0.8f, 1.2f)),
+                    new Color(0.45f, 0.45f, 0.43f), "돌맹이", 0f, Random.value * 360f);
+
     /// 돌맹이 하나가 포물선으로 툭 떨어져 줍이가 된다
     void 돌맹이튀기()
     {
         float s = Random.Range(0.22f, 0.34f);
-        var 돌알 = Grey.Box(transform.parent, transform.position + Vector3.up * 0.6f,
-                 new Vector3(s, s * 0.7f, s * Random.Range(0.8f, 1.2f)),
-                 new Color(0.45f, 0.45f, 0.43f), "돌맹이", 0f, Random.value * 360f);
+        var 돌알 = 모델돌(s) ?? 상자돌(s);
         var 무 = 땅무더기.줍이(아이템표.찾기("돌"), 1, 돌알);
 
         var 끝 = transform.position + new Vector3(Random.Range(-1f, 1f), 0f, Random.Range(-1f, 1f)).normalized

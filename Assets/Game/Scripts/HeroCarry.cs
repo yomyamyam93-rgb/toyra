@@ -18,7 +18,13 @@ using UnityEngine.InputSystem;
 public class HeroCarry : MonoBehaviour
 {
     [Header("붙잡기")]
-    [Tooltip("이 거리 안의 지친 놈을 붙잡는다 (m)")] public float 손닿는거리 = 2.2f;
+    // ★★**팔이 닿는 만큼만 잡는다** (2026-08-13 사용자 "팻에게 가서, 적당한 위치에서 드는
+    //   모션이 아니라 그냥 제자리에서 모션이 나오고").
+    //   ☆2.2m 는 **두 걸음 거리**다. 그만큼 떨어져서도 잡히니 「멀리서 허공에 팔만 뻗는」
+    //     그림이 됐다. 숙여서 손이 실제로 닿는 거리는 그보다 훨씬 짧다.
+    //   ☆줄이면 **가까이 가야 잡힌다** — 사람을 저절로 움직이게 하지 않는다 (그건 행동이라
+    //     따로 여쭈어야 한다). 규칙으로 막지 않고 거리로 정해지게 한다.
+    [Tooltip("이 거리 안의 지친 놈을 붙잡는다 (m) — 숙여서 손이 닿는 거리")] public float 손닿는거리 = 1.25f;
     [Tooltip("이 무게까지는 안고 간다 (무기 못 씀)")] public float 안는무게 = 0.8f;
     [Tooltip("이 무게까지는 끌고 간다 (맨손)")] public float 끄는무게 = 3f;
     [Tooltip("★밧줄이 있으면 끄는 한계가 이 배가 된다 — 묶어서 끈다")]
@@ -173,34 +179,35 @@ public class HeroCarry : MonoBehaviour
             //   ☆클립이 비어 있으면 `HeroAttack` 이 절차 쪽으로 흘려보낸다
             if (손 != null) 손.들기진행 = Mathf.Clamp01(줍기t / Mathf.Max(0.01f, t3));
 
-            // ★★온몸이 같이 움직인다 — 다리·골반·척추는 `HeroAttack.줍기굽힘` 이,
-            //   어깨·팔·팔뚝·머리는 `HeroHold` 가 맡는다 (각자 제 뼈만 만진다).
-            //   ☆★숙임은 **올릴 때 펴진다** — 이게 「들어올린다」로 읽히는 핵심이다.
-            //     옛 코드는 숙임과 짐승 올라오기가 같은 곡선이라 「숙인 채 미끄러짐」이 됐다.
-            if (손 != null) 손.줍기굽힘 = 숙 * (1f - 올);
-            if (팔 != null)
+            // ★★★**클립이 그리면 절차 자세를 밀지 않는다** (2026-08-13 사용자 "손도 내가
+            //   모션넣은거랑 다른 동작이 되는데?").
+            //   ☆클립과 `HeroHold` 가 **같은 팔 뼈를 놓고 싸우고 있었다.** 애니메이션 창에서
+            //     고친 자세가 절차 자세에 덮여 딴 동작으로 보였다.
+            //   ☆클립이 있으면 진행도만 넘기고 팔·다리는 통째로 클립에 맡긴다.
+            bool 클립이그린다 = 손 != null && 손.들기클립 != null;
+            if (!클립이그린다)
             {
-                팔.줍기 = 숙 * (1f - 올);        // 앞아래로 뻗은 자세는 올리면서 사라지고
-                팔.들올림 = 올;                   // 머리 위로 받치는 자세가 대신 들어온다
+                // ★★온몸이 같이 움직인다 — 다리·골반·척추는 `HeroAttack.줍기굽힘` 이,
+                //   어깨·팔·팔뚝·머리는 `HeroHold` 가 맡는다 (각자 제 뼈만 만진다).
+                //   ☆숙임은 **올릴 때 펴진다** — 이게 「들어올린다」로 읽히는 핵심이다.
+                if (손 != null) 손.줍기굽힘 = 숙 * (1f - 올);
+                if (팔 != null)
+                {
+                    팔.줍기 = 숙 * (1f - 올);        // 앞아래로 뻗은 자세는 올리면서 사라지고
+                    팔.들올림 = 올;                   // 머리 위로 받치는 자세가 대신 들어온다
+                }
             }
+            else if (팔 != null) { 팔.줍기 = 0f; 팔.들올림 = 0f; 손.줍기굽힘 = 0f; }
 
             if (올 < 0.98f) hero.MoveMul = 0.25f;   // ★다 올릴 때까지는 거의 못 간다. 올린 뒤엔 걷는다
 
-            // ── 짐승이 지나가는 자리: 바닥 → 숙인 손 → 머리 위
-            var 바닥 = 잡은자리;
-            var 손앞 = transform.position + transform.forward * 손닿는앞
-                       + Vector3.up * (hero.height * 0.26f);
-            var 머리위 = transform.position + Vector3.up * (hero.height * 머리위높이)
-                         + transform.forward * 0.04f;
-            데려가는것.transform.position = 올 > 0.001f
-                ? Vector3.Lerp(손앞, 머리위, 올)
-                : Vector3.Lerp(바닥, 손앞, 잡);
-
-            // ★★**기절한 놈은 축 늘어져 있다** — 흔들지 않는다 (2026-08-13 사용자 "흐느적흐느적").
-            //   올라가면서 가로로 눕는다 — 머리 위에 가로로 얹히는 그림이다.
-            float 흔 = 올 * Mathf.Sin(Time.time * 3.2f) * 흔들각;
-            데려가는것.transform.rotation = transform.rotation
-                * Quaternion.Euler(흔 * 0.3f, 흔, -90f * 올 + 흔 * 0.5f);
+            // ★★★**자리는 `LateUpdate` 에서 잡는다** (2026-08-13 사용자 "손과 손사이가 아니라
+            //   앞쪽으로 가있어서 정확하지가않아").
+            //   ☆여기(`Update`)에서 손뼈를 읽으면 **한 프레임 늦은 자리**다 — 애니메이터와
+            //     `HeroAttack`(실행 순서 300)이 **그 뒤에** 뼈를 움직이기 때문이다.
+            //     그래서 짐승이 늘 손보다 앞·뒤로 어긋나 있었다.
+            //   ☆값만 기억해 두고, 뼈가 다 움직인 뒤에 얹는다 (아래 `LateUpdate`).
+            안은숙 = 숙; 안은잡 = 잡; 안은올 = 올;
         }
         else
         {
@@ -288,6 +295,50 @@ public class HeroCarry : MonoBehaviour
 
         // ★줄로 데려간다면 여기서 **몸에 감는다** (한 번만 재서 몸에 붙인다)
         if (!안는중) { 고리붙이기(best); 끌기t = 0f; }    // 단계는 언제나 ①부터 다시 시작한다
+
+        // ★★★**붙잡으면 짐승 애니메이터를 끈다** (2026-08-13 사용자 "아직도 머리에든채로
+        //   걸으면 팻이 걷는모션이 나옴").
+        //   ☆`펫동작` 이 그 일을 하게 해 뒀는데 **그 컴포넌트가 짐승에 안 붙어 있었다**
+        //     (실측). 9-2 그대로다 — 고쳐 놨지만 부르는 데가 없었다.
+        //   ☆들려 가는 놈이 제 발로 걷는 건 어떤 경우에도 틀렸으니, 여기서 직접 끈다.
+        짐승애니 = best.GetComponentInChildren<Animator>();
+        if (짐승애니 != null) 짐승애니.enabled = false;
+
+        // ★★**몸통 중심을 한 번 잰다** (사용자 "팻의 몸통부분을 잘 들어야하고").
+        //   ☆`몸.position` 은 기준점일 뿐이다 — 실측으로 **메시 중심이 뿌리보다 82cm 뒤**였다.
+        //     그래서 몸통이 아니라 엉뚱한 데가 손에 왔다. 렌더러가 차지한 자리를 쓴다.
+        //   ☆붙잡을 때 한 번만 잰다 (매 프레임 렌더러를 훑으면 비싸다 — 9-4)
+        // ★★★**허리뼈를 잡는다** (2026-08-13 사용자 "리깅된 뼈위치를 활용해서 좀 붙혀봐" ·
+        //   "팻의 몸통이, 허리뼈? 그게 손과 손 사이에 있도록").
+        //   ☆실측으로 짐승 뼈 이름을 알아냈다: `spine_hip`(허리) · `spine_back` · `spine_shldr`
+        //     · `neck1` · `head` · `tail1~2` · 다리 8개.
+        //   ☆메시 중심(bounds)보다 **허리뼈**가 정확하다 — 꼬리나 다리가 뻗은 만큼 중심이
+        //     끌려가지 않는다. 다람쥐 꼬리처럼 큰 것이 있으면 특히 어긋난다.
+        //   ☆뼈가 없는 종은 메시 중심으로 물러선다 (모델마다 뼈 이름이 다를 수 있다)
+        짐승허리 = null; 몸중심로컬 = Vector3.zero;
+        var 몸t0 = best.몸;
+        if (몸t0 != null)
+        {
+            // ★`붙일뼈` 에 적은 순서대로 찾는다 — 앞에 적은 것이 이긴다
+            var 뼈들 = 몸t0.GetComponentsInChildren<Transform>(true);
+            if (붙일뼈 != null)
+                foreach (var 이름 in 붙일뼈)
+                {
+                    if (string.IsNullOrEmpty(이름)) continue;
+                    foreach (var t in 뼈들) if (t.name == 이름) { 짐승허리 = t; break; }
+                    if (짐승허리 != null) break;
+                }
+            if (짐승허리 == null)
+            {
+                var rs = 몸t0.GetComponentsInChildren<Renderer>();
+                if (rs.Length > 0)
+                {
+                    var bb = rs[0].bounds;
+                    foreach (var r in rs) bb.Encapsulate(r.bounds);
+                    몸중심로컬 = best.transform.InverseTransformPoint(bb.center);
+                }
+            }
+        }
 
         // ★안고 있으면 못 때린다 — 다만 **컴포넌트를 끄지는 않는다.**
         //   숙이는 자세(다리·골반·척추)가 그 안에 있어서, 끄면 몸을 안 숙인다 (2026-08-13)
@@ -517,6 +568,90 @@ public class HeroCarry : MonoBehaviour
         데려가는것.transform.position += Vector3.up * 0.34f;
     }
 
+    float 안은숙, 안은잡, 안은올;
+    Vector3 몸중심로컬;      // 뿌리 → 몸통 메시 중심 (허리뼈가 없는 종일 때만 쓴다)
+    Transform 짐승허리;      // ★`spine_hip` — 이게 손 사이에 온다
+    Animator 짐승애니;        // 들려 있는 동안 꺼 둔다 — 제 발로 걸으면 안 된다
+    // ★★**어느 뼈를 손 사이에 맞출지, 얼마나 눕힐지 — 인스펙터에서 고른다** (2026-08-13 사용자
+    //   "허리뼈말고 다른 뼈로해야할듯한데 더 머리쪽에 있는뼈로, 그리고 방향도 흠..").
+    //   ☆짐승 뼈 사슬(실측): `spine_hip` → `spine_back` → `spine_shldr` → `neck1` → `head`.
+    //     뒤로 갈수록 머리쪽이다. 앞에 적은 것부터 찾으니 **순서만 바꾸면** 기준이 바뀐다.
+    //   ☆제가 값을 짐작하는 것보다 눈으로 돌려 보는 쪽이 빠르다 (9번 4항)
+    [Tooltip("손 사이에 맞출 짐승 뼈 — 앞에 적은 것부터 찾는다. 뒤로 갈수록 머리쪽")]
+    public string[] 붙일뼈 = { "spine_shldr", "spine_back", "spine_hip", "Hips" };
+    [Tooltip("들었을 때 짐승을 얼마나 돌리나 (도) — 눈으로 보고 맞춘다")]
+    public Vector3 들때기울임 = new Vector3(0f, 0f, -90f);
+    [Tooltip("머리뼈에서 얼마나 위에 얹나 (m) — 지금은 안 쓴다 (손 사이를 쓴다)")]
+    [Range(0f, 0.8f)] public float 머리위틈 = 0.26f;
+    [Tooltip("마지막으로 미세 조정 (m) — 눈으로 보고 맞춘다")]
+    public Vector3 손사이보정 = Vector3.zero;
+
+    /// ★★뼈가 다 움직인 뒤에 짐승을 얹는다 — 그래야 **정말로 손과 손 사이**에 놓인다.
+    ///   ☆실행 순서: 애니메이터(0) → `HeroHold`(200) → `HeroAttack`(300) → 여기.
+    ///     `Update` 에서 얹으면 한 프레임 늦은 손을 쓰게 되어 늘 어긋난다.
+    void LateUpdate()
+    {
+        if (데려가는것 == null || !안는중) return;
+
+        손뼈찾기();
+        var 바닥 = 잡은자리;
+        var 손앞 = 손사이 ?? (transform.position + transform.forward * 손닿는앞
+                              + Vector3.up * (hero.height * 0.26f));
+        // ★★★**짐승의 몸통(허리)이 두 손 사이에 온다** (2026-08-13 사용자 "팻의 몸통이,
+        //   허리뼈? 그게 손과 손 사이에 있도록하면될듯한데").
+        //   ☆한때 머리뼈 기준으로 옮겼었다 — 손 사이에 놓으니 짐승이 앞으로 튀어나왔기 때문.
+        //     그런데 그건 **몸통 보정이 없어서**였다. 기준점(발밑)을 손 사이에 놓으니 몸통은
+        //     82cm 뒤에 남았던 것이다.
+        //   ☆이제 아래에서 **몸통 중심**을 목표에 맞추므로, 손 사이를 목표로 삼으면
+        //     **몸통이 정확히 손 사이**에 온다. 손이 어디로 가든 따라간다.
+        //   ☆`머리위틈` 은 은퇴시키지 않고 남긴다 — 머리 위로 얹고 싶어지면 위 두 줄만 바꾼다
+        var 머리위 = (손사이 ?? (transform.position + Vector3.up * (hero.height * 머리위높이)
+                                + transform.forward * 0.04f));
+        var 목표 = 안은올 > 0.001f
+            ? Vector3.Lerp(손앞, 머리위, 안은올)
+            : Vector3.Lerp(바닥, 손앞, 안은잡);
+
+        // ★기절한 놈은 축 늘어져 있다 — 흔들지 않는다. 올라가면서 가로로 눕는다.
+        //   ★★**회전을 먼저 준다** — 아래에서 몸이 어디로 갔는지 재려면 이미 돌아 있어야 한다
+        float 흔 = 안은올 * Mathf.Sin(Time.time * 3.2f) * 흔들각;
+        데려가는것.transform.rotation = transform.rotation
+            * Quaternion.Euler(들때기울임 * 안은올 + new Vector3(흔 * 0.3f, 흔, 흔 * 0.5f));
+
+        // ★★★**「몸통 중심」이 목표에 오게 한다** (2026-08-13 사용자 "팻의 몸통부분을 잘
+        //   들어야하고").
+        //   ☆짐승의 기준점은 발밑이고, 실측으로 **메시 중심이 뿌리보다 82cm 뒤**였다.
+        //     기준점을 목표에 놓으면 몸통이 아니라 엉뚱한 데가 손에 온다.
+        //   ☆붙잡을 때 재 둔 `몸중심로컬` 을 **지금 회전에 맞춰 돌려** 그만큼 되돌린다.
+        //     회전이 바뀌어도(가로로 눕든) 저절로 맞는다 — 짐작한 보정값이 아니다.
+        // ★허리뼈가 있으면 그것을, 없으면 메시 중심을 목표에 맞춘다.
+        //   ☆뼈는 **이미 회전이 반영된 world 자리**라 따로 돌릴 필요가 없다
+        데려가는것.transform.position = 목표;
+        var 밀 = 짐승허리 != null
+            ? 짐승허리.position - 데려가는것.transform.position
+            : 데려가는것.transform.TransformVector(몸중심로컬);
+        데려가는것.transform.position = 목표 - 밀 * 안은올 + 손사이보정 * 안은올;
+    }
+
+    // ★두 손뼈를 찾아 그 중간점을 쓴다 — 팔 자세가 바뀌어도 짐승이 저절로 손에 붙는다.
+    //   ☆한 번만 찾는다 (매 프레임 계층을 훑으면 비싸다 — 9-4)
+    Transform 왼손뼈, 오른손뼈, 머리뼈;
+    Vector3? 손사이 => (왼손뼈 != null && 오른손뼈 != null)
+        ? (Vector3?)((왼손뼈.position + 오른손뼈.position) * 0.5f) : null;
+
+    void 손뼈찾기()
+    {
+        if (왼손뼈 != null && 오른손뼈 != null && 머리뼈 != null
+            && 왼손뼈.gameObject.activeInHierarchy && 머리뼈.gameObject.activeInHierarchy) return;
+        왼손뼈 = 오른손뼈 = 머리뼈 = null;
+        foreach (var t in GetComponentsInChildren<Transform>(false))   // 켜진 몸에서만
+        {
+            if (t.name == "LeftHand") 왼손뼈 = t;
+            else if (t.name == "RightHand") 오른손뼈 = t;
+            else if (t.name == "Head") 머리뼈 = t;
+            if (왼손뼈 != null && 오른손뼈 != null && 머리뼈 != null) return;
+        }
+    }
+
     /// 순서가 있는 동작 — 제 차례가 와야 오르기 시작하고, 양 끝이 완만하다
     static float 단계(float t, float 시작, float 길이)
         => Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((t - 시작) / Mathf.Max(0.01f, 길이)));
@@ -569,6 +704,10 @@ public class HeroCarry : MonoBehaviour
     void 해제()
     {
         줄치우기();
+        // ★놓으면 짐승이 다시 제 몸을 갖는다 (애니메이터를 되켠다)
+        if (짐승애니 != null) { 짐승애니.enabled = true; 짐승애니 = null; }
+        몸중심로컬 = Vector3.zero; 짐승허리 = null;
+
         // ★단계를 **거꾸로 되돌린다** — 무기가 손으로 돌아오고, 시선이 마우스로 풀린다
         무기등에(false);
         if (hero != null) hero.시선고정 = false;
