@@ -252,6 +252,15 @@ public class HeroAttack : MonoBehaviour
     [Tooltip("왼주먹 — 맨손짓 1")]   public AnimationClip 주먹왼클립;
     [Tooltip("발차기 — 맨손짓 2")]   public AnimationClip 발차기클립;
 
+    // ★★★**집어들기도 클립으로 그린다** (2026-08-13 사용자 "팻 머리위로 들고가는거 동작
+    //   만들라니까 애니메이션으로도 뽑고 그것도 추가가안됐네").
+    //   ☆`Tools/토이라/집어들기를 클립으로 굽기` 가 이 칸을 채운다. 비워 두면 절차 쪽
+    //     (`HeroCarry` 의 네 순간 + `HeroHold.줍기·들올림`)이 그린다 — 은퇴는 스위치다.
+    [Tooltip("집어들기 — 숙여서 머리 위로 올리는 동작 (비우면 코드가 그린다)")]
+    public AnimationClip 들기클립;
+    /// 집어들기 진행도 0~1 — `HeroCarry` 가 민다. **음수면 안 들고 있다**
+    [HideInInspector] public float 들기진행 = -1f;
+
     [Header("느낌")]
     [Tooltip("맞히는 순간 아주 짧게 멈춘다 (초) — 0 이면 안 씀")] public float 히트스톱 = 0.045f;
 
@@ -844,6 +853,33 @@ public class HeroAttack : MonoBehaviour
         클립돌던중 = true;
         // 팔 자세 코드는 손을 뗀다 — 같은 뼈를 두고 다투면 떨린다
         if (드는자세 != null) { 드는자세.목표 = 0f; 드는자세.침 = 0f; }
+    }
+
+    // ★★집어들기 클립 재생 — `갈무리그리기` 와 같은 길이다.
+    //   ☆다른 점 하나: 시계가 제 것이 아니라 **`HeroCarry` 가 넘긴 진행도**다. 짐승이
+    //     바닥 → 손 → 머리 위로 가는 것과 몸짓이 어긋나면 안 되니, 같은 값을 쓴다.
+    //   ☆상체·하체 **둘 다** 켠다 — 숙이는 건 다리가 하는 일이라 하체를 걷기에 넘기면 안 된다.
+    static readonly int 들기해시 = Animator.StringToHash("들기");
+    void 들기그리기()
+    {
+        if (애니 == null || !애니.isActiveAndEnabled)
+        { 애니 = GetComponentInChildren<Animator>(); 몸뿌리 = 애니 != null ? 애니.gameObject : gameObject; }
+        if (애니 == null) return;
+        if (공격층 < 0) 공격층 = 층찾기("공격층");
+        if (하체층 < 0) 하체층 = 층찾기("공격하체층");
+
+        float n = Mathf.Clamp01(들기진행);
+        if (공격층 > 0) { 애니.SetLayerWeight(공격층, 1f); 애니.Play(들기해시, 공격층, n); }
+        if (하체층 > 0)
+        {
+            하체무게 = Mathf.MoveTowards(하체무게, 1f, Time.deltaTime * 14f);
+            애니.SetLayerWeight(하체층, 하체무게);
+            애니.Play(들기해시, 하체층, n);
+        }
+        // ★절차 자세는 재운다 — 클립이 그리는 동안 같이 돌면 두 번 그려져 떨린다
+        if (드는자세 != null) { 드는자세.목표 = 0f; 드는자세.침 = 0f; 드는자세.줍기 = 0f; 드는자세.들올림 = 0f; }
+        줍기굽힘 = 0f;
+        클립돌던중 = true;
     }
 
     /// 상체·하체 공격 레이어를 부드럽게 내린다 — 걷기(0층)가 다시 몸을 갖는다
@@ -1677,7 +1713,10 @@ public class HeroAttack : MonoBehaviour
         //     사체 뒤적임은 저작된 클립이 없으므로 절차 쪽이 그린다.
         맨손짓뽑기();                      // ★그리는 방식과 상관없이 먼저 정한다 (아래 주석)
         bool 뒤적임 = state == State.채집 && !채집팸;
-        if (뒤적임 && 갈무리클립 != null) 갈무리그리기();
+        // ★★집어들기가 제일 위다 — 드는 동안은 딴 몸짓이 끼어들 자리가 없다.
+        //   클립이 비어 있으면 아래로 흘러가 절차 쪽(`몸통스윙` + `HeroHold`)이 그린다
+        if (들기진행 >= 0f && 들기클립 != null) 들기그리기();
+        else if (뒤적임 && 갈무리클립 != null) 갈무리그리기();
         else if (클립쓴다 && !뒤적임) 클립으로그리기();
         else
         {

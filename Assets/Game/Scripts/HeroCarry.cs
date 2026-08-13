@@ -167,6 +167,12 @@ public class HeroCarry : MonoBehaviour
             if (손 == null) 손 = GetComponent<HeroAttack>();
             if (팔 == null) 팔 = GetComponent<HeroHold>();
 
+            // ★★★**클립이 있으면 클립이 그린다** — 진행도만 넘긴다 (2026-08-13).
+            //   ☆짐승 자리(바닥 → 손 → 머리 위)는 **아래 코드가 계속 쥔다.** 클립은 사람 뼈만
+            //     그리므로, 둘이 어긋나지 않으려면 **같은 진행도**를 써야 한다.
+            //   ☆클립이 비어 있으면 `HeroAttack` 이 절차 쪽으로 흘려보낸다
+            if (손 != null) 손.들기진행 = Mathf.Clamp01(줍기t / Mathf.Max(0.01f, t3));
+
             // ★★온몸이 같이 움직인다 — 다리·골반·척추는 `HeroAttack.줍기굽힘` 이,
             //   어깨·팔·팔뚝·머리는 `HeroHold` 가 맡는다 (각자 제 뼈만 만진다).
             //   ☆★숙임은 **올릴 때 펴진다** — 이게 「들어올린다」로 읽히는 핵심이다.
@@ -574,7 +580,8 @@ public class HeroCarry : MonoBehaviour
         줍기t = 0f;
         hero.MoveMul = 1f;
         var atk = GetComponent<HeroAttack>();
-        if (atk != null) { atk.두손막힘 = false; atk.줍기굽힘 = 0f; }   // ★숙임이 남으면 계속 굽은 채 걷는다
+        // ★숙임이 남으면 계속 굽은 채 걷는다 · 들기진행을 음수로 되돌려야 클립이 멈춘다
+        if (atk != null) { atk.두손막힘 = false; atk.줍기굽힘 = 0f; atk.들기진행 = -1f; }
         var 팔c = GetComponent<HeroHold>();
         if (팔c != null) { 팔c.줍기 = 0f; 팔c.끌기 = 0f; 팔c.끌기젖힘 = 0f; 팔c.들올림 = 0f; }   // 팔도 풀어 준다
     }
