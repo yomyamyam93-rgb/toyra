@@ -57,10 +57,24 @@ public class HeroCarry : MonoBehaviour
     Transform[] 줄토막, 고리판;
 
     [Header("데려가기")]
-    [Header("★집어들기")]
-    [Tooltip("숙여서 집어드는 데 걸리는 시간 (초)")] [Range(0.1f, 1.5f)] public float 드는데 = 0.55f;
-    [Tooltip("등에 맨 높이 — 사람 키에 대한 비율")] [Range(0.3f, 1.2f)] public float 등높이 = 0.72f;
-    [Tooltip("걸을 때 등에서 흔들리는 각 (°)")] [Range(0f, 20f)] public float 흔들각 = 7f;
+    // ★★★★**집어들기는 네 순간이다** (2026-08-13 사용자 "자세한 동작들 한순간씩 팔다리 허벅지
+    //   정강이 손머리 목 등등 지정한 뒤 행동을 만들어야할듯해 / 몸을 숙여 손을 뻗고, 들어서
+    //   머리위로 올리고 들고 그상태로 또 걷기되고").
+    //   ☆옛 코드는 **한 값(`듦`)으로 전부**를 했다 — 숙임·팔·짐승 자리가 같은 곡선을 탔다.
+    //     그러니 「숙였다 든다」가 아니라 「숙인 채 짐승이 등으로 미끄러진다」가 됐다.
+    //   ☆네 순간을 따로 센다 (발차기의 `킥표` 와 같은 방식):
+    //       ①숙임  — 무릎·허리를 굽히고 두 팔을 앞아래로 뻗는다. 짐승은 **바닥에 그대로**
+    //       ②잡음  — 짐승이 손에 붙는다
+    //       ③올림  — 몸을 펴며 두 팔로 **머리 위로** 올린다
+    //       ④유지  — 머리 위에 얹은 채 걷는다
+    [Header("★집어들기 — 네 순간 (초)")]
+    [Tooltip("① 숙여서 두 손을 뻗는 데")] [Range(0.1f, 1f)] public float 숙임시간 = 0.34f;
+    [Tooltip("② 잡아서 손에 붙는 데")] [Range(0.05f, 0.6f)] public float 잡음시간 = 0.14f;
+    [Tooltip("③ 머리 위로 올리는 데")] [Range(0.1f, 1.2f)] public float 올림시간 = 0.42f;
+    [Tooltip("④ 머리 위 높이 — 사람 키에 대한 비율")] [Range(0.7f, 1.4f)] public float 머리위높이 = 1.04f;
+    [Tooltip("숙였을 때 손이 닿는 앞거리 (m)")] [Range(0.2f, 1f)] public float 손닿는앞 = 0.52f;
+    [Tooltip("걸을 때 머리 위에서 흔들리는 각 (°) — ★기절한 놈은 축 늘어져 있다")]
+    [Range(0f, 12f)] public float 흔들각 = 2f;
     float 줍기t; Vector3 잡은자리; HeroAttack 손; HeroHold 팔;
 
     [Tooltip("안고 있을 때 이동 속도 배수")] [Range(0.2f, 1f)] public float 안았을때 = 0.7f;
@@ -76,7 +90,14 @@ public class HeroCarry : MonoBehaviour
     //     ☆그런데도 다들 모닥불 옆에 매게 된다 — **불이 야생을 밀어내서 거기가 안전하기
     //       때문**이다(`모닥불.무서운불`). 캠프가 규칙이 아니라 **이득으로** 생긴다.
 
-    [Header("먹이 (E)")]
+    [Header("먹이 (E) — ★은퇴")]
+    // ★★**E 를 껐다** (2026-08-13 사용자 "E 는 왜들어가냐,, 그냥 탭에서 넣어주는걸로만
+    //   가능하게해줘.. 그냥 넣어두면 알아서 먹게").
+    //   ☆먹이는 길이 셋이나 되어 어느 게 맞는지 헷갈렸다. 이제 **Tab 에서 먹이통에 넣는
+    //     하나**로 모았고, 먹는 것은 짐승이 알아서 한다 (`Critter.통에서먹기`).
+    //   ☆지우지 않고 스위치로 끈다 (9-3). 아래 `먹이주기()` 도 그대로 남는다.
+    [Tooltip("★은퇴 — 켜면 옛날처럼 E 로 즉시 먹인다. 지금은 Tab 의 먹이통이 그 일을 한다")]
+    public bool 먹이키씀 = false;
     [Tooltip("이 거리 안에 먹이를 준다 (m)")] public float 먹이거리 = 3f;
     [Tooltip("구운 고기를 주면 신뢰가 이 배로 오른다")] [Range(1f, 3f)] public float 구운것배 = 1.7f;
 
@@ -110,7 +131,7 @@ public class HeroCarry : MonoBehaviour
         // ★채집(캐기·갈무리) 중에도 F 는 그쪽 것이다 — 나무를 패다가 옆의 짐승을 붙잡으면 안 된다
         if (모닥불.F먹음 || HeroAttack.F먹음) 눌림 = false;
 
-        if (먹임) 먹이주기();
+        if (먹임 && 먹이키씀) 먹이주기();      // ★은퇴 — Tab 의 먹이통이 이 일을 한다
 
         if (데려가는것 == null)
         {
@@ -133,37 +154,47 @@ public class HeroCarry : MonoBehaviour
 
         if (안는중)
         {
-            // ★★★**집어들고 등에 맨다** (2026-08-12 사용자 "숙여서 집어들고 머리위 or
-            //   등뒤로 매달아두는거지"). 전에는 몸 앞 90cm 에 **그냥 떠 있었다** —
-            //   드는 동작도, 붙어 있는 자리도 없이 공중에 매달린 그림이었다.
-            //   ☆①숙인다 ②새끼가 바닥에서 등으로 올라온다 ③등에 매달려 흔들린다
-            //   ☆드는 동안은 느리다 — 두 손이 차 있으니 당연하다
-            줍기t = Mathf.Min(줍기t + dt, 드는데);
-            float 듦 = 드는데 > 0.01f ? Mathf.SmoothStep(0f, 1f, 줍기t / 드는데) : 1f;
+            // ── ★네 순간을 따로 센다 (위 헤더 주석 참고)
+            줍기t += dt;
+            float t1 = Mathf.Max(0.01f, 숙임시간);
+            float t2 = t1 + Mathf.Max(0.01f, 잡음시간);
+            float t3 = t2 + Mathf.Max(0.01f, 올림시간);
 
-            // 몸 자세는 `HeroAttack` 이 쥐고 있다 — 얼마나 숙일지만 넘긴다
+            float 숙 = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(줍기t / t1));                  // ① 숙인다
+            float 잡 = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((줍기t - t1) / 잡음시간));      // ② 손에 붙는다
+            float 올 = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((줍기t - t2) / 올림시간));      // ③ 머리 위로
+
             if (손 == null) 손 = GetComponent<HeroAttack>();
             if (팔 == null) 팔 = GetComponent<HeroHold>();
+
             // ★★온몸이 같이 움직인다 — 다리·골반·척추는 `HeroAttack.줍기굽힘` 이,
-            //   어깨·팔·팔뚝·머리는 `HeroHold.줍기` 가 맡는다 (각자 제 뼈만 만진다).
-            //   ☆숙임은 처음에 깊고 펴지는데, 팔은 **끝까지 감싸 안은 채**로 남는다 —
-            //     다 들고 나서도 새끼를 붙잡고 있어야 하니까
-            if (손 != null) 손.줍기굽힘 = 1f - 듦;          // 처음에 깊게 숙였다 펴진다
-            if (팔 != null) 팔.줍기 = Mathf.Max(0.55f, 1f - 듦 * 0.45f);
+            //   어깨·팔·팔뚝·머리는 `HeroHold` 가 맡는다 (각자 제 뼈만 만진다).
+            //   ☆★숙임은 **올릴 때 펴진다** — 이게 「들어올린다」로 읽히는 핵심이다.
+            //     옛 코드는 숙임과 짐승 올라오기가 같은 곡선이라 「숙인 채 미끄러짐」이 됐다.
+            if (손 != null) 손.줍기굽힘 = 숙 * (1f - 올);
+            if (팔 != null)
+            {
+                팔.줍기 = 숙 * (1f - 올);        // 앞아래로 뻗은 자세는 올리면서 사라지고
+                팔.들올림 = 올;                   // 머리 위로 받치는 자세가 대신 들어온다
+            }
 
-            if (듦 < 1f) hero.MoveMul = 0.25f;              // 드는 동안은 거의 못 간다
+            if (올 < 0.98f) hero.MoveMul = 0.25f;   // ★다 올릴 때까지는 거의 못 간다. 올린 뒤엔 걷는다
 
-            // 바닥(집은 자리) → 등 뒤 위쪽으로 올라온다
+            // ── 짐승이 지나가는 자리: 바닥 → 숙인 손 → 머리 위
             var 바닥 = 잡은자리;
-            var 등 = transform.position - transform.forward * 0.32f
-                     + Vector3.up * (hero.height * 등높이)
-                     + transform.right * 0.12f;            // 살짝 한쪽으로 — 정중앙이면 가려진다
-            데려가는것.transform.position = Vector3.Lerp(바닥, 등, 듦);
+            var 손앞 = transform.position + transform.forward * 손닿는앞
+                       + Vector3.up * (hero.height * 0.26f);
+            var 머리위 = transform.position + Vector3.up * (hero.height * 머리위높이)
+                         + transform.forward * 0.04f;
+            데려가는것.transform.position = 올 > 0.001f
+                ? Vector3.Lerp(손앞, 머리위, 올)
+                : Vector3.Lerp(바닥, 손앞, 잡);
 
-            // 등에 매달려 걸음마다 흔들린다 — 매달린 것은 흔들려야 매달린 것으로 읽힌다
-            float 흔 = 듦 * Mathf.Sin(Time.time * 6.5f) * 흔들각;
+            // ★★**기절한 놈은 축 늘어져 있다** — 흔들지 않는다 (2026-08-13 사용자 "흐느적흐느적").
+            //   올라가면서 가로로 눕는다 — 머리 위에 가로로 얹히는 그림이다.
+            float 흔 = 올 * Mathf.Sin(Time.time * 3.2f) * 흔들각;
             데려가는것.transform.rotation = transform.rotation
-                * Quaternion.Euler(28f * 듦 + 흔 * 0.4f, 흔, -14f * 듦 + 흔 * 0.6f);
+                * Quaternion.Euler(흔 * 0.3f, 흔, -90f * 올 + 흔 * 0.5f);
         }
         else
         {
@@ -252,9 +283,10 @@ public class HeroCarry : MonoBehaviour
         // ★줄로 데려간다면 여기서 **몸에 감는다** (한 번만 재서 몸에 붙인다)
         if (!안는중) { 고리붙이기(best); 끌기t = 0f; }    // 단계는 언제나 ①부터 다시 시작한다
 
-        // 안고 있으면 무기를 못 쓴다
+        // ★안고 있으면 못 때린다 — 다만 **컴포넌트를 끄지는 않는다.**
+        //   숙이는 자세(다리·골반·척추)가 그 안에 있어서, 끄면 몸을 안 숙인다 (2026-08-13)
         var atk = GetComponent<HeroAttack>();
-        if (atk != null) atk.enabled = !안는중;
+        if (atk != null) atk.두손막힘 = 안는중;
     }
 
     void 놓기()
@@ -542,9 +574,9 @@ public class HeroCarry : MonoBehaviour
         줍기t = 0f;
         hero.MoveMul = 1f;
         var atk = GetComponent<HeroAttack>();
-        if (atk != null) { atk.enabled = true; atk.줍기굽힘 = 0f; }   // ★숙임이 남으면 계속 굽은 채 걷는다
+        if (atk != null) { atk.두손막힘 = false; atk.줍기굽힘 = 0f; }   // ★숙임이 남으면 계속 굽은 채 걷는다
         var 팔c = GetComponent<HeroHold>();
-        if (팔c != null) { 팔c.줍기 = 0f; 팔c.끌기 = 0f; 팔c.끌기젖힘 = 0f; }   // 팔도 풀어 준다
+        if (팔c != null) { 팔c.줍기 = 0f; 팔c.끌기 = 0f; 팔c.끌기젖힘 = 0f; 팔c.들올림 = 0f; }   // 팔도 풀어 준다
     }
 
     void 띄움(string s) { 알림 = s; 알림T = 2.5f; }

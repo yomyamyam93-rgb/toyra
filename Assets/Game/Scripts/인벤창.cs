@@ -211,7 +211,13 @@ public class 인벤창 : MonoBehaviour
         if (it == null || 출처 == null) return;
 
         // 안 끌었으면 그냥 클릭이다 — 옛 동작 그대로
-        if (!끌었다) { 옮기기(it, 출처, 내것, 전부); if (무 != null) 무.갱신(); return; }
+        if (!끌었다)
+        {
+            // ★짐승이 앞에 있으면 클릭 한 번도 **그 놈에게** 간다 (오른쪽 패널이 곧 그 통이니까)
+            var 펫0 = 내것 ? 앞의펫() : null;
+            if (펫0 != null) { 옮기기(it, 출처, true, 전부, 펫0.가진것); 띄움($"{펫0.종.이름} 에게 주었다"); return; }
+            옮기기(it, 출처, 내것, 전부); if (무 != null) 무.갱신(); return;
+        }
 
         // ⓪ ★장비 칸 위 — **몸에 걸친다.** 「어디에 놓았느냐가 정한다」의 그 길이다
         if (손칸.Contains(p)) { 손에쥐기(it); if (무 != null) 무.갱신(); return; }
@@ -225,8 +231,15 @@ public class 인벤창 : MonoBehaviour
         // ② 왼쪽 — 지금 보고 있는 통으로
         if (왼칸.Contains(p)) { 옮기기(it, 출처, 내것, 전부, 인벤.통들[고른통]); if (무 != null) 무.갱신(); return; }
 
-        // ③ 오른쪽 — 앞에 있는 것(땅·사체) 속으로. 이미 거기 있던 것은 그대로 둔다
-        if (오른칸.Contains(p) && 내것) { 옮기기(it, 출처, true, 전부, null, 무); if (무 != null) 무.갱신(); }
+        // ③ 오른쪽 — 앞에 있는 것(짐승 먹이통 · 땅 · 사체) 속으로
+        if (오른칸.Contains(p) && 내것)
+        {
+            // ★짐승이 앞에 있으면 **그 놈에게 준다.** 먹을 것만 골라 받지 않는다 —
+            //   가진 것이니 무엇이든 들어간다. 먹을 것이면 알아서 씹는다
+            var 펫 = 앞의펫();
+            if (펫 != null) { 옮기기(it, 출처, true, 전부, 펫.가진것); 띄움($"{펫.종.이름} 에게 주었다"); return; }
+            옮기기(it, 출처, true, 전부, null, 무); if (무 != null) 무.갱신();
+        }
     }
 
     /// 옮겨 둔 자리가 있으면 그리로 — 화면 밖으로는 못 나간다 (되찾을 수 없게 되면 안 된다)
@@ -472,6 +485,14 @@ public class 인벤창 : MonoBehaviour
     void 오른쪽패널(Rect r, 땅무더기 무더기)
     {
         바탕(r);
+
+        // ★★**앞에 짐승이 있으면 짐승이 먼저다** (2026-08-13 사용자 "TAB했을때 팻 인벤토리가
+        //   뜨고 거기에 넣어줄 수 있게").
+        //   ☆새 창을 안 늘린다 — 이 패널은 원래 **「앞에 무엇이 있느냐」**를 따르는 자리다
+        //     (기획 5-7 · 4장의 좌클릭 원리와 같은 길). 짐승도 그 「무엇」 중 하나다.
+        var 펫 = 앞의펫();
+        if (펫 != null) { 펫패널(r, 펫); return; }
+
         var 제목투 = new GUIStyle(GUI.skin.label) { fontSize = 14 };
         제목투.normal.textColor = new Color(0.85f, 0.85f, 0.88f);
         // ★이름표가 있으면 그것이 제목이다 (사체 — 「사슴 사체」)
@@ -484,6 +505,48 @@ public class 인벤창 : MonoBehaviour
         if (무더기 == null) return;
         목록(new Rect(r.x + 8f, r.y + 32f, r.width - 16f, r.height - 40f),
              무더기.속, ref 오른쪽스크롤, false, 무더기);
+    }
+
+    /// ★짐승이 **가진 것** — 먹이 전용 통이 아니다. 넣어 준 먹이도, 나중에 죽어서 나올
+    ///   고기·뼈도 같은 통이다. 먹을 것만 천천히 먹고 나머지는 지고 있는다.
+    ///   ☆띄우는 것은 **상태와 수치**뿐이다 (11장). 신뢰·자람은 지금 무슨 일이 되고 있는지
+    ///     알려주는 값이고, 설명문은 한 줄도 없다.
+    void 펫패널(Rect r, Critter 펫)
+    {
+        var 제목투 = new GUIStyle(GUI.skin.label) { fontSize = 14 };
+        제목투.normal.textColor = new Color(0.85f, 0.85f, 0.88f);
+        string 꼬리 = 펫.기절중 ? "  기절" : 펫.묶임 ? "  묶임" : 펫.side == Critter.Side.내편 ? "  내 펫" : "";
+        GUI.Label(new Rect(r.x + 12f, r.y + 6f, r.width - 24f, 22f), 펫.종.이름 + 꼬리, 제목투);
+
+        var 잔투 = new GUIStyle(GUI.skin.label) { fontSize = 11, alignment = TextAnchor.MiddleRight };
+        잔투.normal.textColor = new Color(0.72f, 0.72f, 0.76f);
+        float 위 = r.y + 30f;
+
+        // ── 신뢰 — 야생일 때만 뜻이 있다 (100 이면 내 것이 된다)
+        if (펫.side == Critter.Side.야생)
+        {
+            막대(r.x + 12f, 위, r.width - 24f, 8f, 펫.신뢰 / 100f, new Color(0.45f, 0.72f, 0.52f));
+            GUI.Label(new Rect(r.x + 12f, 위 + 8f, r.width - 24f, 16f),
+                      $"신뢰 {Mathf.RoundToInt(펫.신뢰)} / 100", 잔투);
+            위 += 28f;
+        }
+
+        // ── 자람 — 새끼일 때만
+        if (펫.새끼)
+        {
+            막대(r.x + 12f, 위, r.width - 24f, 8f, 펫.자람, new Color(0.7f, 0.62f, 0.35f));
+            GUI.Label(new Rect(r.x + 12f, 위 + 8f, r.width - 24f, 16f),
+                      $"자람 {Mathf.RoundToInt(펫.자람 * 100f)}%", 잔투);
+            위 += 28f;
+        }
+
+        // ── 무게와 씹는 속도 (큰 놈은 오래 씹는다)
+        var 통 = 펫.가진것;
+        GUI.Label(new Rect(r.x + 12f, 위, r.width - 24f, 16f),
+                  $"{통.무게:F1} / {통.한도:F0}kg   한 입 {펫.한입걸리는시간:F0}초", 잔투);
+        위 += 20f;
+
+        목록(new Rect(r.x + 8f, 위, r.width - 16f, r.yMax - 위 - 8f), 통, ref 오른쪽스크롤, false, null);
     }
 
     void 목록(Rect 안, 인벤 것, ref Vector2 스크롤, bool 내것인가, 땅무더기 무더기)
@@ -673,17 +736,33 @@ public class 인벤창 : MonoBehaviour
         띄움("표식을 박았다");
     }
 
+    // ★★★**즉시 먹이지 않는다 — 통에 넣으면 알아서 먹는다** (2026-08-13 사용자 "E 는 왜
+    //   들어가냐,, 그냥 탭에서 넣어주는걸로만 가능하게해줘.. 그냥 넣어두면 알아서 먹게").
+    //   ☆먹이는 길이 셋이었다: `E` 키 · 우클릭 「펫 주기」 · 그리고 이제 통. 셋이 서로 다르게
+    //     동작하니 어느 게 맞는지 헷갈린다. **전부 「통에 넣는다」 하나로 모았다.**
+    //   ☆`E` 는 은퇴시켰다 (`HeroCarry.먹이키씀`). 지우지 않고 껐다 (9-3).
     void 펫주기(아이템 it, 인벤 통)
     {
-        var 안음 = GetComponent<HeroCarry>();
-        if (안음 == null) return;
-        var 대상 = 안음.가까운대상();
-        if (대상 == null) { 띄움("줄 놈이 없다"); return; }
-        if (!통.빼기(it)) return;
-        // 상한 것도 펫은 먹는다 — 다만 신뢰가 덜 오른다 (기획 5-7)
-        float 배 = it.상했나 ? 0.5f : (it.종.이름 == "구운고기" || it.종.이름 == "말린고기" ? 1.7f : 1f);
-        대상.먹이받음(배);
-        띄움($"{대상.종.이름}  {Mathf.RoundToInt(대상.신뢰)}");
+        var 펫 = 앞의펫();
+        if (펫 == null) { 띄움("줄 놈이 없다"); return; }
+        옮기기(it, 통, true, false, 펫.가진것);
+        띄움($"{펫.종.이름} 에게 주었다");
+    }
+
+    /// ★앞에 있는 짐승 — **먹이를 줄 수 있는 놈**만. 기절했거나 매였거나 붙잡혔거나 내 펫.
+    ///   ☆멀쩡히 서서 덤비는 야생은 안 나온다 — 그런 놈에게 먹이통을 열 수는 없다
+    Critter 앞의펫()
+    {
+        Critter best = null; float bd = 닿는거리 * 닿는거리;
+        foreach (var c in Critter.All)
+        {
+            if (c == null || !c.Alive) continue;
+            if (!(c.기절중 || c.묶임 || c.잡힘 || c.side == Critter.Side.내편)) continue;
+            float d2 = (c.transform.position - transform.position).sqrMagnitude;
+            if (d2 > bd) continue;
+            bd = d2; best = c;
+        }
+        return best;
     }
 
     void 쥐기(아이템 it)

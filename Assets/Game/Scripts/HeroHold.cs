@@ -144,6 +144,19 @@ public class HeroHold : MonoBehaviour
     [HideInInspector] public float 줍기;          // 0 = 평소 · 1 = 완전히 뻗어 감쌈
     float 줍기지금;
 
+    // ★★★★**머리 위로 들어올린다** (2026-08-13 사용자 "몸을 숙여 손을 뻗고, 들어서 머리위로
+    //   올리고 들고 그상태로 또 걷기되고").
+    //   ☆여태 자세가 **하나뿐**이었다 — 「숙여서 앞아래로 뻗기」. 그러니 다 든 뒤에도 팔이
+    //     앞아래에 있어서, 짐승이 손에 달라붙어 끌려오는 그림이 됐다.
+    //   ☆이제 두 자세다: `줍기`(숙여 뻗기) → `들올림`(머리 위로 받치기). 순서대로 섞인다.
+    [Header("★머리 위로 들어올릴 때 (HeroCarry 가 민다)")]
+    [Tooltip("어깨 — 위로 올린다")] public Vector3 들올때어깨 = new Vector3(-26f, 0f, 0f);
+    [Tooltip("위팔 — 머리 위로 넘긴다")] public Vector3 들올때팔 = new Vector3(-146f, 0f, 22f);
+    [Tooltip("팔뚝 — 굽혀서 받친다")] public Vector3 들올때팔뚝 = new Vector3(-72f, 0f, 0f);
+    [Tooltip("머리 — 앞을 본다 (음수가 듦)")] public Vector3 들올때머리 = new Vector3(-5f, 0f, 0f);
+    [HideInInspector] public float 들올림;        // 0 = 숙여 뻗은 채 · 1 = 머리 위로 다 올림
+    float 들올림지금;
+
     // ★★★★**줄을 양손으로 잡고 뒷걸음질로 끈다** (2026-08-12 사용자 "줄을 양손으로 잡고
     //   뒤로 걸으면서 끌고가도록").
     //   ☆여태 끌 때 사람은 **평소 걷는 자세 그대로**였다 — 두 손을 늘어뜨린 채 걷고
@@ -190,9 +203,10 @@ public class HeroHold : MonoBehaviour
         끌기젖힘지금 = Mathf.Lerp(끌기젖힘지금, Mathf.Clamp01(끌기젖힘), 붙);
         // ★주먹은 **즉각** 따라붙는다 — 지르는 맛은 빠르기에서 온다 (느리게 섞으면 미는 것처럼 보인다)
         지르기지금 = Mathf.Lerp(지르기지금, Mathf.Clamp01(지르기), 1f - Mathf.Exp(-따라붙기 * 2.6f * Time.deltaTime));
+        들올림지금 = Mathf.Lerp(들올림지금, Mathf.Clamp01(들올림), 붙);
         // ★집어드는 중이면 팔이 내려가 있어도 돌아야 한다 (예전엔 여기서 그냥 나갔다)
         if (지금 < 0.001f && 줍기지금 < 0.001f && 끌기지금 < 0.001f
-            && 끌기젖힘지금 < 0.001f && 지르기지금 < 0.001f) return;
+            && 끌기젖힘지금 < 0.001f && 지르기지금 < 0.001f && 들올림지금 < 0.001f) return;
 
         // ★★뼈를 놓쳤으면 **스스로 다시 잡는다** (2026-08-05 — 실측하다 전부 null 인 걸 발견했다).
         //   `Awake` 에서 한 번만 잡으면, 그 순간 몸이 아직 안 켜져 있었거나 나중에 몸이
@@ -235,7 +249,15 @@ public class HeroHold : MonoBehaviour
         var 어깨목표 = Vector3.Lerp(Vector3.Lerp(Vector3.Lerp(Vector3.Lerp(어깨, 칠때어깨, s), 줍을때어깨, p), 끌때어깨, g), 지를때어깨, 즈);
         var 팔목표   = Vector3.Lerp(Vector3.Lerp(Vector3.Lerp(Vector3.Lerp(팔, 칠때팔, s), 줍을때팔, p), 끌때팔, g), 지를때팔, 즈);
         var 팔뚝목표 = Vector3.Lerp(Vector3.Lerp(Vector3.Lerp(Vector3.Lerp(팔뚝, 칠때팔뚝, s), 줍을때팔뚝, p), 끌때팔뚝, g), 지를때팔뚝, 즈);
-        float wp = Mathf.Max(Mathf.Max(w, 지르기지금), Mathf.Max(p, g));   // 집거나 끌거나 지르는 동안은 팔이 안 들려 있어도 자세가 산다
+        // ★★들어올리는 자세는 **맨 마지막에 섞는다** — 앞의 무엇을 하고 있었든 이게 이긴다
+        float ㄷ = 들올림지금;
+        if (ㄷ > 0.001f)
+        {
+            어깨목표 = Vector3.Lerp(어깨목표, 들올때어깨, ㄷ);
+            팔목표   = Vector3.Lerp(팔목표, 들올때팔, ㄷ);
+            팔뚝목표 = Vector3.Lerp(팔뚝목표, 들올때팔뚝, ㄷ);
+        }
+        float wp = Mathf.Max(Mathf.Max(w, 지르기지금), Mathf.Max(Mathf.Max(p, g), ㄷ));   // 집거나 끌거나 지르거나 드는 동안은 팔이 안 들려 있어도 자세가 산다
 
         // ★부모부터 순서대로 — 어깨를 잡은 뒤라야 팔의 기준이 제대로 선다
         잡기(어깨뼈, 어깨기본, 어깨목표, 늦게(wp, 0f), 몸);
@@ -248,12 +270,13 @@ public class HeroHold : MonoBehaviour
         {
             if (p > 0.001f) 얹기(머리뼈, 줍을때머리 * p, 몸);
             if (g > 0.001f) 얹기(머리뼈, 끌때머리 * g, 몸);
+            if (ㄷ > 0.001f) 얹기(머리뼈, 들올때머리 * ㄷ, 몸);   // 다 들면 앞을 본다
         }
 
         // ★왼팔 — 평소엔 `두손` 일 때만 쓰지만, **집어들 때와 줄을 끌 때는 늘 쓴다**
         //   (한 손으로 새끼를 들어올리지도, 한 손으로 줄을 끌지도 않는다).
         //   어깨가 반대라 z 를 뒤집는다
-        if (두손 || p > 0.001f || g > 0.001f || 지르기지금 > 0.001f)
+        if (두손 || p > 0.001f || g > 0.001f || 지르기지금 > 0.001f || ㄷ > 0.001f)
         {
             float 왼즈 = 왼주먹 ? 지르기지금 : 0f;   // 왼주먹일 때만 이쪽이 나간다
             // ★줍기는 **대칭**이 맞다 (두 팔로 감싸 안는다). 끌기는 **대칭이 아니다**
@@ -264,6 +287,9 @@ public class HeroHold : MonoBehaviour
             왼팔뚝목표 = Vector3.Lerp(왼팔뚝목표, new Vector3(끌때왼팔뚝.x, -끌때왼팔뚝.y, -끌때왼팔뚝.z), g);
             왼팔목표   = Vector3.Lerp(왼팔목표,   new Vector3(지를때팔.x,   -지를때팔.y,   -지를때팔.z),   왼즈);
             왼팔뚝목표 = Vector3.Lerp(왼팔뚝목표, new Vector3(지를때팔뚝.x, -지를때팔뚝.y, -지를때팔뚝.z), 왼즈);
+            // ★두 손으로 머리 위를 받친다 — 한 손으로 들지 않는다
+            왼팔목표   = Vector3.Lerp(왼팔목표,   new Vector3(들올때팔.x,   -들올때팔.y,   -들올때팔.z),   ㄷ);
+            왼팔뚝목표 = Vector3.Lerp(왼팔뚝목표, new Vector3(들올때팔뚝.x, -들올때팔뚝.y, -들올때팔뚝.z), ㄷ);
             잡기(왼팔뼈, 왼팔기본, 왼팔목표, 늦게(wp, 시차 * 0.5f), 몸);
             잡기(왼팔뚝뼈, 왼팔뚝기본, 왼팔뚝목표, 늦게(wp, 시차), 몸);
         }
