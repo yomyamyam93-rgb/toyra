@@ -245,8 +245,8 @@ MonoBehaviour:
     y: 574
     width: 950
     height: 168
-  m_MinSize: {x: 50, y: 50}
-  m_MaxSize: {x: 4000, y: 4000}
+  m_MinSize: {x: 51, y: 76}
+  m_MaxSize: {x: 4001, y: 4026}
   m_ActualView: {fileID: 18}
   m_Panes:
   - {fileID: 16}
@@ -273,8 +273,8 @@ MonoBehaviour:
     y: 0
     width: 277
     height: 742
-  m_MinSize: {x: 275, y: 50}
-  m_MaxSize: {x: 4000, y: 4000}
+  m_MinSize: {x: 276, y: 76}
+  m_MaxSize: {x: 4001, y: 4026}
   m_ActualView: {fileID: 19}
   m_Panes:
   - {fileID: 19}
@@ -301,8 +301,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "UnityEditor.MainToolbarWindow\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 1250
-    y: 522
+    x: 0
+    y: 0
     width: 1227
     height: 36
   m_SerializedDataModeController:
@@ -581,8 +581,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "Scene\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 1527
-    y: 558
+    x: 278
+    y: 24
     width: 671
     height: 548
   m_SerializedDataModeController:
@@ -1219,7 +1219,7 @@ MonoBehaviour:
   m_Rotation:
     m_Target: {x: -0.011204422, y: 0.9013269, z: -0.023356413, w: -0.43239415}
     speed: 2
-    m_Value: {x: -0.011204278, y: 0.9013153, z: -0.023356114, w: -0.43238857}
+    m_Value: {x: -0.011204277, y: 0.9013153, z: -0.023356108, w: -0.43238857}
   m_Size:
     m_Target: 1.817039
     speed: 2
@@ -1278,8 +1278,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "Hierarchy\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 1250
-    y: 558
+    x: 0
+    y: 24
     width: 276
     height: 548
   m_SerializedDataModeController:
@@ -1297,11 +1297,10 @@ MonoBehaviour:
     m_DynamicPanelBehavior: 0
   m_SceneHierarchy:
     m_TreeViewState:
-      scrollPos: {x: 0, y: 145}
-      m_SelectedIDs:
-      - m_Data: 53110
+      scrollPos: {x: 0, y: 0}
+      m_SelectedIDs: []
       m_LastClickedID:
-        m_Data: 53110
+        m_Data: 0
       m_ExpandedIDs:
       - m_Data: -1478
       - m_Data: -1474
@@ -1682,8 +1681,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "Animation\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 1250
-    y: 1132
+    x: 0
+    y: 598
     width: 949
     height: 142
   m_SerializedDataModeController:
@@ -1701,7 +1700,7 @@ MonoBehaviour:
     m_DynamicPanelBehavior: 0
   m_LockTracker:
     m_IsLocked: 0
-  m_LastSelectedObjectID: 53110
+  m_LastSelectedObjectID: 0
 --- !u!114 &19
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -1723,8 +1722,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "Inspector\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 2200
-    y: 558
+    x: 951
+    y: 24
     width: 276
     height: 716
   m_SerializedDataModeController:

@@ -181,6 +181,36 @@ Material:
     - _OutlineColor: {r: 0.08, g: 0.07, b: 0.1, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
+--- !u!21 &109474619
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: "\uACA9\uC790\uBC14\uB2E5_\uC606\uBA74"
+  m_Shader: {fileID: 4800000, guid: 6559b520a6d8ce54ba9c792be9c323fe, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs: []
+    m_Ints: []
+    m_Floats:
+    - _ShadowLift: 0.32
+    - _Steps: 3
+    m_Colors: []
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1
 --- !u!1 &154333715
 GameObject:
   m_ObjectHideFlags: 0
@@ -5539,36 +5569,6 @@ MonoBehaviour:
   "\uC8FC\uAE30": 1
   "\uBB38\uD131": 236
   "\uCD5C\uC18C\uD53D\uC140": 30
---- !u!21 &352878405
-Material:
-  serializedVersion: 8
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_Name: "\uACA9\uC790\uBC14\uB2E5_\uC606\uBA74"
-  m_Shader: {fileID: 4800000, guid: 6559b520a6d8ce54ba9c792be9c323fe, type: 3}
-  m_Parent: {fileID: 0}
-  m_ModifiedSerializedProperties: 0
-  m_ValidKeywords: []
-  m_InvalidKeywords: []
-  m_LightmapFlags: 4
-  m_EnableInstancingVariants: 0
-  m_DoubleSidedGI: 0
-  m_CustomRenderQueue: -1
-  stringTagMap: {}
-  disabledShaderPasses: []
-  m_LockedProperties: 
-  m_SavedProperties:
-    serializedVersion: 3
-    m_TexEnvs: []
-    m_Ints: []
-    m_Floats:
-    - _ShadowLift: 0.32
-    - _Steps: 3
-    m_Colors: []
-  m_BuildTextureStacks: []
-  m_AllowLocking: 1
 --- !u!4 &399861229 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -3910990755373119420, guid: ce9c7bcdc09c96b41b758d2882f4d251, type: 3}
@@ -7413,8 +7413,8 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 1301328090}
-  - {fileID: 352878405}
+  - {fileID: 866377666}
+  - {fileID: 109474619}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -7470,6 +7470,36 @@ MonoBehaviour:
   "\uCE78\uC218\uC0C1\uD55C": 140
   "\uC2A4\uC2A4\uB85C\uC7AC\uAE30": 6
   "\uC870\uAC01\uC7AC\uAE30": 8
+--- !u!21 &866377666
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: "\uACA9\uC790\uBC14\uB2E5_\uC784\uC2DC\uC717\uBA74"
+  m_Shader: {fileID: 4800000, guid: 6559b520a6d8ce54ba9c792be9c323fe, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs: []
+    m_Ints: []
+    m_Floats:
+    - _ShadowLift: 0.32
+    - _Steps: 3
+    m_Colors: []
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1
 --- !u!1 &933096444
 GameObject:
   m_ObjectHideFlags: 0
@@ -8492,36 +8522,6 @@ MonoBehaviour:
   "\uB36E\uC740\uBE44\uC728": 0.42
   "\uD574\uC0C1\uB3C4": 256
   "\uC528": 3
---- !u!21 &1301328090
-Material:
-  serializedVersion: 8
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_Name: "\uACA9\uC790\uBC14\uB2E5_\uC784\uC2DC\uC717\uBA74"
-  m_Shader: {fileID: 4800000, guid: 6559b520a6d8ce54ba9c792be9c323fe, type: 3}
-  m_Parent: {fileID: 0}
-  m_ModifiedSerializedProperties: 0
-  m_ValidKeywords: []
-  m_InvalidKeywords: []
-  m_LightmapFlags: 4
-  m_EnableInstancingVariants: 0
-  m_DoubleSidedGI: 0
-  m_CustomRenderQueue: -1
-  stringTagMap: {}
-  disabledShaderPasses: []
-  m_LockedProperties: 
-  m_SavedProperties:
-    serializedVersion: 3
-    m_TexEnvs: []
-    m_Ints: []
-    m_Floats:
-    - _ShadowLift: 0.32
-    - _Steps: 3
-    m_Colors: []
-  m_BuildTextureStacks: []
-  m_AllowLocking: 1
 --- !u!1 &1525150691
 GameObject:
   m_ObjectHideFlags: 0
@@ -8778,9 +8778,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::HeroCarry
   "\uC190\uB2FF\uB294\uAC70\uB9AC": 1.5
   "\uC548\uB294\uBB34\uAC8C": 0.8
-  "\uB044\uB294\uBB34\uAC8C": 3
-  "\uBC27\uC904\uBC30": 2.2
-  "\uB04C\uCC28\uBC30": 4
+  "\uB044\uB294\uBB34\uAC8C": 1.6
+  "\uBC27\uC904\uBC30": 1.8
+  "\uB04C\uCC28\uBC30": 5
   "\uB04C\uCC28\uB54C": 0.4
   "\uC960\uC2DC\uC791": 0.18
   "\uC960\uC2DC\uAC04": 0.38
